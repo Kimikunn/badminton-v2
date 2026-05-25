@@ -87,9 +87,15 @@ export const useSeasonsStore = defineStore('seasons', () => {
     return res.success ? res.data : null
   }
 
+  async function recordAction(seasonId, actionId, payload = {}) {
+    const res = await api.post(`/seasons/${seasonId}/actions/${actionId}`, payload)
+    if (res.success) await init({ force: true })
+    return res
+  }
+
   return {
     seasons, rounds, loading, initialized, currentSeason, currentRound,
     getSeasonById, getRoundsBySeason, getRoundById,
-    init, fetchRounds, createRound, updateRound, deleteRound
+    init, fetchRounds, createRound, updateRound, deleteRound, recordAction
   }
 })

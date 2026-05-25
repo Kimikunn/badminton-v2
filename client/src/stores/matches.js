@@ -89,6 +89,7 @@ export const useMatchesStore = defineStore('matches', () => {
     if (res.success && res.data) {
       const idx = matches.value.findIndex(m => m.id === matchId)
       if (idx >= 0) matches.value[idx] = res.data
+      await init({ force: true })
     }
     return res.success
   }
@@ -141,11 +142,33 @@ export const useMatchesStore = defineStore('matches', () => {
     return res.success
   }
 
+  async function endGame(gameId, scoreA, scoreB, winner, rulePayload = {}) {
+    await api.put(`/games/${gameId}/score`, { scoreA, scoreB })
+    const res = await api.post(`/games/${gameId}/end`, { winner, rulePayload })
+    await init({ force: true })
+    return res
+  }
+
+  async function revertGame(gameId) {
+    const res = await api.post(`/games/${gameId}/revert`)
+    await init({ force: true })
+    return res
+  }
+
+  async function updateCompletedGameScore(gameId, scoreA, scoreB, winner, rulePayload = {}) {
+    const res = await api.post(`/games/${gameId}/update-completed-score`, {
+      scoreA, scoreB, winner, rulePayload
+    })
+    await init({ force: true })
+    return res
+  }
+
   return {
     matches, games, loading, initialized,
     allMatches, historyMatches, ongoingMatches,
     getMatchById, getGamesByMatch, getMatchScore, getMatchBestOf,
     init, upsertMatches, removeMatchesByRound,
-    startMatch, cancelMatch, createMatch, updateMatch, deleteMatch, setGameScore
+    startMatch, cancelMatch, createMatch, updateMatch, deleteMatch, setGameScore,
+    endGame, revertGame, updateCompletedGameScore
   }
 })

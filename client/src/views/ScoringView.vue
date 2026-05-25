@@ -15,7 +15,6 @@ import { Trophy, Dumbbell, Pause, ArrowLeft } from 'lucide-vue-next'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import { useScoringValidation } from '@/composables/useScoringValidation'
-import { api } from '@/api/client'
 
 const route = useRoute()
 const router = useRouter()
@@ -144,7 +143,7 @@ watch(() => [editForm.value.scoreA, editForm.value.scoreB, editForm.value.winner
 
 async function ensureStarted() {
   if (!match.value || match.value.status !== STATUS.PENDING) return true
-  try { await api.post(`/matches/${matchId.value}/start`); await matchesStore.init({ force: true }); return true }
+  try { await matchesStore.startMatch(matchId.value); return true }
   catch(e) { toast.show('开始失败', 'error'); return false }
 }
 
@@ -180,12 +179,10 @@ async function handleEndGame() {
   if (!currentGame.value) return
   saving.value = true
   try {
-    await api.put(`/games/${currentGame.value.id}/score`, { scoreA: scoreA.value, scoreB: scoreB.value })
-    const res = await api.post(`/games/${currentGame.value.id}/end`, {
-      winner: selectedWinner.value,
-      rulePayload: { pierceTeam: pierceTeam.value || null }
-    })
-    await matchesStore.init({ force: true })
+    const res = await matchesStore.endGame(
+      currentGame.value.id, scoreA.value, scoreB.value, selectedWinner.value,
+      { pierceTeam: pierceTeam.value || null }
+    )
     await seasonsStore.init({ force: true })
     const notices = getRuleEventNotices(res.data?.ruleEvents)
     toast.show(notices.length ? notices.join('，') : '本局结束', 'success')
@@ -203,7 +200,7 @@ async function handleRevertLast() {
     confirmText: '撤回'
   })
   if (!ok) return
-  try { await api.post(`/games/${last.id}/revert`); await matchesStore.init({ force: true }); toast.show('已撤回', 'success') }
+  try { await matchesStore.revertGame(last.id); toast.show('已撤回', 'success') }
   catch(e) { toast.show(e.message, 'error') }
 }
 
@@ -221,13 +218,13 @@ async function saveEdit() {
     return
   }
   try {
-    const res = await api.post(`/games/${editingGame.value.id}/update-completed-score`, {
-      scoreA: Number(editForm.value.scoreA),
-      scoreB: Number(editForm.value.scoreB),
-      winner: editForm.value.winner,
-      rulePayload: { pierceTeam: editForm.value.pierceTeam || null }
-    })
-    await matchesStore.init({ force: true }); await seasonsStore.init({ force: true })
+    const res = await matchesStore.updateCompletedGameScore(
+      editingGame.value.id,
+      Number(editForm.value.scoreA), Number(editForm.value.scoreB),
+      editForm.value.winner,
+      { pierceTeam: editForm.value.pierceTeam || null }
+    )
+    await seasonsStore.init({ force: true })
     const notices = getRuleEventNotices(res.data?.ruleEvents)
     toast.show(notices.length ? notices.join('，') : '已更新', 'success')
     showEdit.value = false

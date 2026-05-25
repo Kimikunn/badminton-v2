@@ -1,10 +1,12 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { usePlayersStore, useMatchesStore, useSeasonsStore } from '@/stores'
 import { STATUS, BEST_OF_OPTIONS } from '@/constants'
+import { getRule } from '@/rules'
 import { useViewAccent } from '@/composables/useViewAccent'
 import { useSeasonTheme } from '@/composables/useSeasonTheme'
+import { useScoringValidation } from '@/composables/useScoringValidation'
 import Card from '@/components/ui/Card.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
@@ -14,7 +16,6 @@ import EmptyState from '@/components/ui/EmptyState.vue'
 import { Dumbbell, Trash2, Pencil, ArrowLeft } from 'lucide-vue-next'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
-import { api } from '@/api/client'
 
 const route = useRoute()
 const router = useRouter()
@@ -25,6 +26,7 @@ const { setViewAccent, viewStyle } = useViewAccent()
 const { getSeasonColor } = useSeasonTheme()
 const toast = useToast()
 const { confirm: confirmAction } = useConfirm()
+const editValidation = useScoringValidation()
 
 const matchId = computed(() => route.params.id)
 const match = computed(() => {
@@ -42,6 +44,24 @@ const seasonName = computed(() => {
   if (!match.value?.seasonId) return ''
   return seasonsStore.getSeasonById(match.value.seasonId)?.name || ''
 })
+
+const season = computed(() => match.value?.seasonId ? seasonsStore.getSeasonById(match.value.seasonId) : null)
+const round = computed(() => match.value?.roundId ? seasonsStore.getRoundById(match.value.roundId) : null)
+const gameConfig = computed(() => {
+  if (season.value?.ruleId === 's5' && round.value) {
+    return getRule('s5').getGameConfig(round.value.roundNo, { season: season.value })
+  }
+  return { scoringMode: 'standard', targetScore: 21, maxScore: 30, requiresWinner: false }
+})
+const targetScore = computed(() => gameConfig.value.targetScore || 21)
+
+function validateEditScores(scoreA, scoreB) {
+  return editValidation.validateGameScore(scoreA, scoreB, {
+    targetScore: targetScore.value,
+    maxScore: gameConfig.value.maxScore || 30,
+    scoringMode: gameConfig.value.scoringMode
+  })
+}
 
 function teamShortLabel(team) {
   if (team === 'a') return 'A队'
@@ -86,19 +106,25 @@ function openEditGame(game) {
 }
 
 async function saveGameEdit() {
+  const scoreA = Number(editForm.value.scoreA)
+  const scoreB = Number(editForm.value.scoreB)
+  const result = validateEditScores(scoreA, scoreB)
+  if (!result.canEnd) { toast.show(result.reason, 'warning'); return }
+
   editSaving.value = true
   try {
-    const g = editingGame.value
-    await api.post(`/games/${g.id}/update-completed-score`, {
-      scoreA: Number(editForm.value.scoreA),
-      scoreB: Number(editForm.value.scoreB)
-    })
-    await matchesStore.init({ force: true })
+    await matchesStore.updateCompletedGameScore(
+      editingGame.value.id, scoreA, scoreB, result.winner
+    )
     toast.show('比分已更新', 'success')
     showEditGame.value = false
   } catch (e) { toast.show(e.message || '更新失败', 'error') }
   editSaving.value = false
 }
+
+watch(() => [editForm.value.scoreA, editForm.value.scoreB], ([a, b]) => {
+  validateEditScores(a, b)
+})
 
 // Delete game
 async function handleDeleteGame(game) {
@@ -109,8 +135,7 @@ async function handleDeleteGame(game) {
   })
   if (!ok) return
   try {
-    await api.post(`/games/${game.id}/revert`)
-    await matchesStore.init({ force: true })
+    await matchesStore.revertGame(game.id)
     toast.show(`G${game.gameNo} 已撤回`, 'success')
   } catch (e) { toast.show(e.message || '操作失败', 'error') }
 }
@@ -197,7 +222,9 @@ async function handleDeleteMatch() {
           <span class="text-sm text-fg-muted font-bold">VS</span>
           <div class="flex-1"><Input label="B队得分" type="number" v-model.number="editForm.scoreB" /></div>
         </div>
-        <p class="text-xs text-fg-muted">需满足21分制规则（≥21且领先≥2，或先到30）</p>
+        <p class="text-xs min-h-[1.25rem] leading-tight" :class="editValidation.errorMessage ? 'text-[var(--color-danger)]' : 'text-fg-muted'">
+          {{ editValidation.errorMessage || '需达到'+targetScore+'分且领先2分（或先到30）' }}
+        </p>
         <div class="flex gap-3">
           <Button variant="secondary" size="md" class="flex-1" @click="showEditGame=false">取消</Button>
           <Button variant="primary" size="md" class="flex-1" :loading="editSaving" @click="saveGameEdit">保存</Button>

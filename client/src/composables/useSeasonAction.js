@@ -1,4 +1,3 @@
-import { api } from '@/api/client'
 import { useSeasonsStore } from '@/stores'
 import { useToast } from '@/composables/useToast'
 
@@ -8,8 +7,7 @@ export function useSeasonAction() {
 
   async function recordSeasonAction(seasonId, actionId, payload = {}, successMessage = '已记录') {
     try {
-      await api.post(`/seasons/${seasonId}/actions/${actionId}`, payload)
-      await seasonsStore.init({ force: true })
+      await seasonsStore.recordAction(seasonId, actionId, payload)
       toast.show(successMessage, 'success')
       return true
     } catch (e) {

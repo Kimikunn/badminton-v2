@@ -23,5 +23,3 @@ export const TITLE_LEVELS = {
   hidden: { label: '隐藏', color: 'gray', order: 4 }
 }
 
-export const GUEST_PLAYER_PREFIX = 'guest_'
-export const GUEST_PLAYER_NAME = '外部球员'
