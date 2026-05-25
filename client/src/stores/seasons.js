@@ -1,0 +1,95 @@
+import { defineStore } from 'pinia'
+import { ref, computed } from 'vue'
+import { api } from '@/api/client'
+
+export const useSeasonsStore = defineStore('seasons', () => {
+  const seasons = ref([])
+  const rounds = ref([])
+  const loading = ref(false)
+  const initialized = ref(false)
+
+  const currentSeason = computed(() =>
+    seasons.value.find(s => s.status === 'ongoing') || seasons.value[0] || null
+  )
+  const currentRound = computed(() => {
+    if (!currentSeason.value) return null
+    return rounds.value.find(r =>
+      r.seasonId === currentSeason.value.id && r.status === 'in_progress'
+    ) || null
+  })
+
+  function getSeasonById(id) { return seasons.value.find(s => s.id === id) }
+  function getRoundsBySeason(seasonId) { return rounds.value.filter(r => r.seasonId === seasonId) }
+  function getRoundById(id) { return rounds.value.find(r => r.id === id) }
+
+  function normalizeRound(round) {
+    if (!round) return round
+    const { id, seasonId, roundNo, status, venueManagerId, createdAt } = round
+    return { id, seasonId, roundNo, status, venueManagerId, createdAt }
+  }
+
+  function upsertSeason(season) {
+    if (!season?.id) return
+    const idx = seasons.value.findIndex(s => s.id === season.id)
+    if (idx >= 0) seasons.value[idx] = season
+    else seasons.value.unshift(season)
+  }
+
+  function upsertRound(round) {
+    const normalized = normalizeRound(round)
+    if (!normalized?.id) return
+    const idx = rounds.value.findIndex(r => r.id === normalized.id)
+    if (idx >= 0) rounds.value[idx] = normalized
+    else rounds.value.push(normalized)
+  }
+
+  async function init(options = {}) {
+    if ((initialized.value || loading.value) && !options.force) return
+    loading.value = true
+    try {
+      const [sRes, rRes] = await Promise.all([
+        api.get('/seasons'), api.get('/rounds')
+      ])
+      if (sRes.success) seasons.value = sRes.data
+      if (rRes.success) rounds.value = rRes.data
+    } finally {
+      loading.value = false
+      initialized.value = true
+    }
+  }
+
+  async function fetchRounds(seasonId) {
+    const res = await api.get('/rounds', { seasonId })
+    if (res.success) {
+      rounds.value = [...rounds.value.filter(r => r.seasonId !== seasonId), ...res.data]
+    }
+    return res.success
+  }
+
+  async function createRound(data) {
+    const res = await api.post('/rounds', data)
+    if (res.success && res.data) {
+      upsertRound(res.data)
+      if (res.data.season) upsertSeason(res.data.season)
+    }
+    return res.success ? res.data : null
+  }
+
+  async function updateRound(roundId, data) {
+    const res = await api.put(`/rounds/${roundId}`, data)
+    if (res.success && res.data) upsertRound(res.data)
+    return res.success ? res.data : null
+  }
+
+  async function deleteRound(roundId) {
+    const res = await api.delete(`/rounds/${roundId}`)
+    if (res.success) rounds.value = rounds.value.filter(r => r.id !== roundId)
+    return res.success ? res.data : null
+  }
+
+  return {
+    seasons, rounds, loading, initialized, currentSeason, currentRound,
+    getSeasonById, getRoundsBySeason, getRoundById,
+    init, fetchRounds, createRound, updateRound, deleteRound
+  }
+})

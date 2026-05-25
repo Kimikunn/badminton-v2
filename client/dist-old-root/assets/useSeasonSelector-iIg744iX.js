@@ -1,0 +1,1 @@
+import{m as s}from"./index-R24UtjKG.js";import{t as u}from"./vue-vendor-DvzU4VSf.js";const e=u(null);function S(){function n(){var o;return e.value?e.value:((o=s().currentSeason)==null?void 0:o.id)||""}function r(t){e.value=t}return{selectedSeasonId:e,getSelectedSeasonId:n,setSelectedSeasonId:r}}export{S as u};

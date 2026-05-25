@@ -1,0 +1,17 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: badminton-v2-test
+    restart: unless-stopped
+    ports:
+      - "8090:3000"
+    volumes:
+      - ./server/database:/app/server/database
+      - ./server/uploads:/app/server/uploads
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DB_PATH=/app/server/database/test.db
+      - ADMIN_TOKEN=${ADMIN_TOKEN:-}

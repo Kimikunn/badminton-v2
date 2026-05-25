@@ -1,0 +1,1 @@
+{"name":"BAD Club","short_name":"BAD","start_url":"/","display":"standalone","background_color":"#f6f8fa","lang":"en","scope":"/","description":"羽毛球俱乐部记分系统","theme_color":"#0ea5e9","orientation":"portrait","icons":[{"src":"pwa-192x192.svg","sizes":"192x192","type":"image/svg+xml"},{"src":"pwa-512x512.svg","sizes":"512x512","type":"image/svg+xml","purpose":"any maskable"}]}

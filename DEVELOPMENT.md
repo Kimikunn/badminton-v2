@@ -1,0 +1,754 @@
+# BAD Club — 开发参考文档
+
+> 本文档是项目的**唯一真相源**。所有业务逻辑、数据模型、组件契约、API 规范均在此定义。代码修改前先查本文档，代码修改后同步更新本文档。
+
+---
+
+## 目录
+
+1. [项目概述](#1-项目概述)
+2. [架构总览](#2-架构总览)
+3. [数据模型](#3-数据模型)
+4. [业务规则](#4-业务规则)
+5. [页面与路由](#5-页面与路由)
+6. [组件契约](#6-组件契约)
+7. [API 规范](#7-api-规范)
+8. [设计系统](#8-设计系统)
+9. [状态管理](#9-状态管理)
+10. [扩展指南](#10-扩展指南)
+
+---
+
+## 1. 项目概述
+
+### 1.1 产品定义
+
+羽毛球俱乐部记分系统（BAD Club），服务于 4 人固定小团体的双打比赛记录和赛季管理。
+
+- **用户**：4 名俱乐部成员
+- **场景**：打球现场手机记分（主）+ 赛后查看排名/日历（辅）
+- **风格**：Apple 原生 + 社区温度，清爽/亲近/利落
+- **平台**：PWA，移动端优先，兼容桌面
+
+### 1.2 核心功能域
+
+| 域 | 说明 | 优先级 |
+|---|---|---|
+| **记分** | 实时双打记分、撤销、修改、暂停/继续 | P0 |
+| **赛季** | 赛季 CRUD、轮次管理、规则引擎、排名 | P0 |
+| **比赛** | 友谊赛、赛季赛、日历视图、历史记录 | P1 |
+| **俱乐部** | 成员管理、称号系统、场地管理、订场轮换 | P1 |
+| **数据** | 导出、自动备份、数据完整性 | P2 |
+| **Tips** | 羽毛球知识每日推送 | P2 |
+
+### 1.3 技术栈
+
+| 层 | 技术 |
+|---|---|
+| 前端框架 | Vue 3 (Composition API) |
+| 构建工具 | Vite 5 |
+| 状态管理 | Pinia |
+| 路由 | Vue Router 4 |
+| 样式方案 | CSS Custom Properties (OKLCH) + PostCSS |
+| HTTP | Axios |
+| 后端框架 | Express 4 |
+| 数据库 | sql.js (SQLite) |
+| 认证 | JWT + bcryptjs |
+| 部署 | Docker + Nginx |
+
+---
+
+## 2. 架构总览
+
+### 2.1 目录结构
+
+```
+badminton-v2/
+├── client/                       # 前端
+│   ├── src/
+│   │   ├── main.js               # Vue 入口
+│   │   ├── App.vue               # 根组件（布局壳）
+│   │   ├── router/index.js       # 路由配置
+│   │   ├── stores/               # Pinia Store（纯数据层）
+│   │   ├── composables/          # 业务逻辑 Composable
+│   │   ├── services/             # 统计计算、规则引擎
+│   │   ├── components/
+│   │   │   ├── ui/               # 设计系统原子组件
+│   │   │   ├── match/            # 比赛域组件
+│   │   │   ├── season/           # 赛季域组件
+│   │   │   ├── club/             # 俱乐部域组件
+│   │   │   └── calendar/         # 日历组件
+│   │   ├── views/                # 页面组件
+│   │   ├── rules/                # 规则模块（插件式）
+│   │   └── styles/               # 设计 token + 全局样式
+│   ├── index.html
+│   ├── vite.config.js
+│   └── package.json
+├── server/                       # 后端
+│   ├── src/
+│   │   ├── server.js             # 入口
+│   │   ├── app.js                # Express 配置
+│   │   ├── config/               # 数据库、JWT、环境变量
+│   │   ├── routes/               # 路由定义（薄层）
+│   │   ├── controllers/          # 控制器（薄层）
+│   │   ├── services/             # 业务逻辑（厚层）
+│   │   ├── db/
+│   │   │   ├── schema.sql        # 表结构
+│   │   │   └── migrations/       # 迁移文件（按版本号）
+│   │   ├── middleware/           # 认证、错误处理
+│   │   └── utils/                # 工具函数
+│   ├── database/                 # SQLite 数据文件
+│   └── package.json
+├── docker-compose.yml
+├── nginx.conf
+├── Dockerfile
+├── PRODUCT.md                    # 产品定义
+├── DESIGN.md                     # 设计系统（自动生成）
+└── DEVELOPMENT.md                # 本文档
+```
+
+### 2.2 数据流
+
+```
+Component → Composable → Store → API Client → Backend Route → Controller → Service → DB
+                                                      ↓
+                                              Response (统一格式)
+                                                      ↓
+Component ← Composable ← Store ← API Client ←────────┘
+```
+
+**原则**：
+- Component 只负责渲染 + 事件转发，不含业务逻辑
+- Composable 是业务逻辑的载体（记分流程、排名计算、规则判断）
+- Store 只做数据 CRUD + 缓存，不做业务计算
+- Service（后端）是业务逻辑的最终裁决者
+
+### 2.4 写接口权限
+
+- 后端在配置 `ADMIN_TOKEN` 后，会要求所有 `POST/PUT/PATCH/DELETE` 请求携带写入令牌。
+- 令牌支持 `x-admin-token` 请求头或 `Authorization: Bearer <token>`。
+- 前端 API client 会在写请求中自动附带本机保存的 token；首次返回 `UNAUTHORIZED` 时会提示输入并重试一次。
+- 未配置 `ADMIN_TOKEN` 时保持无鉴权写入，便于本地开发和测试环境按需启用。
+
+### 2.3 模块边界
+
+```
+┌─────────────────────────────────────────────┐
+│                    App Shell                 │
+│  ┌─────────┐ ┌────────────────────────────┐ │
+│  │  NavBar  │ │       <router-view>        │ │
+│  │  (底部)  │ │                            │ │
+│  │         │ │  Page ← Composable ← Store  │ │
+│  │ 赛季    │ │    ↓                        │ │
+│  │ 比赛    │ │  Components (ui/match/...)  │ │
+│  │ 俱乐部  │ │    ↓                        │ │
+│  │ 更多    │ │  Rules Engine (services/)   │ │
+│  └─────────┘ └────────────────────────────┘ │
+└─────────────────────────────────────────────┘
+```
+
+---
+
+## 3. 数据模型
+
+### 3.1 实体关系
+
+```
+Club (1) ─────────────────────────────────────────────
+  │
+  ├── Player (*) ──┬── player_titles (*) ── Title (*)
+  │                ├── booking_records (*)
+  │                └── Match.teamA / Match.teamB (JSON)
+  │
+  ├── Season (*) ──┬── Round (*) ── Match (*) ── Game (*)
+  │                └── Rule
+  │
+  ├── Venue (*) ──── booking_records (*)
+  │
+  └── BookingConfig (1) ── rotation (*)
+```
+
+### 3.2 表结构
+
+#### players
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | TEXT PK | 格式 `p{数字}` |
+| name | TEXT | 选手姓名 |
+| avatar | TEXT | 头像 URL（服务器相对路径） |
+| racket | TEXT | 球拍型号（可选） |
+| shoes | TEXT | 球鞋型号（可选） |
+| displayed_title_id | TEXT FK | 用户选择展示的称号（可选） |
+
+#### seasons
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | TEXT PK | 格式 `S{数字}` |
+| name | TEXT | 赛季名称 |
+| total_rounds | INTEGER | 总轮次数 |
+| best_of | INTEGER | 默认局数：1=一局，3=三局两胜，7=七局打满 |
+| status | TEXT | `pending` / `ongoing` / `completed` |
+| participants | TEXT | JSON 数组，选手 ID 列表 |
+| rule_id | TEXT | 规则标识：`standard` / `s2` / `s3` / `s4` / `s5` |
+| comeback_data | TEXT | JSON，规则专用数据（S2/S3 Buff、S4 星尘、S5 骰子等） |
+| color | TEXT | 赛季主题色 |
+
+#### rounds
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | TEXT PK | 格式 `R{数字}` |
+| season_id | TEXT FK | 所属赛季 |
+| round_no | INTEGER | 第几轮 |
+| status | TEXT | `pending` / `in_progress` / `completed` |
+| venue_manager_id | TEXT FK | 订场负责人（可选） |
+
+#### matches
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | TEXT PK | 格式 `R1-M1` 或 `F-{timestamp}` |
+| season_id | TEXT FK | 所属赛季（友谊赛为 null） |
+| round_id | TEXT FK | 所属轮次（友谊赛为 null） |
+| type | TEXT | `doubles`（仅双打） |
+| team_a | TEXT | JSON 数组，A 队选手 ID |
+| team_b | TEXT | JSON 数组，B 队选手 ID |
+| best_of | INTEGER | 局数 |
+| status | TEXT | `pending` / `in_progress` / `completed` |
+| winner | TEXT | `a` / `b` / null |
+| date | TEXT | 比赛日期 |
+| venue_id | TEXT FK | 场地 ID（可选） |
+
+#### games
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | TEXT PK | 格式 `R1-M1-G1` |
+| match_id | TEXT FK | 所属比赛 |
+| game_no | INTEGER | 第几局 |
+| score_a | INTEGER | A 队得分 |
+| score_b | INTEGER | B 队得分 |
+| winner | TEXT | `a` / `b` / null |
+| status | TEXT | `pending` / `in_progress` / `completed` |
+| completed_at | TEXT | 完成时间 |
+
+#### game_rule_events
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | TEXT PK | 规则事件 ID |
+| season_id | TEXT FK | 所属赛季 |
+| round_id | TEXT FK | 所属轮次 |
+| match_id | TEXT FK | 所属场比赛 |
+| game_id | TEXT FK | 所属小局 |
+| rule_id | TEXT | 规则标识 |
+| timing | TEXT | 生命周期时点：`beforeRound` / `afterGame` / `afterRound` |
+| type | TEXT | 事件类型：`dice` / `resistance` / `pierce` 等 |
+| payload | TEXT | JSON，规则事件数据 |
+| created_at | TEXT | 创建时间 |
+
+#### titles
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | TEXT PK | 格式 `t_xxx` |
+| name | TEXT | 称号名称 |
+| level | TEXT | `hidden` / `S` / `A` / `B` / `C` |
+| type | TEXT | `auto`（自动计算）/ `manual`（手动授予） |
+| condition_desc | TEXT | 获得条件描述 |
+| sort_order | INTEGER | 排序权重 |
+
+#### player_titles
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| player_id | TEXT FK | 选手 ID |
+| title_id | TEXT FK | 称号 ID |
+| season_id | TEXT | 关联赛季（可选） |
+| awarded_at | TEXT | 授予时间 |
+
+#### venues / booking_config / booking_records / club / tips
+
+（这些表结构不变，详见旧项目 `数据库相关.md`）
+
+---
+
+## 4. 业务规则
+
+### 4.1 比赛生命周期
+
+```
+                    ┌─ 取消 → (删除)
+                    │
+创建(pending) → 开始(in_progress) → 结束(completed)
+                    │                    ↑
+                    │  暂停(保持in_progress, 比分保留)
+                    │                    │
+                    └── 继续 ────────────┘
+```
+
+**规则**：
+- 创建比赛时，默认局数从赛季继承（友谊赛默认 BO3）
+- 开始比赛时，自动创建对应数量的局（BO1=1局, BO3=3局, BO7=7局），第一局自动激活
+- 暂停比赛：保存当前比分，保持 `in_progress`，不释放局
+- 结束比赛后不可再记分，但已完成局可修改
+- 撤回局：只能撤回最后一个已完成的局，删除其后所有局，恢复为 `in_progress`
+
+### 4.2 赛季规则引擎
+
+规则模块是**插件式**的，位于 `client/src/rules/`。每个规则导出统一接口：
+
+```typescript
+interface RuleModule {
+  id: string
+  name: string
+  description: string
+
+  // 计算选手最终积分
+  calcPlayerScore(playerId, matches, getGamesByMatch, context): number
+
+  // 计算排名（返回排序后的数组）
+  calcRankings(participants, matches, getGamesByMatch, getPlayerById, context): Ranking[]
+
+  // 获取选手 Buff 状态
+  getPlayerBuffs(playerId, matches, getGamesByMatch, context): Buff[]
+
+  // 获取赛季 Buff 结算状态
+  getSeasonBuffStatus(matches, getGamesByMatch, rounds, context): BuffStatus
+}
+```
+
+**已有规则**：
+| ID | 名称 | 说明 |
+|----|------|------|
+| `standard` | 标准规则 | 纯积分制，无特殊 Buff |
+| `s2` | S2 绝地反击 | 绝对压制 + 绝地反击骰子 |
+| `s3` | S3 超能饮料 | 超能饮料 + 压制2.0 + 关键先生 |
+| `s4` | S4 星尘之征 | 上篇四象骰子 + 下篇组合赛 |
+| `s5` | S5 异变秩序 | 10轮 BO3；赛前骰子决定15/21分制；异变轮结算债务；记录贯穿暂停使用和债务结算；未开始时不生成轮次/比赛 |
+
+**添加新规则**：在 `client/src/rules/` 下新建文件，实现 `RuleModule` 接口，在 `index.js` 注册即可。
+
+**规则生命周期**：
+
+| 时点 | 用途 | 示例 |
+|------|------|------|
+| `beforeRound` | 创建/开始轮次前必须完成的赛前结算 | S5 赛前投骰，写入 `comeback_data.s5.roundDice` |
+| `roundStart` | 轮次创建、对阵生成、赛季从 `pending` 进入 `ongoing` | 自动生成 BO3/PA7 比赛 |
+| `afterGame` | 小局结束后的规则事件与派生数据 | S5 抵抗胜方、贯穿触发次数 |
+| `afterRound` | 轮次完成后的结算与排名数据 | S5 异变债务、大分/小分/特殊奖励结算 |
+
+后端规则插件位于 `server/src/rules/`。标准规则是默认内核；赛季规则通过插件覆盖生命周期钩子，不直接修改通用校验。
+
+### 4.3 记分规则
+
+- **基础记分**：两队独立计分，每按一次 +1
+- **撤消**：最后一次加分可撤销（-1），不限次数
+- **结束本局**：双方分数不相等方可结束，胜者自动判定
+- **BO3 判定**：先赢 2 局者获胜；各赢 1 局则第 3 局决胜
+- **BO1 判定**：1 局定胜负
+- **BO7 判定**：打满 7 局，按总赢局数判定胜者
+
+### 4.4 统计维度
+
+| 维度 | 说明 | 计算方式 |
+|------|------|----------|
+| **大分** | 比赛胜负 | 赢 1 场 +1 |
+| **小分** | 局数胜负 | 赢 1 局 +1（BO3 可 +2/:0 或 +2/:1） |
+| **得分** | 具体比分 | 所有局的得分总和 |
+| **净胜分** | 得分差 | 本方得分 - 对方得分 |
+| **胜率** | 比赛胜率 | 赢场 / 总场 |
+
+### 4.5 称号系统
+
+五级称号：**S 金 > A 紫 > B 蓝 > C 绿 > hidden 灰**
+
+- **自动称号**：由系统根据赛季数据自动计算（如"S1 赛季总冠军"）
+- **手动称号**：管理员手动授予（如"装备专家"）
+- **展示称号**：用户可选择展示哪个已解锁的称号，默认展示最高级
+
+---
+
+## 5. 页面与路由
+
+### 5.1 路由表
+
+```
+/                         → HomeView          # 首页（赛季概览 + 快捷入口）
+/matches                  → MatchListView     # 比赛列表
+/matches/:id              → MatchDetailView   # 比赛详情
+/scoring/:matchId         → ScoringView       # 记分页（无底部 Tab）
+/season                   → SeasonLayout      # 赛季布局
+  /season                  → SeasonOverview   # 赛季概览（信息 + 进度）
+  /season/rounds           → SeasonRounds     # 轮次记录
+  /season/rankings         → SeasonRankings   # 积分榜
+  /season/rules            → RuleDashboard    # 规则面板（S2/S4 专用）
+/club                     → ClubView          # 俱乐部（信息 + 成员 + Tips）
+/players/:id              → PlayerDetailView  # 选手详情
+/venues                   → VenueView         # 场地管理
+```
+
+### 5.2 导航结构
+
+```
+┌────────────────────────────────────┐
+│            Header (吸顶)            │
+│  标题 + 副标题 + 工具按钮           │
+├────────────────────────────────────┤
+│                                    │
+│           <router-view>            │
+│                                    │
+│                                    │
+├────────────────────────────────────┤
+│  TabBar: 赛季 | 比赛 | 俱乐部 | 更多 │
+└────────────────────────────────────┘
+```
+
+- **TabBar** 始终显示，记分页除外（`meta.hideTab: true`）
+- **Header** 副标题动态显示当前赛季和轮次
+- **更多** Tab：场地管理、数据导出、设置
+
+---
+
+## 6. 组件契约
+
+### 6.1 原子组件 (components/ui/)
+
+#### Button
+
+```typescript
+props: {
+  variant: 'primary' | 'secondary' | 'danger' | 'ghost'
+  size: 'sm' | 'md' | 'lg'
+  loading: boolean
+  disabled: boolean
+  block: boolean  // 是否撑满宽度
+}
+events: ['click']
+slots: ['default', 'prefix', 'suffix']  // prefix/suffix 放图标
+```
+
+#### Card
+
+```typescript
+props: {
+  padding: 'sm' | 'md' | 'lg' | 'none'
+  clickable: boolean  // 是否有点击态
+}
+events: ['click']
+slots: ['default', 'header', 'footer']
+```
+
+#### Sheet (底部弹出面板，替代 Modal 作为首选)
+
+```typescript
+props: {
+  show: boolean
+  title: string
+  height: 'auto' | 'half' | 'full'
+}
+events: ['close']
+slots: ['default']
+```
+
+#### Toast
+
+```typescript
+// 命令式调用，非组件
+useToast().show({ message, type: 'success' | 'error' | 'info', duration: 3000 })
+```
+
+#### Badge / Avatar / Input / Skeleton / EmptyState
+
+（接口定义在组件源码的 JSDoc 中）
+
+### 6.2 业务组件
+
+#### ScoreBoard (components/match/)
+
+```typescript
+props: {
+  teamAName: string
+  teamBName: string
+  scoreA: number
+  scoreB: number
+  gamesWonA: number
+  gamesWonB: number
+  bestOf: number
+  interactive: boolean  // 是否可点击加分
+}
+events: ['score-a', 'score-b', 'undo']
+```
+
+---
+
+## 7. API 规范
+
+### 7.1 统一响应格式
+
+```json
+// 成功 - 单条
+{ "success": true, "data": { ... } }
+
+// 成功 - 列表
+{ "success": true, "data": [...], "meta": { "total": 50 } }
+
+// 错误
+{ "success": false, "error": { "code": "VALIDATION_ERROR", "message": "..." } }
+```
+
+### 7.2 端点清单
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/health` | 健康检查 |
+| POST | `/api/auth/login` | 登录 |
+| GET | `/api/players` | 选手列表 |
+| GET | `/api/players/:id` | 选手详情 |
+| PUT | `/api/players/:id` | 更新选手 |
+| GET | `/api/seasons` | 赛季列表 |
+| POST | `/api/seasons` | 创建赛季 |
+| GET | `/api/seasons/:id` | 赛季详情 |
+| PUT | `/api/seasons/:id` | 更新赛季 |
+| DELETE | `/api/seasons/:id` | 删除赛季（级联） |
+| POST | `/api/seasons/:id/actions/:actionId` | 记录赛季主动技能/动作 |
+| POST | `/api/seasons/:id/s5/pause-uses` | S5 记录贯穿暂停使用（兼容旧入口） |
+| POST | `/api/seasons/:id/s5/debt-settlements` | S5 记录异变债务结算（兼容旧入口） |
+| GET | `/api/seasons/:seasonId/rounds` | 赛季轮次列表 |
+| POST | `/api/seasons/:seasonId/rounds` | 创建轮次 |
+| PUT | `/api/rounds/:id` | 更新轮次 |
+| DELETE | `/api/rounds/:id` | 删除轮次（级联） |
+| GET | `/api/matches` | 比赛列表 |
+| POST | `/api/matches` | 创建比赛 |
+| GET | `/api/matches/:id` | 比赛详情 |
+| PUT | `/api/matches/:id` | 更新比赛 |
+| POST | `/api/matches/:id/start` | 开始比赛 |
+| POST | `/api/matches/:id/cancel` | 取消比赛 |
+| GET | `/api/matches/:matchId/games` | 比赛局列表 |
+| GET | `/api/games` | 全局局列表（初始化用） |
+| PUT | `/api/games/:id/score` | 更新局比分 |
+| POST | `/api/games/:id/end` | 结束当前局 |
+| POST | `/api/games/:id/revert` | 撤回已完成的局 |
+| POST | `/api/games/:id/update-completed-score` | 修改已完成局比分 |
+| GET | `/api/venues` | 场地列表 |
+| POST | `/api/venues` | 创建场地 |
+| PUT | `/api/venues/:id` | 更新场地 |
+| DELETE | `/api/venues/:id` | 删除场地 |
+| GET | `/api/club` | 俱乐部信息 |
+| PUT | `/api/club` | 更新俱乐部 |
+| GET | `/api/titles` | 称号列表 |
+| GET | `/api/titles/all-players` | 所有选手称号 |
+| POST | `/api/titles/players/:id` | 授予称号 |
+| DELETE | `/api/titles/players/:id/:titleId` | 移除称号 |
+| GET | `/api/export` | 导出数据 |
+| GET | `/api/tips/badminton` | 获取 Tips |
+| GET | `/api/rules` | 规则列表 |
+| GET | `/api/rules/:id` | 规则详情 |
+| POST | `/api/upload/avatar` | 上传头像 |
+| GET | `/api/backup` | 备份列表 |
+| POST | `/api/backup` | 手动备份 |
+
+---
+
+## 8. 设计系统
+
+### 8.1 颜色
+
+（详见 `client/src/styles/tokens.css`，OKLCH 色板）
+
+- **Accent**: 青色系，用于主操作和选中态
+- **Success / Warning / Danger**: 绿/黄/红，语义化
+- **Neutral**: 从品牌色微偏的灰色阶（0.005 chroma），用于背景和边框
+
+日间模式为默认，暗色模式为可选偏好。
+
+### 8.2 排版阶梯
+
+| Token | 字号 | 字重 | 用途 |
+|-------|------|------|------|
+| `text-xs` | 0.75rem | 400 | 辅助信息、时间戳 |
+| `text-sm` | 0.875rem | 400 | 正文、标签 |
+| `text-base` | 1rem | 400 | 正文主要 |
+| `text-lg` | 1.125rem | 500 | 卡片标题 |
+| `text-xl` | 1.25rem | 600 | 页面区块标题 |
+| `text-2xl` | 1.5rem | 700 | 页面主标题 |
+| `text-3xl` | 2rem | 800 | 记分大数字 |
+
+字体：`-apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", sans-serif`
+
+### 8.3 间距
+
+基于 4px 单位：4, 8, 12, 16, 20, 24, 32, 40, 48, 64
+
+### 8.4 圆角
+
+| Token | 值 | 用途 |
+|-------|-----|------|
+| `rounded-sm` | 6px | 按钮、输入框 |
+| `rounded-md` | 10px | 小卡片、Badge |
+| `rounded-lg` | 16px | 卡片 |
+| `rounded-xl` | 20px | 大容器、Sheet |
+| `rounded-full` | 9999px | 头像、药丸按钮 |
+
+---
+
+## 9. 状态管理
+
+### 9.1 Store 职责
+
+```typescript
+// 每个 Store 遵循统一模式
+defineStore('name', () => {
+  // State: ref / reactive
+  const items = ref([])
+  const loading = ref(false)
+  const error = ref(null)
+
+  // Getters: 纯计算，不发起请求
+  const getById = (id) => items.value.find(...)
+
+  // Actions: 异步操作，调用 API，更新 State
+  async function fetchAll() { ... }
+  async function create(data) { ... }
+  async function update(id, data) { ... }
+  async function remove(id) { ... }
+
+  return { items, loading, error, getById, fetchAll, create, update, remove }
+})
+```
+
+**Store 不做的事**：
+- 不计算排名 → 交给 `composables/useRankings`
+- 不判断规则 → 交给 `rules/`
+- 不处理 UI 状态 → 交给组件自身的 `ref`
+
+### 9.2 初始化顺序
+
+```
+App.vue onMounted
+  → useAppInit().initAllStores()
+    → Promise.all([
+        clubStore.init(),
+        playersStore.init(),
+        venuesStore.init(),
+        titlesStore.init(),
+        seasonsStore.init(),
+        matchesStore.init(),
+        bookingsStore.init()
+      ])
+```
+
+---
+
+## 10. 扩展指南
+
+### 10.1 添加新页面
+
+1. 在 `client/src/views/` 创建 `.vue` 文件
+2. 在 `client/src/router/index.js` 添加路由
+3. 如需底部 Tab，在 `App.vue` 的 TabBar 配置中添加
+
+### 10.2 添加新赛季规则
+
+1. 在 `client/src/rules/` 创建 `my-rule.js`
+2. 实现 `RuleModule` 接口（见 [4.2](#42-赛季规则引擎)）
+3. 在 `client/src/rules/index.js` 注册
+4. 在 `server/src/services/ruleService.js` 添加对应的后端逻辑（如需要）
+5. 在数据库初始化脚本中确保规则可被引用
+
+### 10.3 添加新称号
+
+1. 在 `server/src/db/migrations/` 添加迁移脚本
+2. 在 `titles` 表插入新称号
+3. 自动称号：在 `client/src/services/titleCalculator.js` 添加计算逻辑
+4. 手动称号：无需额外代码，管理员通过 UI 授予
+
+### 10.4 添加新 API 端点
+
+1. 在 `server/src/services/` 添加业务逻辑
+2. 在 `server/src/controllers/` 添加控制器（薄封装）
+3. 在 `server/src/routes/` 添加路由定义
+4. 在 `server/src/app.js` 挂载路由
+5. 在 `client/src/api/` 添加前端调用
+6. 更新本文档 [7.2](#72-端点清单)
+
+### 10.5 修改设计系统
+
+1. 修改 `client/src/styles/tokens.css` 中的 CSS 变量
+2. 如需新增组件变体，修改 `client/src/components/ui/` 对应组件
+3. 所有引用设计 token 的地方自动生效
+
+---
+
+---
+
+## 附录：开发进度
+
+| 步骤 | 内容 | 状态 |
+|------|------|------|
+| 1 | 项目脚手架 + 设计系统 + 开发文档 | ✅ 完成 |
+| 2 | 原子 UI 组件库 (8 组件) | ✅ 完成 |
+| 3 | ScoreBoard 业务组件 | ✅ 完成 |
+| 4 | ScoringView 记分页 | ✅ 骨架完成 |
+| 5 | HomeView 首页 | ✅ 完成 |
+| 6 | ClubView 俱乐部页 | ✅ 完成 |
+| 7 | SeasonOverview 赛季概览 | ✅ 完成 |
+| 8 | SeasonRounds 轮次记录 | ✅ 完成 |
+| 9 | SeasonRankings 积分榜 | ✅ 完成 |
+| 10 | MatchListView 比赛列表+日历 | ✅ 完成 |
+| 11 | PlayerDetailView 选手详情 | ✅ 完成 |
+| 12 | RuleDashboard 规则面板 | ⏳ 占位 |
+| 13 | VenueView / MatchDetailView | ⏳ 占位 |
+| 14 | 后端 Service 层 | ⏳ 待开发 |
+| 13 | 后端路由统一 | ⏳ 待开发 |
+| 14 | 规则引擎 (后端) | ⏳ 待开发 |
+| 15 | 数据库迁移系统 | ⏳ 待开发 |
+| 16 | 打磨与部署 | ⏳ 待开发 |
+
+### 已交付文件清单（v2.0-beta）
+
+```
+client/src/
+├── styles/tokens.css, global.css
+├── constants/index.js
+├── api/client.js
+├── router/index.js
+├── App.vue, main.js
+├── composables/
+│   ├── useAppInit.js, useTheme.js
+│   ├── useSeasonTheme.js, useSeasonSelector.js
+│   ├── useViewAccent.js, useMatchTab.js, useToast.js
+├── stores/ (8 files)
+├── components/
+│   ├── ui/ (9 files: Button, Card, Badge, Avatar, Input, Sheet, ToastContainer, Skeleton, EmptyState)
+│   ├── match/ScoreBoard.vue
+│   ├── season/S1Rankings.vue, S2Rankings.vue, S3Rankings.vue, S4Rankings.vue, S5Rankings.vue
+│   └── FriendlyStats.vue
+├── rules/ (6 files: index, standard, s2, s3, s4, s5)
+└── views/
+    ├── HomeView.vue               ✅ 完整（俱乐部+赛季+成员+停车）
+    ├── MatchHubView.vue           ✅ 完整（赛季比赛+友谊赛+创建轮次）
+    ├── MatchDetailView.vue        ✅ 完整（各局比分+编辑+删除）
+    ├── ScoringView.vue            ⏳ 占位（记分逻辑待集成）
+    ├── RankingsHubView.vue        ✅ 完整（赛季积分+友谊赛图表）
+    ├── VenueView.vue              ✅ 完整（场地+订场CRUD）
+    ├── PlayerDetailView.vue       ✅ 完整（战绩+称号+装备）
+    ├── SeasonOverview.vue         ✅ 完整
+    ├── SeasonRounds.vue           ✅ 完整（只读历史）
+    ├── SeasonRankings.vue         ⏳ 旧版保留
+    └── RuleDashboard.vue          ⏳ 占位
+
+server/src/
+├── server.js, app.js
+├── config/db.js, config.js
+├── routes/ (9 files)
+├── controllers/ (8 files)
+├── services/scoringService.js
+├── db/schema.sql
+├── middleware/errorHandler.js
+└── utils/response.js, logger.js
+```
+
+*文档版本：v2.0-beta | 最后更新：2026-05-17*

@@ -1,0 +1,16 @@
+node_modules/
+dist/
+*.db
+*.db-journal
+server/uploads/
+.DS_Store
+*.log
+.env
+
+# Playwright
+e2e/screenshots/
+test-results/
+/node_modules/
+package.json
+package-lock.json
+client/dist-old/

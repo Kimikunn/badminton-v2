@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: badminton-v2
+    restart: unless-stopped
+    ports:
+      - "8089:3000"
+    volumes:
+      - ./server/database:/app/server/database
+      - ./server/uploads:/app/server/uploads
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - ADMIN_TOKEN=${ADMIN_TOKEN:-}

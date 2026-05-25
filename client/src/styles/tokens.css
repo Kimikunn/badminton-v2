@@ -1,0 +1,206 @@
+/* ==========================================
+   Design Tokens — BAD Club v2
+   OKLCH color space, Apple-native typography
+   ========================================== */
+
+/* ---------- Light Mode (default) ---------- */
+:root {
+  /* Accent — Sky/cyan */
+  --color-accent: oklch(0.65 0.18 220);
+  --color-accent-hover: oklch(0.60 0.20 220);
+  --color-accent-subtle: oklch(0.65 0.18 220 / 0.12);
+  --color-accent-text: oklch(0.35 0.08 220);
+
+  /* Semantic */
+  --color-success: oklch(0.62 0.19 145);
+  --color-success-subtle: oklch(0.62 0.19 145 / 0.12);
+  --color-warning: oklch(0.70 0.18 80);
+  --color-warning-subtle: oklch(0.70 0.18 80 / 0.12);
+  --color-danger: oklch(0.55 0.22 25);
+  --color-danger-subtle: oklch(0.55 0.22 25 / 0.10);
+
+  /* Neutrals — tinted slightly toward accent (220 hue, 0.005 chroma) */
+  --color-bg:         oklch(0.96 0.005 220);
+  --color-bg-secondary: oklch(0.93 0.005 220);
+  --color-surface:    oklch(1.00 0.002 220);
+  --color-surface-hover: oklch(0.93 0.005 220);
+  --color-border:     oklch(0.88 0.005 220);
+  --color-border-light: oklch(0.92 0.003 220);
+
+  /* Text */
+  --color-text:       oklch(0.18 0.005 220);
+  --color-text-secondary: oklch(0.42 0.005 220);
+  --color-text-muted: oklch(0.58 0.003 220);
+  --color-text-inverse: oklch(0.98 0.002 220);
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.04);
+  --shadow-md: 0 4px 12px oklch(0 0 0 / 0.06);
+  --shadow-lg: 0 8px 24px oklch(0 0 0 / 0.08);
+
+  /* Radii — iOS 26 larger, softer corners */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  /* Spacing (4px grid) */
+  --space-0_5: 2px;
+  --space-1: 4px;
+  --space-1_5: 6px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Icon sizes */
+  --icon-xs: 10px;
+  --icon-sm: 14px;
+  --icon-md: 20px;
+  --icon-lg: 24px;
+  --icon-xl: 28px;
+  --icon-2xl: 32px;
+  --icon-3xl: 40px;
+
+  /* Typography */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", system-ui, sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", "Fira Code", monospace;
+
+  /* Type scale */
+  --text-2xs:  0.625rem;
+  --text-xs:   0.75rem;
+  --text-sm:   0.875rem;
+  --text-base: 1rem;
+  --text-lg:   1.125rem;
+  --text-xl:   1.25rem;
+  --text-2xl:  1.5rem;
+  --text-3xl:  2rem;
+  --text-4xl:  2.5rem;
+  --text-5xl:  3.5rem;
+
+  /* Leading */
+  --leading-tight: 1.2;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.7;
+
+  /* Weight */
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --weight-extrabold: 800;
+
+  /* Toast */
+  --color-toast-bg: oklch(0.25 0.01 220 / 0.92);
+  --color-toast-text: oklch(0.97 0 220);
+  --color-toast-success-bg: oklch(0.50 0.18 145 / 0.92);
+  --color-toast-error-bg: oklch(0.48 0.20 25 / 0.92);
+
+  /* Badge variants */
+  --color-badge-gold: oklch(0.55 0.15 85);
+  --color-badge-gold-bg: oklch(0.85 0.15 85 / 0.20);
+  --color-badge-purple: oklch(0.45 0.18 300);
+  --color-badge-purple-bg: oklch(0.60 0.18 300 / 0.15);
+  --color-badge-blue: oklch(0.45 0.15 250);
+  --color-badge-blue-bg: oklch(0.60 0.15 250 / 0.15);
+  --color-badge-green: oklch(0.40 0.12 150);
+  --color-badge-green-bg: oklch(0.55 0.12 150 / 0.15);
+
+  /* Avatar fallback gradient end */
+  --color-avatar-fallback-end: oklch(0.60 0.15 200);
+
+  /* Danger hover (active state) */
+  --color-danger-hover: oklch(0.48 0.22 25);
+
+  /* S4 season gold accents */
+  --color-s4-gold: oklch(0.75 0.15 80);
+  --color-s4-gold-light: oklch(0.85 0.12 85 / 0.3);
+  --color-s4-gold-lighter: oklch(0.90 0.08 85 / 0.1);
+  --color-s4-gold-border: oklch(0.80 0.12 85);
+
+  /* Medal colors */
+  --color-medal-silver: oklch(0.75 0.02 240);
+  --color-medal-bronze: oklch(0.70 0.10 55);
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --duration-fast: 120ms;
+  --duration-normal: 200ms;
+  --duration-slow: 350ms;
+
+  /* Layout */
+  --header-height: 3.5rem;
+  --tabbar-height: 3.5rem;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* ---------- Dark Mode ---------- */
+.dark {
+  --color-accent: oklch(0.72 0.16 210);
+  --color-accent-hover: oklch(0.78 0.14 210);
+  --color-accent-subtle: oklch(0.72 0.16 210 / 0.15);
+  --color-accent-text: oklch(0.80 0.10 210);
+
+  --color-success: oklch(0.70 0.15 145);
+  --color-success-subtle: oklch(0.70 0.15 145 / 0.15);
+  --color-warning: oklch(0.78 0.15 80);
+  --color-warning-subtle: oklch(0.78 0.15 80 / 0.15);
+  --color-danger: oklch(0.65 0.20 25);
+  --color-danger-subtle: oklch(0.65 0.20 25 / 0.12);
+
+  --color-bg:         oklch(0.14 0.005 220);
+  --color-bg-secondary: oklch(0.17 0.005 220);
+  --color-surface:    oklch(0.20 0.005 220);
+  --color-surface-hover: oklch(0.24 0.005 220);
+  --color-border:     oklch(0.25 0.005 220);
+  --color-border-light: oklch(0.22 0.003 220);
+
+  --color-text:       oklch(0.94 0.002 220);
+  --color-text-secondary: oklch(0.68 0.003 220);
+  --color-text-muted: oklch(0.55 0.005 220);
+  --color-text-inverse: oklch(0.15 0.005 220);
+
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.20);
+  --shadow-md: 0 4px 12px oklch(0 0 0 / 0.30);
+  --shadow-lg: 0 8px 24px oklch(0 0 0 / 0.40);
+
+  /* Toast (dark mode — slightly lighter for contrast) */
+  --color-toast-bg: oklch(0.30 0.01 220 / 0.92);
+  --color-toast-text: oklch(0.97 0 220);
+  --color-toast-success-bg: oklch(0.55 0.18 145 / 0.92);
+  --color-toast-error-bg: oklch(0.55 0.20 25 / 0.92);
+
+  /* Badge variants (dark mode — brighter) */
+  --color-badge-gold: oklch(0.70 0.14 85);
+  --color-badge-gold-bg: oklch(0.75 0.14 85 / 0.20);
+  --color-badge-purple: oklch(0.65 0.18 300);
+  --color-badge-purple-bg: oklch(0.55 0.18 300 / 0.20);
+  --color-badge-blue: oklch(0.65 0.15 250);
+  --color-badge-blue-bg: oklch(0.55 0.15 250 / 0.20);
+  --color-badge-green: oklch(0.60 0.12 150);
+  --color-badge-green-bg: oklch(0.50 0.12 150 / 0.20);
+
+  /* Avatar fallback gradient end */
+  --color-avatar-fallback-end: oklch(0.55 0.15 200);
+
+  /* Danger hover */
+  --color-danger-hover: oklch(0.55 0.22 25);
+
+  /* S4 season gold accents (dark mode — slightly brighter) */
+  --color-s4-gold: oklch(0.80 0.14 80);
+  --color-s4-gold-light: oklch(0.75 0.10 85 / 0.25);
+  --color-s4-gold-lighter: oklch(0.70 0.06 85 / 0.08);
+  --color-s4-gold-border: oklch(0.70 0.10 85);
+
+  /* Medal colors (dark mode — brighter) */
+  --color-medal-silver: oklch(0.80 0.02 240);
+  --color-medal-bronze: oklch(0.78 0.10 55);
+}
