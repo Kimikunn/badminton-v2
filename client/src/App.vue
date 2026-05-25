@@ -1,10 +1,14 @@
 <script setup>
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Home, Swords, Trophy, MapPin, ParkingCircle, Sun, Moon, SunMoon } from 'lucide-vue-next'
+import { Home, Swords, Trophy, MapPin, ParkingCircle, Sun, Moon, SunMoon, FlaskConical, RotateCcw } from 'lucide-vue-next'
 import { useTheme } from '@/composables/useTheme'
 import { useAppInit } from '@/composables/useAppInit'
 import { useSeasonTheme } from '@/composables/useSeasonTheme'
+import { useToast } from '@/composables/useToast'
+import { api } from '@/api/client'
+
+const isTestMode = import.meta.env.VITE_TEST_MODE === 'true'
 import ToastContainer from '@/components/ui/ToastContainer.vue'
 import ConfirmSheet from '@/components/ui/ConfirmSheet.vue'
 import AdminTokenSheet from '@/components/ui/AdminTokenSheet.vue'
@@ -15,9 +19,23 @@ const { isDark, themeMode, initTheme, destroyTheme, toggleTheme } = useTheme()
 const { isInitialized, isInitializing, initError, initAllStores } = useAppInit()
 const { activeSeasonId } = useSeasonTheme()
 
+const toast = useToast()
 const showParking = ref(false)
+const showDebug = ref(false)
+const resetting = ref(false)
 const parkingPayUrl = 'https://s.keytop.cn/ra7ttv'
 const alipayUrl = `alipays://platformapi/startapp?appId=20000067&url=${encodeURIComponent(parkingPayUrl)}`
+
+async function resetTestData() {
+  resetting.value = true
+  try {
+    const res = await api.post('/admin/reset-db', {})
+    toast.show(res.message || '数据已重置', 'success')
+  } catch (e) {
+    toast.show(e.message || '重置失败', 'error')
+  }
+  resetting.value = false
+}
 
 const showTab = computed(() => !route.meta.hideTab)
 
@@ -122,8 +140,19 @@ onMounted(async () => {
         class="sticky top-0 z-50 flex items-center justify-between h-[var(--header-height)] px-4 transition-transform duration-300 ease-out liquid-header"
         :class="headerHidden ? '-translate-y-full' : 'translate-y-0'"
       >
-        <h1 class="font-display text-xl font-bold tracking-tight">BAD Club</h1>
+        <h1 class="font-display text-xl font-bold tracking-tight flex items-center gap-2">
+          BAD Club
+          <span v-if="isTestMode" class="text-3xs font-mono font-normal px-1.5 py-0.5 rounded-full bg-warning-subtle text-warning border border-warning/30">TEST</span>
+        </h1>
         <div class="flex gap-2">
+          <button
+            v-if="isTestMode"
+            class="w-9 h-9 flex items-center justify-center border-none rounded-full bg-warning-subtle text-warning cursor-pointer transition-all duration-fast ease-out active:scale-90"
+            @click="showDebug = true"
+            title="测试工具"
+          >
+            <FlaskConical :size="18" />
+          </button>
           <button
             class="w-9 h-9 flex items-center justify-center border-none rounded-full bg-surface-hover text-fg-secondary cursor-pointer transition-all duration-fast ease-out active:scale-90 active:bg-line"
             @click="showParking = true"
@@ -187,6 +216,39 @@ onMounted(async () => {
               <!-- Brand color: WeChat #07C160 -->
               <a :href="parkingPayUrl" target="_blank" class="block w-full py-3 rounded-lg text-center font-medium text-white border-none cursor-pointer bg-[#07C160] mb-2 transition-transform duration-fast active:scale-[0.97]">川体小程序缴费</a>
               <button aria-label="关闭停车缴费" class="block w-full py-3 rounded-lg text-center font-medium border-none cursor-pointer bg-surface-hover text-fg-secondary transition-transform duration-fast active:scale-[0.97]" @click="showParking = false">关闭</button>
+            </div>
+          </transition>
+        </div>
+      </transition>
+    </Teleport>
+
+    <!-- Debug panel (test mode only) -->
+    <Teleport to="body" v-if="isTestMode">
+      <transition name="sheet-fade">
+        <div v-if="showDebug" class="fixed inset-0 z-[200] flex items-end justify-center bg-black/40 backdrop-blur-sm" @click.self="showDebug = false">
+          <transition name="sheet-slide">
+            <div v-if="showDebug" class="w-full max-w-[480px] liquid-sheet px-5 pt-4 pb-[calc(var(--space-5)+var(--safe-bottom))]">
+              <div class="w-8 h-1 bg-fg-muted/25 rounded-full mx-auto mb-4"></div>
+              <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                <FlaskConical :size="20" class="text-warning" />测试工具
+              </h3>
+
+              <div class="flex flex-col gap-3">
+                <div class="p-3 rounded-lg bg-warning-subtle border border-warning/20">
+                  <p class="text-sm font-medium text-warning mb-1">恢复生产数据</p>
+                  <p class="text-xs text-fg-muted mb-3">将测试数据库重置为当前生产数据副本。此操作不可撤销。</p>
+                  <button
+                    class="w-full py-2.5 rounded-lg text-center font-medium text-white border-none cursor-pointer bg-warning transition-transform duration-fast active:scale-[0.97] disabled:opacity-50"
+                    :disabled="resetting"
+                    @click="resetTestData"
+                  >
+                    <RotateCcw :size="16" class="inline mr-1" :class="{ 'animate-spin': resetting }" />
+                    {{ resetting ? '恢复中...' : '从生产环境恢复' }}
+                  </button>
+                </div>
+              </div>
+
+              <button class="block w-full py-3 rounded-lg text-center font-medium border-none cursor-pointer bg-surface-hover text-fg-secondary transition-transform duration-fast active:scale-[0.97] mt-4" @click="showDebug = false">关闭</button>
             </div>
           </transition>
         </div>

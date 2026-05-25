@@ -72,6 +72,13 @@ app.get('*', (req, res, next) => {
   });
 });
 
+// Test-only admin routes (data reset etc.)
+if (process.env.ENABLE_TEST_FEATURES === 'true') {
+  const adminRoutes = require('./routes/admin');
+  app.use('/api/admin', adminRoutes);
+  console.log('[App] 测试功能已启用: /api/admin');
+}
+
 // Error handling
 app.use(notFoundHandler);
 app.use(errorHandler);

@@ -10,7 +10,8 @@ RUN cd server && npm ci --omit=dev
 COPY server/src/ ./server/src/
 
 # Frontend build (already built)
-COPY client/dist/ ./client/dist/
+ARG BUILD_DIR=dist
+COPY client/${BUILD_DIR}/ ./client/dist/
 
 # Uploads directory
 RUN mkdir -p /app/server/uploads /app/server/database

@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        BUILD_DIR: dist-test
     container_name: badminton-v2-test
     restart: unless-stopped
     ports:
@@ -15,3 +17,4 @@ services:
       - PORT=3000
       - DB_PATH=/app/server/database/test.db
       - ADMIN_TOKEN=${ADMIN_TOKEN:-}
+      - ENABLE_TEST_FEATURES=true
