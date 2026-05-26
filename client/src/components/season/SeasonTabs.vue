@@ -1,19 +1,26 @@
 <script setup>
 import { computed } from 'vue'
 import { useSeasonTheme } from '@/composables/useSeasonTheme'
+import { Trash2 } from 'lucide-vue-next'
 
 const props = defineProps({
   seasons: { type: Array, default: () => [] },
-  selectedId: { type: String, default: '' }
+  selectedId: { type: String, default: '' },
+  deletable: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['select'])
+const emit = defineEmits(['select', 'delete'])
 const { getSeasonColor } = useSeasonTheme()
 
 const visibleSeasons = computed(() => props.seasons || [])
 
 function dotStyle(season) {
   return { '--season-tab-color': getSeasonColor(season.color).light }
+}
+
+function onDelete(event, season) {
+  event.stopPropagation()
+  emit('delete', season)
 }
 </script>
 
@@ -31,6 +38,14 @@ function dotStyle(season) {
         <span></span>
       </span>
       <span class="season-tab-label">{{ season.name }}</span>
+      <span
+        v-if="deletable"
+        class="season-tab-del"
+        @click="onDelete($event, season)"
+        title="删除赛季"
+      >
+        <Trash2 :size="12" />
+      </span>
     </button>
   </div>
 </template>
@@ -90,4 +105,13 @@ function dotStyle(season) {
 .season-tab-label {
   white-space: nowrap;
 }
+
+.season-tab-del {
+  opacity: 0.5;
+  display: inline-flex;
+  align-items: center;
+  transition: opacity var(--duration-fast);
+}
+.season-tab:hover .season-tab-del { opacity: 1; }
+.season-tab-del:hover { color: var(--color-danger); }
 </style>

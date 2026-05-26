@@ -26,7 +26,6 @@ const localScoreB = computed({
   set: value => emit('update:scoreB', value)
 })
 
-const winsNeeded = computed(() => Math.ceil(props.bestOf / 2))
 const canInput = computed(() => props.hasCurrentGame && !props.isMatchOver)
 </script>
 
@@ -35,7 +34,7 @@ const canInput = computed(() => props.hasCurrentGame && !props.isMatchOver)
     <div class="flex flex-col items-center gap-2 flex-1 max-w-[140px]">
       <div class="flex gap-1.5">
         <span
-          v-for="i in winsNeeded"
+          v-for="i in bestOf"
           :key="'a'+i"
           class="w-2.5 h-2.5 rounded-full transition-colors duration-fast"
           :class="i <= matchScore.scoreA ? 'bg-accent' : 'bg-line'"
@@ -65,7 +64,7 @@ const canInput = computed(() => props.hasCurrentGame && !props.isMatchOver)
     <div class="flex flex-col items-center gap-2 flex-1 max-w-[140px]">
       <div class="flex gap-1.5">
         <span
-          v-for="i in winsNeeded"
+          v-for="i in bestOf"
           :key="'b'+i"
           class="w-2.5 h-2.5 rounded-full transition-colors duration-fast"
           :class="i <= matchScore.scoreB ? 'bg-accent' : 'bg-line'"

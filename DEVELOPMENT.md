@@ -134,7 +134,7 @@ App Shell
 ```
 
 - **TabBar** 始终显示，记分页和比赛详情页除外 (`meta.hideTab: true`)
-- **测试环境**：Header 增加 TEST 徽标 + 烧瓶按钮（调试面板含数据恢复功能），通过 `VITE_TEST_MODE` 编译时控制
+- **测试环境**：使用同一套业务代码；Header 额外显示 TEST 徽标 + 烧瓶按钮（仅恢复生产数据）。赛季创建按正式功能开发，但当前只在测试构建通过 `VITE_ENABLE_SEASON_CREATE=true` 打开。
 
 ### 2.5 双环境
 
@@ -142,27 +142,35 @@ App Shell
 |---|---|---|
 | 构建 | `npm run build` → `dist/` | `npm run build:test` → `dist-test/` |
 | DB | `badminton.db` | `test.db` |
-| 调试功能 | 无 | TEST 徽标 + 数据恢复 |
+| 调试功能 | 无 | TEST 徽标 + 烧瓶恢复数据 |
+| 功能开关 | 赛季创建默认关闭 | `VITE_ENABLE_SEASON_CREATE=true` |
 | 后端 | 标准路由 | 额外 `/api/admin/reset-db` |
 
 区分机制：后端 `ENABLE_TEST_FEATURES=true` 条件注册路由；前端 `VITE_TEST_MODE=true` 编译时 `v-if`。
 
 测试功能控制原则：
 
-- 前端只维护一套源码，测试环境可见功能通过 `v-if="isTestMode"` 控制。
+- 测试环境与正式环境使用同一套业务代码，差异应来自数据隔离和功能开关。
+- 前端只维护一套源码，只有测试运维能力通过 `v-if="isTestMode"` 控制；业务灰度能力使用独立功能开关。
 - `isTestMode` 来自 `import.meta.env.VITE_TEST_MODE === 'true'`。
+- 赛季创建入口来自 `import.meta.env.VITE_ENABLE_SEASON_CREATE === 'true'`。
 - `VITE_TEST_MODE` 是 Vite **构建时变量**，所以生产和测试必须分别构建：
   ```bash
   # 测试
-  cd client && npm run build:test   # 输出 dist-test/
+  cd client && npm run build:test   # 输出 dist-test/，包含 VITE_TEST_MODE=true 和 VITE_ENABLE_SEASON_CREATE=true
 
   # 生产
-  cd client && npm run build        # 输出 dist/
+  cd client && npm run build        # 输出 dist/，默认不显示测试工具，也不显示创建赛季
   ```
 - 测试环境 Docker 使用 `BUILD_DIR=dist-test`，生产环境默认使用 `dist`。
 - 测试功能必须有前后端双保险：
   - 前端：`VITE_TEST_MODE=true` 才显示 TEST 徽标和测试工具。
   - 后端：`ENABLE_TEST_FEATURES=true` 且当前数据库必须是测试库，才允许注册/执行测试管理接口。
+- 测试运维入口只控制“测试运维能力是否可见”。烧瓶按钮只放测试运维功能；业务功能放回对应业务页面，并通过独立功能开关灰度：
+  - `components/admin/AdminToolsSheet.vue`：测试运维工具容器，目前只恢复生产数据。
+  - `views/MatchHubView.vue`：创建赛季按钮放在比赛页赛季选择区域，当前仅测试构建打开。
+  - `components/season/SeasonPresetManager.vue`：按固定预设创建赛季，可未来接入正式管理后台。
+  - `constants/seasonPresets.js`：S1-S5 创建赛季所需的固定规则元数据。
 - 测试构建产物 `client/dist-test/` 是构建产物，不提交 Git。
 
 ---

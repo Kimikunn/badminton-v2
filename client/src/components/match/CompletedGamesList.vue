@@ -15,7 +15,7 @@ const emit = defineEmits(['edit-game', 'revert-last'])
 
 <template>
   <Card v-if="games.length > 0" padding="sm">
-    <div class="flex gap-2 overflow-x-auto pb-1">
+    <div class="flex gap-2 overflow-x-auto pb-1 items-start">
       <div
         v-for="game in games"
         :key="game.id"
@@ -43,7 +43,7 @@ const emit = defineEmits(['edit-game', 'revert-last'])
 
       <div
         v-if="hasCurrentGame && !isMatchOver"
-        class="flex flex-col items-center p-2 px-3 rounded-sm min-w-[52px] border border-dashed border-line-light opacity-60"
+        class="flex flex-col items-center p-2 px-3 rounded-sm min-w-[68px] whitespace-nowrap border border-dashed border-line-light opacity-60"
       >
         <span class="text-xs text-fg-muted font-medium">G{{ games.length + 1 }}</span>
         <span class="text-sm font-semibold text-fg">进行中</span>

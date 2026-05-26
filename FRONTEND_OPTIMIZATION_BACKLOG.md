@@ -311,6 +311,35 @@
 
 ---
 
+### P1-07：预设赛季创建入口功能开关
+
+- **状态**：DONE
+- **问题位置**：
+  - `client/src/App.vue`
+  - `client/src/components/admin/AdminToolsSheet.vue`
+  - `client/src/components/season/SeasonPresetManager.vue`
+  - `client/src/stores/seasons.js`
+- **现状**：
+  - 测试环境已有烧瓶入口，但只包含“从生产环境恢复”。
+  - 测试环境无法直接创建 S1-S5 预设赛季，必须依赖已有 mock 数据或手工调 API。
+  - 如果把所有测试功能组件都用 `Test*` 命名，未来同一能力迁入正式管理后台时需要重命名/搬迁，容易引入重复文件。
+- **目标**：
+  - 烧瓶入口只保留恢复生产数据。
+  - 比赛页增加自然的“+ 创建赛季”按钮，不新增测试/后台感的卡片或说明。
+  - 创建赛季按真实上线标准开发，但当前通过 `VITE_ENABLE_SEASON_CREATE` 功能开关只在测试环境打开；未来正式上线只改开关。
+  - 创建时复用正式赛季 API，默认固定 4 名成员、固定规则、固定总轮次和赛制，仅允许确认信息与选择颜色。
+  - 组件按业务能力命名：`VITE_TEST_MODE` 只控制测试运维入口，不控制业务功能；创建赛季由独立功能开关控制，不把可复用业务组件命名为 `Test*`。
+- **验证方式**：
+  - Playwright 打开测试环境烧瓶入口，确认只包含恢复生产数据，不包含创建赛季。
+  - Playwright 打开测试比赛页，确认可见“+ 创建赛季”和 S1-S5 预设赛季。
+  - Playwright 打开正式比赛页，确认当前不可见“+ 创建赛季”。
+  - 选择 S1 后确认信息包含：固定 4 人、7 轮、三局两胜。
+  - 点击确认创建后拦截 `POST /api/seasons`，校验返回赛季为 `ruleId=standard` 且 participants 为 4 人。
+  - 测试结束删除刚创建的赛季，保持测试库稳定。
+- **风险等级**：中。
+
+---
+
 ### P2-01：同步更新项目文档
 
 - **状态**：TODO
@@ -357,9 +386,10 @@
 5. P1-03：拆分 `ScoringView.vue`。
 6. P1-04：拆分 `MatchHubView.vue`。
 7. P1-02：Admin Token 输入体验。
-8. P1-06：记分页保存状态。
-9. P2-02：增强 Playwright 回归结构。
-10. P2-01：同步文档。
+8. P1-07：测试环境预设赛季创建入口。
+9. P1-06：记分页保存状态。
+10. P2-02：增强 Playwright 回归结构。
+11. P2-01：同步文档。
 
 ---
 
@@ -391,6 +421,49 @@
 ---
 
 ## 5. 完成记录
+
+### 2026-05-26：P1-07 - 预设赛季创建入口功能开关
+
+- 状态：DONE
+- 修改文件：
+  - `client/src/App.vue`
+  - `client/src/components/admin/AdminToolsSheet.vue`
+  - `client/src/components/season/SeasonPresetManager.vue`
+  - `client/src/constants/seasonPresets.js`
+  - `client/src/stores/seasons.js`
+  - `client/src/composables/useAppInit.js`
+  - `playwright.config.js`
+  - `e2e/season-management.spec.js`
+  - `AGENTS.md`
+  - `DEVELOPMENT.md`
+- 优化前：
+  - 测试环境烧瓶入口只有“从生产环境恢复”。
+  - 不能在 UI 内直接创建 S1-S5 预设赛季。
+  - `initAllStores({ force: true })` 被全局已初始化守卫提前拦截，测试库恢复/创建后存在刷新不彻底风险。
+- 纠正后的优化后：
+  - 烧瓶入口仍只保留“恢复生产数据”。
+  - 比赛页新增自然的“+ 创建赛季”按钮，位置在赛季选择区域旁边。
+  - 创建赛季按正式功能结构实现，但当前通过 `VITE_ENABLE_SEASON_CREATE` 只在测试构建打开，生产构建暂不显示。
+  - S1-S5 规则、轮次、赛制按固定预设填充；成员默认取当前 4 名成员；创建前展示确认信息；颜色可选择。
+  - 可复用组件不使用 `Test*` 文件名：测试运维入口由 `VITE_TEST_MODE` 控制，创建赛季由 `VITE_ENABLE_SEASON_CREATE` 控制。
+  - `seasonsStore` 新增 `createSeason/deleteSeason`，创建走正式 `/api/seasons`。
+  - 修正 `useAppInit` 的 `force` 逻辑，强制刷新不再被已初始化状态拦截。
+- Playwright / 验证：
+  - `PLAYWRIGHT_BASE_URL=http://127.0.0.1:8090 PLAYWRIGHT_EXPECT_SEASON_CREATE=1 PLAYWRIGHT_ENABLE_SEASON_MANAGEMENT_WRITE=1 npx playwright test e2e/season-management.spec.js --project=light`：通过。
+  - `PLAYWRIGHT_BASE_URL=http://127.0.0.1:8089 PLAYWRIGHT_EXPECT_SEASON_CREATE_HIDDEN=1 npx playwright test e2e/season-management.spec.js --project=light`：通过，未写入生产数据。
+  - 验证内容：打开测试工具确认不含创建赛季；测试比赛页可见“+ 创建赛季”；生产比赛页不可见“+ 创建赛季”；测试环境确认 S1 信息并创建赛季；断言 `POST /api/seasons` 返回 4 名 participants 和 `ruleId=standard`；测试结束删除创建的赛季。
+  - `PLAYWRIGHT_BASE_URL=http://127.0.0.1:8089 npx playwright test e2e/smoke.spec.js --project=light`：通过，4 passed。
+- 构建/测试：
+  - `cd client && npm run build`：通过。
+  - `cd client && npm run build:test`：通过。
+  - `cd server && npm test`：未涉及后端代码，本项未执行。
+- 部署：
+  - `docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build`：通过。
+  - `docker compose -p badminton-v2-prod up -d --build`：通过。
+  - `curl -fsS http://127.0.0.1:8089/api/health`：通过。
+  - `curl -fsS http://127.0.0.1:8090/api/health`：通过。
+- 剩余风险：
+  - 本次先完成“创建赛季”。删除赛季 UI 仍需作为下一步单独补齐，避免和创建流程混在一起。
 
 ### 2026-05-25：P0-01 - 修复 `fetchRounds()` 查询参数传递
 

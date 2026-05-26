@@ -1,17 +1,19 @@
 <script setup>
-import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
+import { computed, defineAsyncComponent, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Home, Swords, Trophy, MapPin, ParkingCircle, Sun, Moon, SunMoon, FlaskConical, RotateCcw } from 'lucide-vue-next'
+import { Home, Swords, Trophy, MapPin, ParkingCircle, Sun, Moon, SunMoon, FlaskConical } from 'lucide-vue-next'
 import { useTheme } from '@/composables/useTheme'
 import { useAppInit } from '@/composables/useAppInit'
 import { useSeasonTheme } from '@/composables/useSeasonTheme'
-import { useToast } from '@/composables/useToast'
-import { api } from '@/api/client'
 
 const isTestMode = import.meta.env.VITE_TEST_MODE === 'true'
 import ToastContainer from '@/components/ui/ToastContainer.vue'
 import ConfirmSheet from '@/components/ui/ConfirmSheet.vue'
 import AdminTokenSheet from '@/components/ui/AdminTokenSheet.vue'
+
+const AdminToolsSheet = isTestMode
+  ? defineAsyncComponent(() => import('@/components/admin/AdminToolsSheet.vue'))
+  : null
 
 const route = useRoute()
 const router = useRouter()
@@ -19,25 +21,10 @@ const { isDark, themeMode, initTheme, destroyTheme, toggleTheme } = useTheme()
 const { isInitialized, isInitializing, initError, initAllStores } = useAppInit()
 const { activeSeasonId } = useSeasonTheme()
 
-const toast = useToast()
 const showParking = ref(false)
 const showDebug = ref(false)
-const resetting = ref(false)
 const parkingPayUrl = 'https://s.keytop.cn/ra7ttv'
 const alipayUrl = `alipays://platformapi/startapp?appId=20000067&url=${encodeURIComponent(parkingPayUrl)}`
-
-async function resetTestData() {
-  resetting.value = true
-  try {
-    const res = await api.post('/admin/reset-db', {})
-    toast.show(res.data?.message || '数据已重置', 'success')
-    await initAllStores({ force: true })
-    showDebug.value = false
-  } catch (e) {
-    toast.show(e.message || '重置失败', 'error')
-  }
-  resetting.value = false
-}
 
 const showTab = computed(() => !route.meta.hideTab)
 
@@ -224,38 +211,7 @@ onMounted(async () => {
       </transition>
     </Teleport>
 
-    <!-- Debug panel (test mode only) -->
-    <Teleport to="body" v-if="isTestMode">
-      <transition name="sheet-fade">
-        <div v-if="showDebug" class="fixed inset-0 z-[200] flex items-end justify-center bg-black/40 backdrop-blur-sm" @click.self="showDebug = false">
-          <transition name="sheet-slide">
-            <div v-if="showDebug" class="w-full max-w-[480px] liquid-sheet px-5 pt-4 pb-[calc(var(--space-5)+var(--safe-bottom))]">
-              <div class="w-8 h-1 bg-fg-muted/25 rounded-full mx-auto mb-4"></div>
-              <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
-                <FlaskConical :size="20" class="text-warning" />测试工具
-              </h3>
-
-              <div class="flex flex-col gap-3">
-                <div class="p-3 rounded-lg bg-warning-subtle border border-warning/20">
-                  <p class="text-sm font-medium text-warning mb-1">恢复生产数据</p>
-                  <p class="text-xs text-fg-muted mb-3">将测试数据库重置为当前生产数据副本。此操作不可撤销。</p>
-                  <button
-                    class="w-full py-2.5 rounded-lg text-center font-medium text-white border-none cursor-pointer bg-warning transition-transform duration-fast active:scale-[0.97] disabled:opacity-50"
-                    :disabled="resetting"
-                    @click="resetTestData"
-                  >
-                    <RotateCcw :size="16" class="inline mr-1" :class="{ 'animate-spin': resetting }" />
-                    {{ resetting ? '恢复中...' : '从生产环境恢复' }}
-                  </button>
-                </div>
-              </div>
-
-              <button class="block w-full py-3 rounded-lg text-center font-medium border-none cursor-pointer bg-surface-hover text-fg-secondary transition-transform duration-fast active:scale-[0.97] mt-4" @click="showDebug = false">关闭</button>
-            </div>
-          </transition>
-        </div>
-      </transition>
-    </Teleport>
+    <AdminToolsSheet v-if="isTestMode && AdminToolsSheet" :show="showDebug" @close="showDebug = false" />
   </div>
 </template>
 

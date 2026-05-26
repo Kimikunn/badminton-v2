@@ -75,6 +75,21 @@ export const useSeasonsStore = defineStore('seasons', () => {
     return res.success ? res.data : null
   }
 
+  async function createSeason(data) {
+    const res = await api.post('/seasons', data)
+    if (res.success && res.data) upsertSeason(res.data)
+    return res.success ? res.data : null
+  }
+
+  async function deleteSeason(seasonId) {
+    const res = await api.delete(`/seasons/${seasonId}`)
+    if (res.success) {
+      seasons.value = seasons.value.filter(s => s.id !== seasonId)
+      rounds.value = rounds.value.filter(r => r.seasonId !== seasonId)
+    }
+    return res.success
+  }
+
   async function updateRound(roundId, data) {
     const res = await api.put(`/rounds/${roundId}`, data)
     if (res.success && res.data) upsertRound(res.data)
@@ -84,7 +99,7 @@ export const useSeasonsStore = defineStore('seasons', () => {
   async function deleteRound(roundId) {
     const res = await api.delete(`/rounds/${roundId}`)
     if (res.success) rounds.value = rounds.value.filter(r => r.id !== roundId)
-    return res.success ? res.data : null
+    return res.success
   }
 
   async function recordAction(seasonId, actionId, payload = {}) {
@@ -96,6 +111,6 @@ export const useSeasonsStore = defineStore('seasons', () => {
   return {
     seasons, rounds, loading, initialized, currentSeason, currentRound,
     getSeasonById, getRoundsBySeason, getRoundById,
-    init, fetchRounds, createRound, updateRound, deleteRound, recordAction
+    init, fetchRounds, createSeason, deleteSeason, createRound, updateRound, deleteRound, recordAction
   }
 })

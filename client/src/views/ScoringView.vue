@@ -183,7 +183,6 @@ async function handleEndGame() {
       currentGame.value.id, scoreA.value, scoreB.value, selectedWinner.value,
       { pierceTeam: pierceTeam.value || null }
     )
-    await seasonsStore.init({ force: true })
     const notices = getRuleEventNotices(res.data?.ruleEvents)
     toast.show(notices.length ? notices.join('，') : '本局结束', 'success')
     showEndConfirm.value = false
@@ -224,7 +223,6 @@ async function saveEdit() {
       editForm.value.winner,
       { pierceTeam: editForm.value.pierceTeam || null }
     )
-    await seasonsStore.init({ force: true })
     const notices = getRuleEventNotices(res.data?.ruleEvents)
     toast.show(notices.length ? notices.join('，') : '已更新', 'success')
     showEdit.value = false

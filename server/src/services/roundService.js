@@ -2,7 +2,7 @@ const { prepare, transaction } = require('../config/db');
 const { createRoundWithMatches, validateRoundPairings } = require('./roundCreationService');
 const { deleteRuleEventsForRound } = require('./ruleEventService');
 const { buildUpdate } = require('../utils/updateBuilder');
-const { MATCH_STATUS, ROUND_STATUS } = require('../constants');
+const { MATCH_STATUS, ROUND_STATUS, SEASON_STATUS } = require('../constants');
 
 function formatRound(row) {
   return {
@@ -76,6 +76,23 @@ function deleteRound(round) {
     }
     prepare('DELETE FROM matches WHERE round_id=?').run(round.id);
     prepare('DELETE FROM rounds WHERE id=?').run(round.id);
+
+    // After deletion, sync season status
+    const remaining = prepare('SELECT * FROM rounds WHERE season_id=?').all(round.season_id);
+    if (remaining.length === 0) {
+      prepare('UPDATE seasons SET status=? WHERE id=?').run(SEASON_STATUS.PENDING, round.season_id);
+    } else {
+      const season = prepare('SELECT * FROM seasons WHERE id=?').get(round.season_id);
+      if (!season) return;
+      const allDone = remaining.length >= season.total_rounds &&
+        remaining.every(r => r.status === ROUND_STATUS.COMPLETED);
+      if (allDone && season.status !== SEASON_STATUS.COMPLETED) {
+        prepare('UPDATE seasons SET status=? WHERE id=?').run(SEASON_STATUS.COMPLETED, round.season_id);
+      } else if (!allDone && season.status !== SEASON_STATUS.ONGOING) {
+        prepare('UPDATE seasons SET status=? WHERE id=?').run(SEASON_STATUS.ONGOING, round.season_id);
+      }
+    }
+
     return { deleted: true, roundNo: round.round_no, matchCount: matches.length };
   });
 }

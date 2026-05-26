@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { api } from '@/api/client'
 import { STATUS, DEFAULT_BEST_OF } from '@/constants'
+import { useSeasonsStore } from './seasons'
 
 export const useMatchesStore = defineStore('matches', () => {
   const matches = ref([])
@@ -146,12 +147,14 @@ export const useMatchesStore = defineStore('matches', () => {
     await api.put(`/games/${gameId}/score`, { scoreA, scoreB })
     const res = await api.post(`/games/${gameId}/end`, { winner, rulePayload })
     await init({ force: true })
+    await useSeasonsStore().init({ force: true })
     return res
   }
 
   async function revertGame(gameId) {
     const res = await api.post(`/games/${gameId}/revert`)
     await init({ force: true })
+    await useSeasonsStore().init({ force: true })
     return res
   }
 
@@ -160,6 +163,7 @@ export const useMatchesStore = defineStore('matches', () => {
       scoreA, scoreB, winner, rulePayload
     })
     await init({ force: true })
+    await useSeasonsStore().init({ force: true })
     return res
   }
 

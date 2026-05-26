@@ -23,11 +23,27 @@ import Input from '@/components/ui/Input.vue'
 import Sheet from '@/components/ui/Sheet.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import SeasonTabs from '@/components/season/SeasonTabs.vue'
+import SeasonPresetManager from '@/components/season/SeasonPresetManager.vue'
+import { SEASON_PRESETS } from '@/constants/seasonPresets'
 import { BarChart3, Dumbbell, Trash2, RefreshCw, Dice5 } from 'lucide-vue-next'
 import { useToast } from '@/composables/useToast'
 import { useMatchTab } from '@/composables/useMatchTab'
 import { useConfirm } from '@/composables/useConfirm'
 
+const isTestMode = import.meta.env.VITE_TEST_MODE === 'true'
+const canCreateSeason = import.meta.env.VITE_ENABLE_SEASON_CREATE === 'true'
+const deletingSeasonId = ref(null)
+const hasNextSeasonPreset = computed(() => {
+  if (!canCreateSeason) return false
+  const existing = new Set(seasonsStore.seasons.map(s => s.ruleId))
+  const next = SEASON_PRESETS.find(p => !existing.has(p.ruleId))
+  if (!next) return false
+  const idx = SEASON_PRESETS.indexOf(next)
+  if (idx === 0) return true
+  const prevPreset = SEASON_PRESETS[idx - 1]
+  const prevSeason = seasonsStore.seasons.find(s => s.ruleId === prevPreset.ruleId)
+  return prevSeason && prevSeason.status === 'completed'
+})
 const router = useRouter()
 const seasonsStore = useSeasonsStore()
 const matchesStore = useMatchesStore()
@@ -116,6 +132,28 @@ function selectSeason(id) {
   if (s?.color) setViewAccent(getSeasonColor(s.color))
 }
 
+async function handleDeleteSeason(season) {
+  const ok = await confirmAction({
+    title: `删除 ${season.name}`,
+    message: `确认删除「${season.name}」及其所有轮次和比赛？\n此操作不可撤销。`,
+    confirmText: '删除',
+    variant: 'danger'
+  })
+  if (!ok) return
+
+  deletingSeasonId.value = season.id
+  try {
+    await seasonsStore.deleteSeason(season.id)
+    matchesStore.init({ force: true })
+    seasonsStore.init({ force: true })
+    toast.show(`已删除 ${season.name}`, 'success')
+  } catch (e) {
+    toast.show('删除失败', 'error')
+  } finally {
+    deletingSeasonId.value = null
+  }
+}
+
 const canCreate = computed(() => {
   if (!currentSeason.value || currentSeason.value.status==='completed') return false
   const maxRound = Math.max(0, ...rounds.value.map(r=>r.roundNo))
@@ -129,6 +167,7 @@ const showCreate = ref(false)
 const creating = ref(false)
 const previewPairings = ref([])
 const pendingRoundDice = ref(null)
+const showSeasonManager = ref(false)
 
 function getS5RoundDice(roundNo) {
   return currentSeason.value?.comebackData?.s5?.roundDice?.[String(roundNo)] || null
@@ -291,7 +330,8 @@ onMounted(() => {
     <!-- ====== SEASON TAB ====== -->
     <template v-if="parentTab==='season'">
       <!-- Season selector -->
-      <SeasonTabs :seasons="seasonsStore.seasons" :selected-id="selectedSeasonId" @select="selectSeason" />
+      <SeasonTabs :seasons="seasonsStore.seasons" :selected-id="selectedSeasonId" :deletable="isTestMode" @select="selectSeason" @delete="handleDeleteSeason" />
+      <Button v-if="hasNextSeasonPreset" variant="secondary" size="sm" block @click="showSeasonManager = true">+ 创建赛季</Button>
 
       <EmptyState v-if="!currentSeason" icon="BarChart3" title="暂无赛季" />
 
@@ -412,6 +452,10 @@ onMounted(() => {
             <Button variant="primary" size="md" @click="saveRoundEdit">保存</Button>
           </div>
         </div>
+      </Sheet>
+
+      <Sheet v-if="canCreateSeason" :show="showSeasonManager" title="创建赛季" @close="showSeasonManager = false">
+        <SeasonPresetManager @created="showSeasonManager = false" @close="showSeasonManager = false" />
       </Sheet>
     </template>
 
