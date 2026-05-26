@@ -63,6 +63,13 @@ app.use('/api/titles', titlesRoutes);
 app.use('/api/bookings', bookingsRoutes);
 app.use('/api/upload', uploadRoutes);
 
+// Test-only admin routes (data reset etc.)
+if (process.env.ENABLE_TEST_FEATURES === 'true') {
+  const adminRoutes = require('./routes/admin');
+  app.use('/api/admin', adminRoutes);
+  console.log('[App] 测试功能已启用: /api/admin');
+}
+
 // SPA fallback: non-API routes serve index.html
 const clientIndex = path.join(__dirname, '..', '..', 'client', 'dist', 'index.html');
 app.get('*', (req, res, next) => {
@@ -71,13 +78,6 @@ app.get('*', (req, res, next) => {
     if (err) next();
   });
 });
-
-// Test-only admin routes (data reset etc.)
-if (process.env.ENABLE_TEST_FEATURES === 'true') {
-  const adminRoutes = require('./routes/admin');
-  app.use('/api/admin', adminRoutes);
-  console.log('[App] 测试功能已启用: /api/admin');
-}
 
 // Error handling
 app.use(notFoundHandler);

@@ -147,6 +147,24 @@ App Shell
 
 区分机制：后端 `ENABLE_TEST_FEATURES=true` 条件注册路由；前端 `VITE_TEST_MODE=true` 编译时 `v-if`。
 
+测试功能控制原则：
+
+- 前端只维护一套源码，测试环境可见功能通过 `v-if="isTestMode"` 控制。
+- `isTestMode` 来自 `import.meta.env.VITE_TEST_MODE === 'true'`。
+- `VITE_TEST_MODE` 是 Vite **构建时变量**，所以生产和测试必须分别构建：
+  ```bash
+  # 测试
+  cd client && npm run build:test   # 输出 dist-test/
+
+  # 生产
+  cd client && npm run build        # 输出 dist/
+  ```
+- 测试环境 Docker 使用 `BUILD_DIR=dist-test`，生产环境默认使用 `dist`。
+- 测试功能必须有前后端双保险：
+  - 前端：`VITE_TEST_MODE=true` 才显示 TEST 徽标和测试工具。
+  - 后端：`ENABLE_TEST_FEATURES=true` 且当前数据库必须是测试库，才允许注册/执行测试管理接口。
+- 测试构建产物 `client/dist-test/` 是构建产物，不提交 Git。
+
 ---
 
 ## 3. 数据模型

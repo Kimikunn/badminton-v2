@@ -1,10 +1,12 @@
 node_modules/
 dist/
+client/dist-test/
 *.db
 *.db-journal
 server/uploads/
 .DS_Store
 *.log
+rollout-*.jsonl
 .env
 
 # Playwright

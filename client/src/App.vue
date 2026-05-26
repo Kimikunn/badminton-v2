@@ -30,7 +30,9 @@ async function resetTestData() {
   resetting.value = true
   try {
     const res = await api.post('/admin/reset-db', {})
-    toast.show(res.message || '数据已重置', 'success')
+    toast.show(res.data?.message || '数据已重置', 'success')
+    await initAllStores({ force: true })
+    showDebug.value = false
   } catch (e) {
     toast.show(e.message || '重置失败', 'error')
   }

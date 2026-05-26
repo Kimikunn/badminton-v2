@@ -21,14 +21,23 @@
 
 **区分机制**：后端 `ENABLE_TEST_FEATURES=true` 条件注册路由；前端 `VITE_TEST_MODE=true` 编译时 `v-if`。
 
+**测试功能控制**：
+- 前端只维护一套源码，测试环境可见功能用 `v-if="isTestMode"` 控制。
+- `VITE_TEST_MODE` 是 **Vite 构建时变量**，不是容器启动时变量。
+- 因此测试环境必须先执行 `npm run build:test` 生成 `client/dist-test/`，不能直接复用生产 `client/dist/`。
+- 生产构建 `npm run build` 不带 `VITE_TEST_MODE=true`，不会显示 TEST 徽标和测试工具。
+- 测试功能不能只靠前端 `v-if`，后端必须同时用 `ENABLE_TEST_FEATURES=true` 且仅允许测试 DB 保护。
+
 ---
 
 ## 开发流程
 
 ```
-修改代码 → npm run build:test → docker compose -f docker-compose.test.yml up -d --build
+修改代码 → cd client && npm run build:test
+         → cd .. && docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build
          → :8090 测试验证（需要时点烧瓶恢复数据）
-         → npm run build → docker compose up -d --build
+         → cd client && npm run build
+         → cd .. && docker compose -p badminton-v2-prod up -d --build
 ```
 
 **原则**：先在测试环境跑通，再部署生产。同一 Dockerfile、同一依赖，差异仅环境变量。
