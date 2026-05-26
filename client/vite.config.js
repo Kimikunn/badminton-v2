@@ -50,6 +50,7 @@ export default defineConfig(({ mode }) => {
       }
     },
     build: {
+      outDir: mode === 'test' ? 'dist-test' : 'dist',
       cssCodeSplit: true,
       sourcemap: false,
       minify: 'esbuild',

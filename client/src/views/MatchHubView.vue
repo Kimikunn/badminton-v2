@@ -31,10 +31,8 @@ import { useMatchTab } from '@/composables/useMatchTab'
 import { useConfirm } from '@/composables/useConfirm'
 
 const isTestMode = import.meta.env.VITE_TEST_MODE === 'true'
-const canCreateSeason = import.meta.env.VITE_ENABLE_SEASON_CREATE === 'true'
 const deletingSeasonId = ref(null)
 const hasNextSeasonPreset = computed(() => {
-  if (!canCreateSeason) return false
   const existing = new Set(seasonsStore.seasons.map(s => s.ruleId))
   const next = SEASON_PRESETS.find(p => !existing.has(p.ruleId))
   if (!next) return false

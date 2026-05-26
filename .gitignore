@@ -7,7 +7,8 @@ server/uploads/
 .DS_Store
 *.log
 rollout-*.jsonl
-.env
+.env.local
+.env.*.local
 
 # Playwright
 e2e/screenshots/

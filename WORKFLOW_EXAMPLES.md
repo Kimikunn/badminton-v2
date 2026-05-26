@@ -11,21 +11,23 @@
 | `constants/seasonPresets.js` | S1-S5 预设元数据（名称、规则、轮次、颜色） |
 | `components/season/SeasonPresetManager.vue` | 创建向导：只展示「下一个可创建赛季」，确认后调 `seasonsStore.createSeason` |
 | `stores/seasons.js` | `createSeason` + `deleteSeason` 方法 |
-| `views/MatchHubView.vue` | 赛季区域加「创建赛季」按钮，`VITE_ENABLE_SEASON_CREATE` 控制 |
+| `views/MatchHubView.vue` | 赛季区域加「创建赛季」按钮 |
 | `server/src/services/seasonService.js` | S5 默认轮次 9（后端兜底） |
+
+### 灰度阶段
+
+`.env.test` 加 `VITE_ENABLE_SEASON_CREATE=true`，代码 `v-if="canCreateSeason"`。仅在测试环境可见，Playwright 验证创建、阻止重名、锁逻辑。
+
+### 上线阶段
+
+测试通过后：删除 `canCreateSeason` flag 和 `v-if`，功能无条件可用。`.env.test` 移除该行。部署生产，**不修改任何生产数据**。
 
 ### 关键决策
 
-- **一次只建一个赛季**。`SeasonPresetManager` 用 `existingRuleIds` 排除已存在赛季，取第一个不在集合中的预设，而非展示全部 5 个
+- **一次只建一个赛季**。`SeasonPresetManager` 用 `existingRuleIds` 排除已存在赛季，取第一个不在集合中的预设
 - **前一赛季完成才解锁下一个**。`nextPreset` 检查预设列表中前一项的赛季状态是否为 `completed`
-- **命名统一**。`buildPresetSeasonName(preset)` → `S{n}-{名称}`（如 `S5-异变秩序`），不再拼时间戳
-- **功能开关与测试开关解耦**。`VITE_ENABLE_SEASON_CREATE` 控制业务灰度，`VITE_TEST_MODE` 控制测试运维能力，两个独立 `v-if`
-
-### 上线过程
-
-1. 测试环境：`VITE_ENABLE_SEASON_CREATE=true`，Playwright 验证创建、阻止重名、锁逻辑
-2. 确认无误后改 `build` script 加 `VITE_ENABLE_SEASON_CREATE=true`
-3. 部署生产。**不修改任何生产赛季数据**——S4 完成后按钮自然出现
+- **命名统一**。`buildPresetSeasonName(preset)` → `S{n}-{名称}`
+- **功能开关只在灰度期存在**。上线后删除，不残留死代码
 
 ---
 
