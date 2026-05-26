@@ -452,7 +452,7 @@ onMounted(() => {
         </div>
       </Sheet>
 
-      <Sheet v-if="canCreateSeason" :show="showSeasonManager" title="创建赛季" @close="showSeasonManager = false">
+      <Sheet :show="showSeasonManager" title="创建赛季" @close="showSeasonManager = false">
         <SeasonPresetManager @created="showSeasonManager = false" @close="showSeasonManager = false" />
       </Sheet>
     </template>

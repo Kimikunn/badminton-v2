@@ -139,6 +139,7 @@
   /* Layout */
   --header-height: 3.5rem;
   --tabbar-height: 3.5rem;
+  --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 

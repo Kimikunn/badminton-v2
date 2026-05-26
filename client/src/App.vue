@@ -126,8 +126,9 @@ onMounted(async () => {
     <template v-else>
       <!-- Header — iOS 26 Liquid Glass -->
       <header
-        class="sticky top-0 z-50 flex items-center justify-between h-[var(--header-height)] px-4 transition-transform duration-300 ease-out liquid-header"
+        class="sticky top-0 z-50 flex items-center justify-between px-4 transition-transform duration-300 ease-out liquid-header"
         :class="headerHidden ? '-translate-y-full' : 'translate-y-0'"
+        style="padding-top: env(safe-area-inset-top, 0px); min-height: calc(var(--header-height) + env(safe-area-inset-top, 0px))"
       >
         <h1 class="font-display text-xl font-bold tracking-tight flex items-center gap-2">
           BAD Club
