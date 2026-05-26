@@ -49,7 +49,7 @@ export const SEASON_PRESETS = [
     code: 'S5',
     label: '异变秩序',
     ruleId: 's5',
-    totalRounds: 10,
+    totalRounds: 9,
     bestOf: 3,
     color: 'red',
     description: '启用 S5 15/21 分制骰子与异变结算规则。'

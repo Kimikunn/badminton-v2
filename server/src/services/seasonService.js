@@ -57,7 +57,7 @@ function createSeason(data) {
     .run(
       id,
       data.name,
-      data.totalRounds || (data.ruleId === RULE_ID.S5 ? 10 : 7),
+      data.totalRounds || (data.ruleId === RULE_ID.S5 ? 9 : 7),
       data.bestOf || 3,
       stringifyJson(data.participants || []),
       data.ruleId || RULE_ID.STANDARD,

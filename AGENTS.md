@@ -36,15 +36,36 @@
 
 ## 开发流程
 
-```
-修改代码 → cd client && npm run build:test
-         → cd .. && docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build
-         → :8090 测试验证（需要时点烧瓶恢复数据）
-         → cd client && npm run build
-         → cd .. && docker compose -p badminton-v2-prod up -d --build
+**四步标准流程**：
+
+1. **改代码** — 只改文件，不动生产数据。测试/生产的差异用环境变量或功能开关控制
+2. **测** — `build:test` → 部署 `:8090` → Playwright 验证。需要干净数据点时烧瓶恢复
+3. **验** — 确认测试环境跑通。测试环境能跑通的，生产就能跑通（同 Dockerfile、同依赖、差异仅环境变量）
+4. **发** — `build` → 部署 `:8089`。只动代码不动数据
+
+```bash
+# 测试
+cd client && npm run build:test
+docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build
+
+# 生产
+cd client && npm run build
+docker compose -p badminton-v2-prod up -d --build
 ```
 
-**原则**：先在测试环境跑通，再部署生产。同一 Dockerfile、同一依赖，差异仅环境变量。
+**示例见** `WORKFLOW_EXAMPLES.md`（创建赛季、删除赛季的正反例）。
+
+---
+
+## Git 提交规范
+
+每次提交必须标注作者身份。commit message 末尾注明：
+
+```
+经由 [Agent名称] 完成。
+```
+
+Agent 名称：`Claude` 或 `Codex`。禁止以 `root` 身份提交。
 
 ---
 
@@ -87,6 +108,7 @@ Component → Composable → Store → api(client.js) → Backend
 |---------|--------|
 | 数据模型、API 完整清单、业务规则 | `DEVELOPMENT.md` |
 | 产品风格、用户故事 | `PRODUCT.md` |
+| 工作流正反例 | `WORKFLOW_EXAMPLES.md` |
 | 前端优化待办 | `FRONTEND_OPTIMIZATION_BACKLOG.md` |
 | 后端待办 | `BACKEND_TODO.md` |
 
