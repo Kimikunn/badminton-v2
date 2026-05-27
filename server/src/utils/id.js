@@ -20,6 +20,10 @@ function venueId() {
   return prefixedId('v');
 }
 
+function bookingRecordId() {
+  return prefixedId('B');
+}
+
 function avatarFilename(ext) {
   return `avatar_${crypto.randomUUID()}.${ext}`;
 }
@@ -30,5 +34,6 @@ module.exports = {
   roundId,
   friendlyMatchId,
   venueId,
+  bookingRecordId,
   avatarFilename
 };

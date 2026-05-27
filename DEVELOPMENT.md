@@ -90,7 +90,7 @@ badminton-v2/
 │   ├── config/db.js + config.js
 │   ├── app.js
 │   └── server.js
-├── docker-compose.yml         ← 生产 :8089
+├── docker-compose.yml         ← 生产 :8088
 ├── docker-compose.test.yml    ← 测试 :8090
 ├── Dockerfile
 ├── AGENTS.md                  ← 上下文（每次对话加载）
@@ -138,7 +138,7 @@ App Shell
 
 ### 2.5 双环境
 
-| | 生产 `:8089` | 测试 `:8090` |
+| | 生产 `:8088` | 测试 `:8090` |
 |---|---|---|
 | 构建 | `npm run build` → `dist/` | `npm run build:test` → `dist-test/` |
 | DB | `badminton.db` | `test.db` |

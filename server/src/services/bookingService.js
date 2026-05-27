@@ -1,6 +1,7 @@
 const { prepare } = require('../config/db');
 const { parseJson, stringifyJson } = require('../utils/json');
 const { buildUpdate } = require('../utils/updateBuilder');
+const { bookingRecordId } = require('../utils/id');
 
 function formatConfig(row) {
   return {
@@ -17,7 +18,8 @@ function formatRecord(row) {
     venueId: row.venue_id,
     venueName: row.venue_name,
     date: row.date,
-    time: row.time,
+    startTime: row.start_time,
+    endTime: row.end_time,
     cost: row.cost,
     notes: row.notes,
     createdAt: row.created_at
@@ -59,7 +61,7 @@ function updateConfig(patch) {
 }
 
 function listRecords() {
-  return prepare(`SELECT br.*, v.name as venue_name, v.hourly_rate
+  return prepare(`SELECT br.*, v.name as venue_name
     FROM booking_records br
     LEFT JOIN venues v ON br.venue_id = v.id
     ORDER BY br.date DESC, br.created_at DESC`).all();
@@ -73,9 +75,9 @@ function getRecordById(id) {
 }
 
 function createRecord(data) {
-  prepare('INSERT INTO booking_records (player_id, venue_id, date, time, cost, notes) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(data.playerId, data.venueId || null, data.date, data.time || '', data.cost || 0, data.notes || '');
-  const { id } = prepare('SELECT last_insert_rowid() AS id').get();
+  const id = bookingRecordId();
+  prepare('INSERT INTO booking_records (id, player_id, venue_id, date, start_time, end_time, cost, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(id, data.playerId, data.venueId || null, data.date, data.startTime || '', data.endTime || '', data.cost || 0, data.notes || '');
 
   const config = getConfigRow();
   const rotation = parseJson(config.rotation, []);
@@ -92,7 +94,8 @@ function updateRecord(id, patch) {
     playerId: 'player_id',
     venueId: 'venue_id',
     date: 'date',
-    time: 'time',
+    startTime: 'start_time',
+    endTime: 'end_time',
     cost: 'cost',
     notes: 'notes'
   });
@@ -106,6 +109,14 @@ function updateRecord(id, patch) {
 }
 
 function deleteRecord(id) {
+  const config = getConfigRow();
+  const rotation = parseJson(config.rotation, []);
+  if (rotation.length > 0) {
+    const prevIdx = config.current_person_index === 0
+      ? rotation.length - 1
+      : config.current_person_index - 1;
+    prepare('UPDATE booking_config SET current_person_index = ? WHERE id = 1').run(prevIdx);
+  }
   prepare('DELETE FROM booking_records WHERE id = ?').run(id);
   return { deleted: true };
 }

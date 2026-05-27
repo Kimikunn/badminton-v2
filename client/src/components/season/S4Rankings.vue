@@ -117,8 +117,8 @@ const stageItems = computed(() => [
           :style="getDiceTone(r) ? { borderColor: toneColors[getDiceTone(r)].border, background: toneColors[getDiceTone(r)].bg } : {}"
         >
           <div
-            class="w-12 h-12 rounded-full bg-surface border-2 border-line flex items-center justify-center shrink-0"
-            :style="getDiceTone(r) ? { borderColor: toneColors[getDiceTone(r)].border, background: toneColors[getDiceTone(r)].orbBg } : {}"
+            class="w-12 h-12 rounded-full flex items-center justify-center shrink-0"
+            :style="getDiceTone(r) ? { background: toneColors[getDiceTone(r)].orbBg, boxShadow: `inset 0 0 0 2px ${toneColors[getDiceTone(r)].border}` } : { background: 'var(--color-surface-hover)' }"
           >
             <span v-if="topDice[String(r.roundNo)]" class="text-xl font-extrabold font-display">{{ topDice[String(r.roundNo)].dice }}</span>
             <span v-else class="text-lg text-fg-muted">?</span>

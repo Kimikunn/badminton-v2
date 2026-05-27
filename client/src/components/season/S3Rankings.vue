@@ -54,13 +54,18 @@ const sorted = computed(() => [...props.rankings].sort((a,b)=>(b.finalBigScore??
         :score-label="r.bonusBigScore ? `+${r.bonusBigScore}` : ''"
       >
         <template v-if="r.buffs?.length" #footer>
-          <div class="flex gap-1 flex-wrap">
+          <div class="flex gap-1.5 flex-wrap">
             <span
               v-for="b in r.buffs"
               :key="b.id"
-              class="px-2 py-px rounded-full bg-accent-subtle text-accent font-medium text-2xs"
-              :class="{ 'bg-success-subtle text-success': b.settled }"
-            >{{ b.count ? b.name+'×'+b.count : b.name }}</span>
+              class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors"
+              :class="b.settled
+                ? 'bg-success-subtle text-success border-success/20'
+                : 'bg-accent-subtle text-accent border-accent/20'"
+            >
+              <span class="w-1 h-1 rounded-full shrink-0" :class="b.settled ? 'bg-success' : 'bg-accent'" />
+              {{ b.count ? b.name + ' ×' + b.count : b.name }}
+            </span>
           </div>
         </template>
       </RankingRow>

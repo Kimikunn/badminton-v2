@@ -69,6 +69,12 @@ export const useBookingsStore = defineStore('bookings', () => {
     const res = await api.delete(`/bookings/records/${id}`)
     if (res.success) {
       records.value = records.value.filter(r => r.id !== id)
+      // Mirror the backend rotation rollback locally
+      if (config.value.rotation.length) {
+        config.value.currentPersonIndex = config.value.currentPersonIndex === 0
+          ? config.value.rotation.length - 1
+          : config.value.currentPersonIndex - 1
+      }
     }
     return res.success
   }

@@ -43,7 +43,7 @@
      ```
    - 部署后验证：
      ```bash
-     curl -fsS http://127.0.0.1:8089/api/health
+     curl -fsS http://127.0.0.1:8088/api/health
      curl -fsS http://127.0.0.1:8090/api/health
      ```
 
@@ -450,9 +450,9 @@
   - 修正 `useAppInit` 的 `force` 逻辑，强制刷新不再被已初始化状态拦截。
 - Playwright / 验证：
   - `PLAYWRIGHT_BASE_URL=http://127.0.0.1:8090 PLAYWRIGHT_EXPECT_SEASON_CREATE=1 PLAYWRIGHT_ENABLE_SEASON_MANAGEMENT_WRITE=1 npx playwright test e2e/season-management.spec.js --project=light`：通过。
-  - `PLAYWRIGHT_BASE_URL=http://127.0.0.1:8089 PLAYWRIGHT_EXPECT_SEASON_CREATE_HIDDEN=1 npx playwright test e2e/season-management.spec.js --project=light`：通过，未写入生产数据。
+  - `PLAYWRIGHT_BASE_URL=http://127.0.0.1:8088 PLAYWRIGHT_EXPECT_SEASON_CREATE_HIDDEN=1 npx playwright test e2e/season-management.spec.js --project=light`：通过，未写入生产数据。
   - 验证内容：打开测试工具确认不含创建赛季；测试比赛页可见“+ 创建赛季”；生产比赛页不可见“+ 创建赛季”；测试环境确认 S1 信息并创建赛季；断言 `POST /api/seasons` 返回 4 名 participants 和 `ruleId=standard`；测试结束删除创建的赛季。
-  - `PLAYWRIGHT_BASE_URL=http://127.0.0.1:8089 npx playwright test e2e/smoke.spec.js --project=light`：通过，4 passed。
+  - `PLAYWRIGHT_BASE_URL=http://127.0.0.1:8088 npx playwright test e2e/smoke.spec.js --project=light`：通过，4 passed。
 - 构建/测试：
   - `cd client && npm run build`：通过。
   - `cd client && npm run build:test`：通过。
@@ -460,7 +460,7 @@
 - 部署：
   - `docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build`：通过。
   - `docker compose -p badminton-v2-prod up -d --build`：通过。
-  - `curl -fsS http://127.0.0.1:8089/api/health`：通过。
+  - `curl -fsS http://127.0.0.1:8088/api/health`：通过。
   - `curl -fsS http://127.0.0.1:8090/api/health`：通过。
 - 剩余风险：
   - 本次先完成“创建赛季”。删除赛季 UI 仍需作为下一步单独补齐，避免和创建流程混在一起。
@@ -500,7 +500,7 @@
   - `cd client && npm run build`：通过。
   - `cd server && npm test`：未涉及后端代码，本项未执行。
 - 部署：
-  - 已在 P0-02 完成后统一部署到生产 `:8089` 与测试 `:8090`。
+  - 已在 P0-02 完成后统一部署到生产 `:8088` 与测试 `:8090`。
 - 剩余风险：
   - 本次只修复参数传递；调用 `fetchRounds` 后的局部刷新策略仍可在后续 P1-05 中统一整理。
 
@@ -567,7 +567,7 @@
 - 部署：
   - `docker compose -p badminton-v2-prod up -d --build`：通过，容器 `badminton-v2` 已启动。
   - `docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-v2-test` 已启动。
-  - `curl -fsS http://127.0.0.1:8089/api/health`：通过。
+  - `curl -fsS http://127.0.0.1:8088/api/health`：通过。
   - `curl -fsS http://127.0.0.1:8090/api/health`：通过。
 - 剩余风险：
   - 前端仍是“镜像后端规则”。如果后端未来调整轮次生成逻辑，需要同步更新前端预览。
@@ -702,7 +702,7 @@
 - 部署：
   - `docker compose -p badminton-v2-prod up -d --build`：通过，容器 `badminton-v2` 已启动。
   - `docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-v2-test` 已启动。
-  - `curl -fsS http://127.0.0.1:8089/api/health`：通过。
+  - `curl -fsS http://127.0.0.1:8088/api/health`：通过。
   - `curl -fsS http://127.0.0.1:8090/api/health`：通过。
 - 剩余风险：
   - 当前统一的是确认交互本身；更复杂的二次确认（例如输入文字确认）暂未实现。
@@ -772,7 +772,7 @@
 - 部署：
   - `docker compose -p badminton-v2-prod up -d --build`：通过，容器 `badminton-v2` 已启动。
   - `docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-v2-test` 已启动。
-  - `curl -fsS http://127.0.0.1:8089/api/health`：通过。
+  - `curl -fsS http://127.0.0.1:8088/api/health`：通过。
   - `curl -fsS http://127.0.0.1:8090/api/health`：通过。
 - 剩余风险：
   - 当前 Sheet 只负责首次输入与重试；没有单独做“管理/清除 token”的设置入口。
@@ -825,7 +825,7 @@
 - 部署：
   - `docker compose -p badminton-v2-prod up -d --build`：通过，容器 `badminton-v2` 已启动。
   - `docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-v2-test` 已启动。
-  - `curl -fsS http://127.0.0.1:8089/api/health`：通过。
+  - `curl -fsS http://127.0.0.1:8088/api/health`：通过。
   - `curl -fsS http://127.0.0.1:8090/api/health`：通过。
 - 剩余风险：
   - `/bookings/venues` 后端兼容路由仍保留，避免旧客户端失效。
@@ -878,7 +878,7 @@
 - 部署：
   - `docker compose -p badminton-v2-prod up -d --build`：通过，容器 `badminton-v2` 已启动。
   - `docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-v2-test` 已启动。
-  - `curl -fsS http://127.0.0.1:8089/api/health`：通过。
+  - `curl -fsS http://127.0.0.1:8088/api/health`：通过。
   - `curl -fsS http://127.0.0.1:8090/api/health`：通过。
 - 剩余风险：
   - 当前前端依然是“本地镜像”后端轮换推进结果；如果后端未来返回 config，可直接用后端返回值替换本地计算。
@@ -941,7 +941,7 @@
 - 部署：
   - `docker compose -p badminton-v2-prod up -d --build`：通过，容器 `badminton-v2` 已启动。
   - `docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-v2-test` 已启动。
-  - `curl -fsS http://127.0.0.1:8089/api/health`：通过。
+  - `curl -fsS http://127.0.0.1:8088/api/health`：通过。
   - `curl -fsS http://127.0.0.1:8090/api/health`：通过。
 - 剩余风险：
   - 目前仅为 `bookingsStore` 与 `venuesStore` 增加初始化保护。
@@ -1015,7 +1015,7 @@
 - 部署：
   - `docker compose -p badminton-v2-prod up -d --build`：通过，容器 `badminton-v2` 已启动。
   - `docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-v2-test` 已启动。
-  - `curl -fsS http://127.0.0.1:8089/api/health`：通过。
+  - `curl -fsS http://127.0.0.1:8088/api/health`：通过。
   - `curl -fsS http://127.0.0.1:8090/api/health`：通过。
 - 剩余风险：
   - 这个优化改变的是加载策略，不改变业务数据结构。
@@ -1072,7 +1072,7 @@
 - 部署：
   - `docker compose -p badminton-v2-prod up -d --build`：通过，容器 `badminton-v2` 已启动。
   - `docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-v2-test` 已启动。
-  - `curl -fsS http://127.0.0.1:8089/api/health`：通过。
+  - `curl -fsS http://127.0.0.1:8088/api/health`：通过。
   - `curl -fsS http://127.0.0.1:8090/api/health`：通过。
 - 剩余风险：
   - 当前场地本地排序按名称处理，和后端 `ORDER BY name` 的意图一致；不同数据库中文排序细节可能略有差异，但不影响功能正确性。
@@ -1151,7 +1151,7 @@
 - 部署：
   - `docker compose -p badminton-v2-prod up -d --build`：通过，容器 `badminton-v2` 已启动。
   - `docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-v2-test` 已启动。
-  - `curl -fsS http://127.0.0.1:8089/api/health`：通过。
+  - `curl -fsS http://127.0.0.1:8088/api/health`：通过。
   - `curl -fsS http://127.0.0.1:8090/api/health`：通过。
 - 剩余风险：
   - 本项只处理订场记录列表本身。
@@ -1225,7 +1225,7 @@
 - 部署：
   - `docker compose -p badminton-v2-prod up -d --build`：通过，容器 `badminton-v2` 已启动。
   - `docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-v2-test` 已启动。
-  - `curl -fsS http://127.0.0.1:8089/api/health`：通过。
+  - `curl -fsS http://127.0.0.1:8088/api/health`：通过。
   - `curl -fsS http://127.0.0.1:8090/api/health`：通过。
 - 剩余风险：
   - 本项只优化“创建轮次”后的回填。
@@ -1299,7 +1299,7 @@
 - 部署：
   - `docker compose -p badminton-v2-prod up -d --build`：通过，容器 `badminton-v2` 已启动。
   - `docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-v2-test` 已启动。
-  - `curl -fsS http://127.0.0.1:8089/api/health`：通过。
+  - `curl -fsS http://127.0.0.1:8088/api/health`：通过。
   - `curl -fsS http://127.0.0.1:8090/api/health`：通过。
 - 剩余风险：
   - 这是 P1-03 的第一步，只拆出了比分输入展示组件。
@@ -1368,7 +1368,7 @@
 - 部署：
   - `docker compose -p badminton-v2-prod up -d --build`：通过，容器 `badminton-v2` 已启动。
   - `docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-v2-test` 已启动。
-  - `curl -fsS http://127.0.0.1:8089/api/health`：通过。
+  - `curl -fsS http://127.0.0.1:8088/api/health`：通过。
   - `curl -fsS http://127.0.0.1:8090/api/health`：通过。
 - 剩余风险：
   - 本项仍是 P1-03 的低风险 UI 拆分。
@@ -1438,7 +1438,7 @@
 - 部署：
   - `docker compose -p badminton-v2-prod up -d --build`：通过，容器 `badminton-v2` 已启动。
   - `docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-v2-test` 已启动。
-  - `curl -fsS http://127.0.0.1:8089/api/health`：通过。
+  - `curl -fsS http://127.0.0.1:8088/api/health`：通过。
   - `curl -fsS http://127.0.0.1:8090/api/health`：通过。
 - 剩余风险：
   - 结束本局的实际提交逻辑仍在 `ScoringView.vue`。

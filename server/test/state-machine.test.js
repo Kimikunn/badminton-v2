@@ -210,3 +210,62 @@ describe('Game', () => {
     });
   }
 });
+
+// ═══════════════════════════════════════════════
+// Booking Rotation
+// ═══════════════════════════════════════════════
+describe('Booking Rotation', () => {
+  let venueId;
+
+  before(() => {
+    // Set up booking config with rotation
+    h.prepare(`INSERT OR REPLACE INTO booking_config (id, rotation, current_person_index)
+      VALUES (1, '["p1","p2","p3","p4"]', 0)`).run();
+    // Create a venue for booking records
+    venueId = 'v-test-rotation';
+    h.prepare('INSERT OR REPLACE INTO venues (id, name, pricing) VALUES (?, ?, ?)')
+      .run(venueId, 'Test Venue', JSON.stringify([{ startHour: 0, endHour: 24, rate: 50, days: [1,2,3,4,5,6,7] }]));
+  });
+
+  function getIndex() {
+    return h.prepare('SELECT current_person_index FROM booking_config WHERE id=1').get().current_person_index;
+  }
+
+  function createBooking(playerId) {
+    return h.api.post('/api/bookings/records')
+      .send({ playerId, venueId, date: '2026-05-27', startTime: '20:00', endTime: '21:00' });
+  }
+
+  function deleteBooking(id) {
+    return h.api.delete('/api/bookings/records/' + id);
+  }
+
+  it('advances on create and rolls back on delete', async () => {
+    // Reset to known state
+    h.prepare('UPDATE booking_config SET current_person_index = 0 WHERE id = 1').run();
+    assert.equal(getIndex(), 0);
+
+    // Create: index advances 0 → 1
+    const res = await createBooking('p1');
+    assert.equal(res.status, 201);
+    assert.equal(getIndex(), 1);
+
+    // Delete: index rolls back 1 → 0
+    await deleteBooking(res.body.data.id);
+    assert.equal(getIndex(), 0, 'delete should roll back index');
+  });
+
+  it('wraps around at rotation boundary', async () => {
+    h.prepare('UPDATE booking_config SET current_person_index = 3 WHERE id = 1').run();
+    assert.equal(getIndex(), 3);
+
+    const res = await createBooking('p3');
+    assert.equal(res.status, 201);
+    // 3 → 0 (wraps to index 0)
+    assert.equal(getIndex(), 0);
+
+    // Delete should wrap back: 0 → 3
+    await deleteBooking(res.body.data.id);
+    assert.equal(getIndex(), 3);
+  });
+});

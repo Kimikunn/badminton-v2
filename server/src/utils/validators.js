@@ -157,6 +157,16 @@ function validateDateText(value, label = '日期', options = {}) {
   return null;
 }
 
+function validateTimeText(value, label = '时间', options = {}) {
+  const error = validateText(value, label, { ...options, maxLength: 5 });
+  if (error || value === undefined || value === null) return error;
+  if (!/^\d{2}:\d{2}$/.test(value)) return `${label}格式必须是 HH:MM`;
+  const [h, m] = value.split(':').map(Number);
+  if (h < 0 || h > 23) return '小时必须在 0-23 之间';
+  if (m < 0 || m > 59) return '分钟必须在 0-59 之间';
+  return null;
+}
+
 module.exports = {
   normalizeMatchFormat,
   validateRoundNo,
@@ -171,5 +181,6 @@ module.exports = {
   validateStringArray,
   validateRuleId,
   validateJsonObject,
-  validateDateText
+  validateDateText,
+  validateTimeText
 };

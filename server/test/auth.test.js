@@ -50,7 +50,7 @@ test('write endpoints accept x-admin-token and bearer tokens', async () => {
   const created = await api
     .post('/api/venues')
     .set('x-admin-token', 'test-admin-token')
-    .send({ name: 'Auth Court', hourlyRate: 80 })
+    .send({ name: 'Auth Court', pricing: [{ startHour: 8, endHour: 22, rate: 80, days: [1,2,3,4,5] }] })
     .expect(201);
 
   assert.equal(created.body.success, true);

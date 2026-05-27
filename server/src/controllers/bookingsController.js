@@ -1,12 +1,14 @@
 const { success, notFound, validationError } = require('../utils/response');
 const { sendControllerError } = require('../utils/errorHandling');
 const bookingService = require('../services/bookingService');
+const venueService = require('../services/venueService');
 const {
   validateDateText,
   validateNonNegativeNumber,
   validatePositiveInteger,
   validateStringArray,
-  validateText
+  validateText,
+  validateTimeText
 } = require('../utils/validators');
 
 // === Bookings ===
@@ -35,8 +37,15 @@ function validateBookingRecordPayload(body, options = {}) {
   const dateError = validateDateText(body.date, '订场日期', { required: !partial });
   if (dateError) return dateError;
 
-  const timeError = validateText(body.time, '订场时间', { maxLength: 80, allowEmpty: true });
-  if (timeError) return timeError;
+  const startError = validateTimeText(body.startTime, '开始时间');
+  if (startError) return startError;
+
+  const endError = validateTimeText(body.endTime, '结束时间');
+  if (endError) return endError;
+
+  if (body.startTime && body.endTime && body.startTime >= body.endTime) {
+    return '结束时间必须晚于开始时间';
+  }
 
   const costError = validateNonNegativeNumber(body.cost, '订场费用', { max: 100000 });
   if (costError) return costError;
@@ -82,13 +91,27 @@ function getRecords(req, res) {
   } catch (err) { sendControllerError(res, err, 'bookingsController'); }
 }
 
+function resolveCost(venueId, date, startTime, endTime, explicitCost) {
+  if (explicitCost !== undefined && explicitCost !== null && explicitCost !== 0) return explicitCost;
+  if (!venueId || !date || !startTime || !endTime) return 0;
+  const venue = venueService.getVenueById(venueId);
+  if (!venue) return 0;
+  const pricing = venue.pricing ? JSON.parse(venue.pricing) : [];
+  const rate = venueService.matchPricing(pricing, date, startTime, endTime);
+  const sh = parseInt((startTime || '').split(':')[0], 10);
+  const eh = parseInt((endTime || '').split(':')[0], 10);
+  const hours = Math.max(eh - sh, 1);
+  return rate * hours;
+}
+
 function createRecord(req, res) {
   try {
-    const { playerId, venueId, date, time, cost, notes } = req.body;
+    const { playerId, venueId, date, startTime, endTime, cost, notes } = req.body;
     const payloadError = validateBookingRecordPayload(req.body);
     if (payloadError) return validationError(res, payloadError);
 
-    const row = bookingService.createRecord({ playerId, venueId, date, time, cost, notes });
+    const finalCost = resolveCost(venueId, date, startTime, endTime, cost);
+    const row = bookingService.createRecord({ playerId, venueId, date, startTime, endTime, cost: finalCost, notes });
     success(res, bookingService.formatRecord(row), 201);
   } catch (err) { sendControllerError(res, err, 'bookingsController'); }
 }
@@ -97,11 +120,16 @@ function updateRecord(req, res) {
   try {
     const existing = bookingService.getRecordById(req.params.id);
     if (!existing) return notFound(res, '记录不存在');
-    const { playerId, venueId, date, time, cost, notes } = req.body;
+    const { playerId, venueId, date, startTime, endTime, cost, notes } = req.body;
     const payloadError = validateBookingRecordPayload(req.body, { partial: true });
     if (payloadError) return validationError(res, payloadError);
 
-    const row = bookingService.updateRecord(req.params.id, { playerId, venueId, date, time, cost, notes });
+    const finalDate = date ?? existing.date;
+    const finalStart = startTime ?? existing.start_time;
+    const finalEnd = endTime ?? existing.end_time;
+    const finalVenue = venueId ?? existing.venue_id;
+    const finalCost = resolveCost(finalVenue, finalDate, finalStart, finalEnd, cost);
+    const row = bookingService.updateRecord(req.params.id, { playerId, venueId, date, startTime, endTime, cost: finalCost, notes });
     success(res, bookingService.formatRecord(row));
   } catch (err) { sendControllerError(res, err, 'bookingsController'); }
 }

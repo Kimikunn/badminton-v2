@@ -116,7 +116,7 @@ CREATE TABLE IF NOT EXISTS booking_config (
 );
 
 CREATE TABLE IF NOT EXISTS booking_records (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id TEXT PRIMARY KEY,
   player_id TEXT REFERENCES players(id),
   venue_id TEXT REFERENCES venues(id),
   date TEXT,

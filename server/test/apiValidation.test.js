@@ -165,31 +165,32 @@ test('POST /api/seasons validates rule IDs and participant references', async ()
 test('venue CRUD is available at /api/venues and validates input', async () => {
   const invalid = await request(app)
     .post('/api/venues')
-    .send({ name: '', hourlyRate: -1 })
+    .send({ name: '', pricing: 'not-array' })
     .expect(422);
   assertValidation(invalid, /场地名称/);
 
+  const pricing = [{ startHour: 8, endHour: 22, rate: 88, days: [1,2,3,4,5] }];
   const created = await request(app)
     .post('/api/venues')
-    .send({ name: 'Test Court', address: 'Road 1', hourlyRate: 88, notes: '' })
+    .send({ name: 'Test Court', address: 'Road 1', pricing, notes: '' })
     .expect(201);
 
   assert.equal(created.body.success, true);
   assert.match(created.body.data.id, /^v-/);
-  assert.equal(created.body.data.hourlyRate, 88);
+  assert.deepStrictEqual(created.body.data.pricing, pricing);
 
   const updated = await request(app)
     .put(`/api/bookings/venues/${created.body.data.id}`)
-    .send({ hourlyRate: 99 })
+    .send({ pricing: [{ startHour: 6, endHour: 23, rate: 99, days: [1,2,3,4,5,6,7] }] })
     .expect(200);
 
-  assert.equal(updated.body.data.hourlyRate, 99);
+  assert.equal(updated.body.data.pricing[0].rate, 99);
 });
 
 test('booking records validate player and venue references', async () => {
   const venue = await request(app)
     .post('/api/venues')
-    .send({ name: 'Booking Court', hourlyRate: 66 })
+    .send({ name: 'Booking Court', pricing: [{ startHour: 0, endHour: 24, rate: 66, days: [1,2,3,4,5,6,7] }] })
     .expect(201);
 
   const missingPlayer = await request(app)
@@ -206,5 +207,6 @@ test('booking records validate player and venue references', async () => {
   assert.equal(created.body.success, true);
   assert.equal(created.body.data.playerId, 'p1');
   assert.equal(created.body.data.venueId, venue.body.data.id);
-  assert.equal(typeof created.body.data.id, 'number');
+  assert.equal(typeof created.body.data.id, 'string');
+  assert.match(created.body.data.id, /^B-/);
 });

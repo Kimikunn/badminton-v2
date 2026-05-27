@@ -18,16 +18,17 @@ defineProps({
 </script>
 
 <template>
-  <div>
-    <div
-      class="flex items-center gap-3 px-4 py-3 rounded-lg border transition-[transform,box-shadow] duration-fast active:scale-[0.98]"
-      :class="{
-        'bg-surface border-line-light': rank > 3,
-        'rank-gold border-accent/30': rank === 1,
-        'rank-silver border-line': rank === 2,
-        'rank-bronze border-line': rank === 3
-      }"
-    >
+  <div
+    class="rounded-lg border transition-[transform,box-shadow] duration-fast active:scale-[0.98] overflow-hidden"
+    :class="{
+      'bg-surface border-line-light': rank > 3,
+      'rank-gold border-accent/30': rank === 1,
+      'rank-silver border-line': rank === 2,
+      'rank-bronze border-line': rank === 3
+    }"
+  >
+    <!-- Main row -->
+    <div class="flex items-center gap-3 px-4 py-3">
       <!-- Rank indicator: medal for top 3, number for 4+ -->
       <div class="w-8 flex items-center justify-center shrink-0">
         <RankMedal v-if="rank <= 3" :rank="rank" />
@@ -36,7 +37,7 @@ defineProps({
       <Avatar :name="name" :src="avatar" size="md" />
       <div class="flex-1 min-w-0">
         <span class="block text-sm font-semibold truncate">{{ name }}</span>
-        <span v-if="detail && !$slots.detail" class="block text-xs text-fg-muted mt-0.5">{{ detail }}</span>
+        <span v-if="detail" class="block text-xs text-fg-muted mt-0.5">{{ detail }}</span>
         <slot name="detail" />
       </div>
       <div class="flex flex-col items-end shrink-0">
@@ -44,9 +45,11 @@ defineProps({
         <span v-if="scoreLabel" class="text-2xs text-fg-muted -mt-0.5">{{ scoreLabel }}</span>
       </div>
     </div>
-    <!-- Footer slot: e.g. buff tags, rendered inside the card body, below the row -->
-    <div v-if="$slots.footer" class="px-4 pb-3 -mt-1">
-      <slot name="footer" />
+    <!-- Footer: buff tags rendered inside the card, below the row -->
+    <div v-if="$slots.footer" class="px-4 pb-3">
+      <div class="pt-2 border-t border-line-subtle">
+        <slot name="footer" />
+      </div>
     </div>
   </div>
 </template>
