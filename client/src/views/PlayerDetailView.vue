@@ -12,6 +12,7 @@ import Sheet from '@/components/ui/Sheet.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { User, Award, ArrowLeft, Pencil, Trash2, Camera } from 'lucide-vue-next'
 import { useToast } from '@/composables/useToast'
+import { useConfirm } from '@/composables/useConfirm'
 import { api } from '@/api/client'
 
 const route = useRoute()
@@ -21,6 +22,7 @@ const matchesStore = useMatchesStore()
 const titlesStore = useTitlesStore()
 const seasonsStore = useSeasonsStore()
 const toast = useToast()
+const { confirm: confirmAction } = useConfirm()
 
 const playerId = computed(() => route.params.id)
 const player = computed(() => playersStore.getPlayerById(playerId.value))
@@ -138,8 +140,16 @@ async function addShoe() {
   if (!newShoe.value.trim()) return
   shoes.value.push(newShoe.value.trim()); await saveEquipment(); newShoe.value = ''; addingShoe.value = false
 }
-async function removeRacket(idx) { rackets.value.splice(idx, 1); await saveEquipment() }
-async function removeShoe(idx) { shoes.value.splice(idx, 1); await saveEquipment() }
+async function removeRacket(idx) {
+  const ok = await confirmAction({ title: '删除球拍', message: '确认删除该球拍？', confirmText: '删除' })
+  if (!ok) return
+  rackets.value.splice(idx, 1); await saveEquipment()
+}
+async function removeShoe(idx) {
+  const ok = await confirmAction({ title: '删除球鞋', message: '确认删除该球鞋？', confirmText: '删除' })
+  if (!ok) return
+  shoes.value.splice(idx, 1); await saveEquipment()
+}
 async function saveEquipment() {
   await playersStore.updatePlayer(playerId.value, { racket: rackets.value.join(','), shoes: shoes.value.join(',') })
 }
@@ -208,51 +218,65 @@ function getTitleLevelVariant(level) {
 
       <!-- Equipment: Rackets -->
       <Card padding="md">
-        <h3 class="text-xs font-semibold text-fg-secondary uppercase tracking-wide mb-4">球拍</h3>
-        <div class="flex flex-col gap-1">
-          <div v-for="(r,i) in rackets" :key="'r'+i" class="flex items-center gap-2 py-2">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-xs font-semibold text-fg-secondary uppercase tracking-wide">球拍</h3>
+          <button
+            v-if="!addingRacket"
+            class="text-xs text-accent font-medium active:opacity-70"
+            @click="startAddRacket"
+          >+ 添加</button>
+        </div>
+        <EmptyState v-if="!rackets.length && !addingRacket" icon="Crosshair" title="暂无球拍" />
+        <div v-else class="flex flex-col">
+          <div v-for="(r,i) in rackets" :key="'r'+i" class="flex items-center gap-2 py-2 border-b border-line-light last:border-b-0">
             <template v-if="editingRacket===i">
-              <input v-model="editRacketVal" class="eq-input" @keyup.enter="saveRacketEdit(i)" />
-              <button class="eq-act" @click="saveRacketEdit(i)">确定</button>
-              <button class="eq-act eq-cancel" @click="editingRacket=-1">取消</button>
+              <input v-model="editRacketVal" class="flex-1 p-1.5 pl-2 border border-line rounded-lg bg-canvas text-sm text-fg outline-none focus:border-accent focus:ring-2 focus:ring-accent-subtle transition-[border-color,box-shadow] duration-fast" @keyup.enter="saveRacketEdit(i)" />
+              <button class="text-xs text-accent font-medium px-2 py-1 active:opacity-70" @click="saveRacketEdit(i)">确定</button>
+              <button class="text-xs text-fg-muted px-2 py-1 active:opacity-70" @click="editingRacket=-1">取消</button>
             </template>
             <template v-else>
               <span class="flex-1 text-sm text-fg">{{ r }}</span>
-              <button class="eq-icon" @click="startEditRacket(i)" title="编辑"><Pencil :size="14" /></button>
-              <button class="eq-icon eq-del" @click="removeRacket(i)" title="删除"><Trash2 :size="14" /></button>
+              <button class="icon-btn" @click="startEditRacket(i)" title="编辑"><Pencil :size="14" /></button>
+              <button class="icon-btn !text-danger" @click="removeRacket(i)" title="删除"><Trash2 :size="14" /></button>
             </template>
           </div>
           <div v-if="addingRacket" class="flex items-center gap-2 py-2">
-            <input v-model="newRacket" placeholder="球拍型号" class="eq-input" @keyup.enter="addRacket" />
-            <button class="eq-act" @click="addRacket">确定</button>
-            <button class="eq-act eq-cancel" @click="addingRacket=false; newRacket=''">取消</button>
+            <input v-model="newRacket" placeholder="球拍型号" class="flex-1 p-1.5 pl-2 border border-line rounded-lg bg-canvas text-sm text-fg outline-none focus:border-accent focus:ring-2 focus:ring-accent-subtle transition-[border-color,box-shadow] duration-fast" @keyup.enter="addRacket" />
+            <button class="text-xs text-accent font-medium px-2 py-1 active:opacity-70" @click="addRacket">确定</button>
+            <button class="text-xs text-fg-muted px-2 py-1 active:opacity-70" @click="addingRacket=false; newRacket=''">取消</button>
           </div>
-          <button v-if="!addingRacket" class="eq-add-btn" @click="startAddRacket">+ 添加球拍</button>
         </div>
       </Card>
 
       <!-- Equipment: Shoes -->
       <Card padding="md">
-        <h3 class="text-xs font-semibold text-fg-secondary uppercase tracking-wide mb-4">球鞋</h3>
-        <div class="flex flex-col gap-1">
-          <div v-for="(s,i) in shoes" :key="'s'+i" class="flex items-center gap-2 py-2">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-xs font-semibold text-fg-secondary uppercase tracking-wide">球鞋</h3>
+          <button
+            v-if="!addingShoe"
+            class="text-xs text-accent font-medium active:opacity-70"
+            @click="startAddShoe"
+          >+ 添加</button>
+        </div>
+        <EmptyState v-if="!shoes.length && !addingShoe" icon="Footprints" title="暂无球鞋" />
+        <div v-else class="flex flex-col">
+          <div v-for="(s,i) in shoes" :key="'s'+i" class="flex items-center gap-2 py-2 border-b border-line-light last:border-b-0">
             <template v-if="editingShoe===i">
-              <input v-model="editShoeVal" class="eq-input" @keyup.enter="saveShoeEdit(i)" />
-              <button class="eq-act" @click="saveShoeEdit(i)">确定</button>
-              <button class="eq-act eq-cancel" @click="editingShoe=-1">取消</button>
+              <input v-model="editShoeVal" class="flex-1 p-1.5 pl-2 border border-line rounded-lg bg-canvas text-sm text-fg outline-none focus:border-accent focus:ring-2 focus:ring-accent-subtle transition-[border-color,box-shadow] duration-fast" @keyup.enter="saveShoeEdit(i)" />
+              <button class="text-xs text-accent font-medium px-2 py-1 active:opacity-70" @click="saveShoeEdit(i)">确定</button>
+              <button class="text-xs text-fg-muted px-2 py-1 active:opacity-70" @click="editingShoe=-1">取消</button>
             </template>
             <template v-else>
               <span class="flex-1 text-sm text-fg">{{ s }}</span>
-              <button class="eq-icon" @click="startEditShoe(i)" title="编辑"><Pencil :size="14" /></button>
-              <button class="eq-icon eq-del" @click="removeShoe(i)" title="删除"><Trash2 :size="14" /></button>
+              <button class="icon-btn" @click="startEditShoe(i)" title="编辑"><Pencil :size="14" /></button>
+              <button class="icon-btn !text-danger" @click="removeShoe(i)" title="删除"><Trash2 :size="14" /></button>
             </template>
           </div>
           <div v-if="addingShoe" class="flex items-center gap-2 py-2">
-            <input v-model="newShoe" placeholder="球鞋型号" class="eq-input" @keyup.enter="addShoe" />
-            <button class="eq-act" @click="addShoe">确定</button>
-            <button class="eq-act eq-cancel" @click="addingShoe=false; newShoe=''">取消</button>
+            <input v-model="newShoe" placeholder="球鞋型号" class="flex-1 p-1.5 pl-2 border border-line rounded-lg bg-canvas text-sm text-fg outline-none focus:border-accent focus:ring-2 focus:ring-accent-subtle transition-[border-color,box-shadow] duration-fast" @keyup.enter="addShoe" />
+            <button class="text-xs text-accent font-medium px-2 py-1 active:opacity-70" @click="addShoe">确定</button>
+            <button class="text-xs text-fg-muted px-2 py-1 active:opacity-70" @click="addingShoe=false; newShoe=''">取消</button>
           </div>
-          <button v-if="!addingShoe" class="eq-add-btn" @click="startAddShoe">+ 添加球鞋</button>
         </div>
       </Card>
 
@@ -291,14 +315,9 @@ function getTitleLevelVariant(level) {
 .avatar-overlay { @apply absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 transition-opacity duration-fast; }
 .avatar-wrap:hover .avatar-overlay { opacity:1; }
 
-/* Equipment editing */
-.eq-input { @apply flex-1 p-1 pl-2 border border-accent rounded-lg bg-canvas text-sm text-fg outline-none; }
-.eq-act { @apply px-2.5 py-0.5 border border-accent rounded-lg bg-accent text-fg-inverse text-xs cursor-pointer transition-all duration-fast active:scale-95; }
-.eq-act.eq-cancel { @apply bg-transparent text-fg-secondary border-line; }
-.eq-icon { @apply w-7 h-7 border-none rounded-full bg-transparent text-fg-muted flex items-center justify-center cursor-pointer transition-all duration-fast active:scale-90; }
-.eq-icon:hover { @apply bg-accent-subtle text-accent; }
-.eq-icon.eq-del:hover { @apply bg-danger-subtle text-danger; }
-.eq-add-btn { @apply p-2 border border-dashed border-line rounded-lg bg-transparent text-fg-muted text-sm cursor-pointer text-center w-full transition-[transform,border-color] duration-fast active:scale-[0.98]; }
+/* Icon button — shared with VenueView */
+.icon-btn { @apply w-7 h-7 border-none rounded-full bg-surface-hover text-fg-muted flex items-center justify-center cursor-pointer transition-all duration-fast active:scale-90; }
+.icon-btn:hover { @apply bg-accent-subtle text-accent; }
 
 /* Title set button */
 .title-set { @apply px-2 py-0.5 border border-accent rounded-lg bg-transparent text-accent text-xs cursor-pointer transition-all duration-fast active:scale-95; }
