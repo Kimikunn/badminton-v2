@@ -184,6 +184,15 @@ function revertGame(gameId) {
   return { row };
 }
 
+function isGameSeasonCompleted(gameId) {
+  const game = getGameById(gameId);
+  if (!game) return false;
+  const match = prepare('SELECT season_id FROM matches WHERE id = ?').get(game.match_id);
+  if (!match || !match.season_id) return false;
+  const season = prepare('SELECT status FROM seasons WHERE id = ?').get(match.season_id);
+  return season?.status === 'completed';
+}
+
 module.exports = {
   formatGame,
   formatGames,
@@ -193,5 +202,6 @@ module.exports = {
   updateScore,
   endGame,
   updateCompletedScore,
-  revertGame
+  revertGame,
+  isGameSeasonCompleted
 };

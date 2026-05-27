@@ -131,6 +131,10 @@ function selectSeason(id) {
 }
 
 async function handleDeleteSeason(season) {
+  if (!isTestMode && season.status === STATUS.COMPLETED) {
+    toast.show('已完成赛季不允许删除', 'error')
+    return
+  }
   const ok = await confirmAction({
     title: `删除 ${season.name}`,
     message: `确认删除「${season.name}」及其所有轮次和比赛？\n此操作不可撤销。`,
@@ -253,7 +257,9 @@ function getRoundMatches(rid) {
   }))
 }
 
+const isSeasonLocked = computed(() => !isTestMode && currentSeason.value?.status === STATUS.COMPLETED)
 const canDeleteCurrentRound = computed(() => {
+  if (isSeasonLocked.value) return false
   if (!stats.value.currentRound) return false
   return !getRoundMatches(stats.value.currentRound.id).some(m => m.status === STATUS.COMPLETED)
 })

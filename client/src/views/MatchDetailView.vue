@@ -25,6 +25,7 @@ const seasonsStore = useSeasonsStore()
 const { setViewAccent, viewStyle } = useViewAccent()
 const { getSeasonColor } = useSeasonTheme()
 const toast = useToast()
+const isTestMode = import.meta.env.VITE_TEST_MODE === 'true'
 const { confirm: confirmAction } = useConfirm()
 const editValidation = useScoringValidation()
 
@@ -183,7 +184,7 @@ async function handleDeleteMatch() {
               <span v-for="n in teamBPlayers" :key="n" class="text-base font-medium">{{ n }}</span>
             </div>
           </div>
-          <Button variant="ghost" size="sm" @click="handleDeleteMatch" class="mt-3 !text-danger"><Trash2 :size="14" class="inline mr-1" />删除比赛</Button>
+          <Button v-if="isTestMode || season?.status !== STATUS.COMPLETED" variant="ghost" size="sm" @click="handleDeleteMatch" class="mt-3 !text-danger"><Trash2 :size="14" class="inline mr-1" />删除比赛</Button>
         </div>
       </Card>
 
@@ -201,7 +202,7 @@ async function handleDeleteMatch() {
               <div v-if="getRuleEventBadges(g).length" class="flex flex-wrap justify-end gap-1 max-w-[120px]">
                 <Badge v-for="badge in getRuleEventBadges(g)" :key="badge.id" :variant="badge.variant" size="sm">{{ badge.label }}</Badge>
               </div>
-              <div class="flex gap-1">
+              <div v-if="isTestMode || season?.status !== STATUS.COMPLETED" class="flex gap-1">
                 <button class="g-btn" @click="openEditGame(g)" title="编辑比分"><Pencil :size="14" /></button>
                 <button class="g-btn" @click="handleDeleteGame(g)" title="撤回此局"><Trash2 :size="12" /></button>
               </div>

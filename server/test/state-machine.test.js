@@ -30,7 +30,7 @@ describe('Season', () => {
   const transitions = [
     { name: 'pending → ongoing (first round created)',  from: 'pending',   via: 'create_round',        to: 'ongoing' },
     { name: 'ongoing → completed (all rounds done)',     from: 'ongoing',  via: 'complete_all_rounds',  to: 'completed' },
-    { name: 'completed → ongoing (game reverted)',       from: 'completed',via: 'revert_last_game',     to: 'ongoing' },
+    { name: 'completed → completed (game revert blocked)', from: 'completed', via: 'revert_last_game_blocked', to: 'completed' },
     { name: 'ongoing → pending (all rounds deleted)',    from: 'ongoing',  via: 'delete_all_rounds',    to: 'pending' },
   ];
 
@@ -83,6 +83,10 @@ describe('Season', () => {
 
       if (via === 'revert_last_game') {
         await h.api.post('/api/games/DBG-G/revert');
+      }
+
+      if (via === 'revert_last_game_blocked') {
+        await h.api.post('/api/games/DBG-G/revert').expect(422);
       }
 
       if (via === 'delete_all_rounds') {

@@ -55,6 +55,8 @@ function update(req, res) {
   try {
     const existing = matchService.getMatchById(req.params.id);
     if (!existing) return notFound(res, '比赛不存在');
+    const locked = requireSeasonOpen(req.params.id);
+    if (locked) return validationError(res, locked);
 
     const { teamA, teamB, bestOf, matchFormat, date, venueId } = req.body;
 
@@ -88,10 +90,18 @@ function update(req, res) {
   } catch (err) { sendControllerError(res, err, 'matchesController'); }
 }
 
+function requireSeasonOpen(matchId) {
+  if (process.env.ENABLE_TEST_FEATURES === 'true') return null;
+  if (matchService.isMatchSeasonCompleted(matchId)) return '已完成赛季不允许修改比赛';
+  return null;
+}
+
 function remove(req, res) {
   try {
     const existing = matchService.getMatchById(req.params.id);
     if (!existing) return notFound(res, '比赛不存在');
+    const locked = requireSeasonOpen(req.params.id);
+    if (locked) return validationError(res, locked);
 
     const result = matchService.deleteMatch(existing);
     success(res, result);
@@ -118,6 +128,8 @@ function cancelMatch(req, res) {
   try {
     const match = matchService.getMatchById(req.params.id);
     if (!match) return notFound(res, '比赛不存在');
+    const locked = requireSeasonOpen(req.params.id);
+    if (locked) return validationError(res, locked);
     if (match.status !== MATCH_STATUS.IN_PROGRESS) return validationError(res, '只能取消进行中的比赛');
 
     const row = matchService.cancelExistingMatch(match);

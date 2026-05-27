@@ -31,6 +31,12 @@ function getByMatch(req, res) {
   } catch (err) { sendControllerError(res, err, 'gamesController'); }
 }
 
+function requireSeasonOpen(gameId) {
+  if (process.env.ENABLE_TEST_FEATURES === 'true') return null;
+  if (gameService.isGameSeasonCompleted(gameId)) return '已完成赛季不允许修改比赛';
+  return null;
+}
+
 function updateScore(req, res) {
   try {
     const scoreError = validateScorePatch(req.body);
@@ -42,12 +48,16 @@ function updateScore(req, res) {
 
 function endGame(req, res) {
   try {
+    const locked = requireSeasonOpen(req.params.id);
+    if (locked) return validationError(res, locked);
     return sendServiceResult(res, gameService.endGame(req.params.id, req.body));
   } catch (err) { sendControllerError(res, err, 'gamesController'); }
 }
 
 function updateCompletedScore(req, res) {
   try {
+    const locked = requireSeasonOpen(req.params.id);
+    if (locked) return validationError(res, locked);
     const scoreError = validateCompletedScore(req.body);
     if (scoreError) return validationError(res, scoreError);
 
@@ -57,6 +67,8 @@ function updateCompletedScore(req, res) {
 
 function revertGame(req, res) {
   try {
+    const locked = requireSeasonOpen(req.params.id);
+    if (locked) return validationError(res, locked);
     return sendServiceResult(res, gameService.revertGame(req.params.id));
   } catch (err) { sendControllerError(res, err, 'gamesController'); }
 }

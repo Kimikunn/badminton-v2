@@ -95,6 +95,7 @@ function remove(req, res) {
   try {
     const season = seasonService.getSeasonById(req.params.id);
     if (!season) return notFound(res, '赛季不存在');
+    if (process.env.ENABLE_TEST_FEATURES !== 'true' && season.status === 'completed') return validationError(res, '已完成赛季不允许删除');
 
     success(res, seasonService.deleteSeason(season));
   } catch (err) { sendControllerError(res, err, 'seasonsController'); }

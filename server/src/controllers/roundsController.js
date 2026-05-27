@@ -54,10 +54,20 @@ function create(req, res) {
   } catch (err) { sendControllerError(res, err, 'roundsController'); }
 }
 
+function requireSeasonOpen(roundId) {
+  if (process.env.ENABLE_TEST_FEATURES === 'true') return null;
+  const round = roundService.getRoundById(roundId);
+  if (!round) return null;
+  const season = roundService.getSeasonById(round.season_id);
+  return season?.status === 'completed' ? '已完成赛季不允许修改轮次' : null;
+}
+
 function update(req, res) {
   try {
     const existing = roundService.getRoundById(req.params.id);
     if (!existing) return notFound(res, '轮次不存在');
+    const locked = requireSeasonOpen(req.params.id);
+    if (locked) return validationError(res, locked);
     const { status, venueManagerId } = req.body;
     const statusError = validateStatus(status, Object.values(ROUND_STATUS), '轮次状态');
     if (statusError) return validationError(res, statusError);
@@ -70,6 +80,8 @@ function remove(req, res) {
   try {
     const round = roundService.getRoundById(req.params.id);
     if (!round) return notFound(res, '轮次不存在');
+    const locked = requireSeasonOpen(req.params.id);
+    if (locked) return validationError(res, locked);
     success(res, roundService.deleteRound(round));
   } catch (err) { sendControllerError(res, err, 'roundsController'); }
 }

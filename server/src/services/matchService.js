@@ -1,4 +1,5 @@
 const { prepare, transaction } = require('../config/db');
+const { SEASON_STATUS } = require('../constants');
 const { ensureMatchGames, recalculateMatch } = require('./matchLifecycleService');
 const { markRoundInProgress, recalculateRound } = require('./roundLifecycleService');
 const { deleteRuleEventsForMatch } = require('./ruleEventService');
@@ -127,6 +128,14 @@ function cancelExistingMatch(match) {
   });
 }
 
+function isMatchSeasonCompleted(matchId) {
+  const match = getMatchById(matchId);
+  if (!match) return false;
+  if (!match.season_id) return false; // friendly match, no season
+  const season = getSeasonById(match.season_id);
+  return season?.status === SEASON_STATUS.COMPLETED;
+}
+
 module.exports = {
   formatMatch,
   listMatches,
@@ -137,5 +146,6 @@ module.exports = {
   updateMatch,
   deleteMatch,
   startExistingMatch,
-  cancelExistingMatch
+  cancelExistingMatch,
+  isMatchSeasonCompleted
 };

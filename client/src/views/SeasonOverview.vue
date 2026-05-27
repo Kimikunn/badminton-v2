@@ -22,6 +22,7 @@ const matchesStore = useMatchesStore()
 const playersStore = usePlayersStore()
 const { getSeasonColor } = useSeasonTheme()
 const { getSelectedSeasonId, setSelectedSeasonId } = useSeasonSelector()
+const isTestMode = import.meta.env.VITE_TEST_MODE === 'true'
 const { setViewAccent, viewStyle } = useViewAccent()
 const toast = useToast()
 const { confirm: confirmAction } = useConfirm()
@@ -132,7 +133,7 @@ onMounted(() => { const s = currentSeason.value; if (s?.color) setViewAccent(get
             <Badge v-else-if="m.status===STATUS.PENDING" variant="warning" size="sm">待打</Badge>
             <Badge v-else variant="success" size="sm">Live</Badge>
             <button v-if="m.status===STATUS.IN_PROGRESS" class="px-2 py-0.5 border border-accent rounded-lg bg-accent-subtle text-accent text-xs cursor-pointer" @click="goScoring(m.id)">记分</button>
-            <button class="bg-transparent border-none cursor-pointer text-sm opacity-50 text-fg" @click="handleDeleteMatch(m)"><Trash2 :size="14" /></button>
+            <button v-if="isTestMode || currentSeason?.status !== STATUS.COMPLETED" class="bg-transparent border-none cursor-pointer text-sm opacity-50 text-fg" @click="handleDeleteMatch(m)"><Trash2 :size="14" /></button>
           </div>
         </div>
       </Card>
