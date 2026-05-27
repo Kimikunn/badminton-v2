@@ -34,7 +34,7 @@ const canInput = computed(() => props.hasCurrentGame && !props.isMatchOver)
     <div class="flex flex-col items-center gap-2 flex-1 max-w-[140px]">
       <div class="flex gap-1.5">
         <span
-          v-for="i in bestOf"
+          v-for="i in (bestOf === 7 ? 7 : Math.ceil(bestOf / 2))"
           :key="'a'+i"
           class="w-2.5 h-2.5 rounded-full transition-colors duration-fast"
           :class="i <= matchScore.scoreA ? 'bg-accent' : 'bg-line'"
@@ -64,7 +64,7 @@ const canInput = computed(() => props.hasCurrentGame && !props.isMatchOver)
     <div class="flex flex-col items-center gap-2 flex-1 max-w-[140px]">
       <div class="flex gap-1.5">
         <span
-          v-for="i in bestOf"
+          v-for="i in (bestOf === 7 ? 7 : Math.ceil(bestOf / 2))"
           :key="'b'+i"
           class="w-2.5 h-2.5 rounded-full transition-colors duration-fast"
           :class="i <= matchScore.scoreB ? 'bg-accent' : 'bg-line'"

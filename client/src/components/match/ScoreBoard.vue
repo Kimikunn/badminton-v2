@@ -40,7 +40,7 @@ const emit = defineEmits(['score-a', 'score-b', 'undo-a', 'undo-b'])
     <!-- Team A -->
     <div class="team-section flex flex-col items-center gap-3 flex-1 max-w-[160px]">
       <div v-if="interactive" class="flex gap-1.5">
-        <span v-for="i in Math.ceil(bestOf / 2)" :key="'ga-'+i"
+        <span v-for="i in (bestOf === 7 ? 7 : Math.ceil(bestOf / 2))" :key="'ga-'+i"
           class="w-2.5 h-2.5 rounded-full transition-colors duration-fast ease-out"
           :class="i <= gamesA ? 'bg-accent' : 'bg-line'">
         </span>
@@ -71,7 +71,7 @@ const emit = defineEmits(['score-a', 'score-b', 'undo-a', 'undo-b'])
     <!-- Team B -->
     <div class="team-section flex flex-col items-center gap-3 flex-1 max-w-[160px]">
       <div v-if="interactive" class="flex gap-1.5">
-        <span v-for="i in Math.ceil(bestOf / 2)" :key="'gb-'+i"
+        <span v-for="i in (bestOf === 7 ? 7 : Math.ceil(bestOf / 2))" :key="'gb-'+i"
           class="w-2.5 h-2.5 rounded-full transition-colors duration-fast ease-out"
           :class="i <= gamesB ? 'bg-accent' : 'bg-line'">
         </span>
