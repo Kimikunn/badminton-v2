@@ -75,7 +75,8 @@ const stats = computed(() => {
   const rds = rounds.value
   const completed = rds.filter(r => r.status === STATUS.COMPLETED).length
   const current = rds.find(r => r.status === STATUS.IN_PROGRESS) || rds.find(r => r.status === STATUS.PENDING)
-  return { total: currentSeason.value?.totalRounds||0, completed, currentRound: current, currentRoundNo: current?.roundNo || completed }
+  const currentRoundNo = Math.min(current?.roundNo || (completed > 0 ? completed + 1 : 1), currentSeason.value?.totalRounds || 1)
+  return { total: currentSeason.value?.totalRounds||0, completed, currentRound: current, currentRoundNo }
 })
 
 const seasonMatches = computed(() => {
@@ -344,11 +345,11 @@ onMounted(() => {
         <Card padding="md">
           <div class="head">
             <div>
-              <h3 class="text-sm font-semibold text-fg">第 {{ stats.completed }}/{{ stats.total }} 轮</h3>
+              <h3 class="text-sm font-semibold text-fg">第 {{ stats.currentRoundNo }}/{{ stats.total }} 轮</h3>
             </div>
             <Badge :variant="seasonStatusVariant(currentSeason.status)" size="sm">{{ seasonStatusLabel(currentSeason.status) }}</Badge>
           </div>
-          <div class="bar"><div class="fill" :style="{width:(stats.completed/stats.total*100)+'%'}"></div></div>
+          <div class="bar"><div class="fill" :style="{width:(stats.currentRoundNo/stats.total*100)+'%'}"></div></div>
           <div class="acts">
             <Button v-if="canCreate" variant="primary" size="sm" @click="openCreate">+ 创建第 {{ stats.currentRoundNo+1 }} 轮</Button>
           </div>
@@ -394,7 +395,7 @@ onMounted(() => {
         <Card v-if="completedRounds.length" padding="md">
           <h3 class="sec-title">比赛记录</h3>
           <div class="rounds-list">
-            <div v-for="round in [...completedRounds].reverse()" :key="round.id" class="rb">
+            <div v-for="round in [...completedRounds].reverse()" :key="round.id" class="rblock">
               <div class="rh">
                 <span class="rn">R{{ round.roundNo }}</span>
                 <Badge :variant="round.status==='completed'?'muted':'success'" size="sm">{{ round.status==='completed'?'已完成':'进行中' }}</Badge>
@@ -537,11 +538,11 @@ onMounted(() => {
 .acts { @apply flex flex-wrap gap-2; }
 .sec-title { @apply text-xs font-semibold text-fg-secondary uppercase tracking-wider mb-3; }
 .round-title-row { @apply flex items-center justify-between mb-3; }
-.rb { @apply bg-canvas border border-line-light rounded-lg p-3; }
+.rblock { @apply flex flex-col gap-1 pt-4 border-t-2 border-line first:border-t-0 first:pt-0; }
 .compact-empty { @apply text-center p-4 text-sm text-fg-muted; }
 .matches { @apply flex flex-col gap-2; }
-.m-row { @apply flex items-center gap-2 p-3 bg-canvas border border-line-light rounded-lg; }
-.m-row.live { @apply border-success bg-success-subtle; }
+.m-row { @apply flex items-center gap-2 py-2.5 border-b border-line-light last:border-b-0 pl-2.5; }
+.m-row.live { background: linear-gradient(to right, var(--color-success) 3px, oklch(0.62 0.19 145 / 0.06) 3px); @apply rounded-md pr-1; }
 .m-teams { @apply flex-1 text-sm font-medium truncate; }
 .m-teams.clickable { @apply cursor-pointer; }
 .m-score { @apply text-sm font-semibold font-mono text-accent; }
@@ -553,10 +554,7 @@ onMounted(() => {
 .rh { @apply flex items-center gap-2 mb-1; }
 .rn { @apply text-sm font-bold font-mono; }
 .rp { @apply flex flex-col gap-1; }
-.pr { @apply flex items-center gap-2 p-3 bg-canvas border border-line-light rounded-lg cursor-pointer transition-[transform,border-color] duration-fast active:scale-[0.98]; }
-.pr:first-child { @apply rounded-t-sm; }
-.pr:last-child { border-radius:0 0 var(--radius-sm) var(--radius-sm); }
-.pr:only-child { @apply rounded-sm; }
+.pr { @apply flex items-center gap-2 py-2.5 pl-2.5 border-b border-line-light last:border-b-0 cursor-pointer active:opacity-70; }
 .pt { @apply flex-1 text-sm font-medium truncate; }
 .ps { @apply text-sm font-semibold font-mono text-accent; }
 .live-card { @apply flex items-center gap-3 p-3 bg-canvas border border-success rounded-md cursor-pointer; }
@@ -580,7 +578,7 @@ onMounted(() => {
 .pc.sel { @apply bg-accent-subtle border-accent text-accent; }
 .pc.disabled { @apply opacity-35 cursor-not-allowed; }
 .f-matches, .f-history { @apply flex flex-col gap-2; }
-.f-row { @apply flex items-center gap-2 p-3 bg-canvas border border-line-light rounded-lg cursor-pointer transition-[transform,border-color] duration-fast active:scale-[0.98]; }
+.f-row { @apply flex items-center gap-2 py-2.5 border-b border-line-light last:border-b-0 cursor-pointer active:opacity-70; }
 .f-row.live { @apply border-success bg-success-subtle; }
 .f-row:active { @apply bg-surface-hover; }
 .f-teams { @apply flex-1 text-sm font-medium truncate; }

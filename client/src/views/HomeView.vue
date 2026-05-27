@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useClubStore, usePlayersStore, useSeasonsStore, useMatchesStore, useTitlesStore } from '@/stores'
+import { useClubStore, usePlayersStore, useSeasonsStore, useMatchesStore, useTitlesStore, useBookingsStore } from '@/stores'
 import { STATUS } from '@/constants'
 import Card from '@/components/ui/Card.vue'
 import Badge from '@/components/ui/Badge.vue'
@@ -18,6 +18,7 @@ const playersStore = usePlayersStore()
 const seasonsStore = useSeasonsStore()
 const matchesStore = useMatchesStore()
 const titlesStore = useTitlesStore()
+const bookingsStore = useBookingsStore()
 
 // Club - click to edit
 const editingClub = ref(false)
@@ -40,6 +41,25 @@ function getDisplayedTitle(player) {
   }
   return titlesStore.getHighestTitle(player.id)
 }
+
+const TITLE_PILL = {
+  S: 'bg-[var(--color-badge-gold-bg)] text-[var(--color-badge-gold)]',
+  A: 'bg-[var(--color-badge-purple-bg)] text-[var(--color-badge-purple)]',
+  B: 'bg-accent-subtle text-accent',
+  C: 'bg-success-subtle text-success',
+  hidden: 'bg-surface-hover text-fg-muted'
+}
+function titlePillClass(level) { return TITLE_PILL[level] || TITLE_PILL.hidden }
+
+const totalBookingHours = computed(() => {
+  let total = 0
+  for (const r of bookingsStore.records) {
+    const sh = parseInt((r.startTime || '').split(':')[0], 10)
+    const eh = parseInt((r.endTime || '').split(':')[0], 10)
+    if (sh >= 0 && eh > sh) total += eh - sh
+  }
+  return total
+})
 function goToPlayer(id) { router.push({ name: 'player-detail', params: { id } }) }
 
 // Season
@@ -64,19 +84,19 @@ function getMatchTypeLabel(m) { return m.seasonId ? '赛季' : '友谊' }
 </script>
 
 <template>
-  <div class="flex flex-col gap-4">
+  <div class="flex flex-col gap-3">
     <!-- Club info — Liquid Glass -->
     <div
-      class="liquid-card p-5 cursor-pointer transition-[transform,box-shadow] duration-fast ease-out active:scale-[0.98]"
+      class="liquid-card p-4 cursor-pointer transition-[transform,box-shadow] duration-fast ease-out active:scale-[0.98]"
       :class="{ '!cursor-default': editingClub }"
       @click="!editingClub && toggleEditClub()"
     >
       <template v-if="!editingClub">
-        <div class="flex items-center gap-4">
-          <img src="/icon-192.png" class="w-[52px] h-[52px] rounded-xl shrink-0 shadow-sm object-cover" alt="TPC" />
+        <div class="flex items-center gap-3">
+          <img src="/icon-192.png" class="w-11 h-11 rounded-xl shrink-0 shadow-sm object-cover" alt="TPC" />
           <div class="flex-1 min-w-0">
-            <h2 class="text-lg font-semibold text-fg">{{ clubStore.club.name }}</h2>
-            <p class="text-sm text-fg-secondary mt-0.5">{{ clubStore.club.description || '暂无介绍' }}</p>
+            <h2 class="text-base font-semibold text-fg">{{ clubStore.club.name }}</h2>
+            <p class="text-xs text-fg-secondary mt-0.5">{{ clubStore.club.description || '暂无介绍' }}</p>
           </div>
         </div>
       </template>
@@ -116,14 +136,14 @@ function getMatchTypeLabel(m) { return m.seasonId ? '赛季' : '友谊' }
 
     <!-- Members -->
     <Card padding="md">
-      <h3 class="text-xs font-semibold text-fg-secondary uppercase tracking-wide mb-3">成员 ({{ playersStore.players.length }})</h3>
+      <h3 class="text-xs font-semibold text-fg-secondary uppercase tracking-wide mb-2">成员 ({{ playersStore.players.length }})</h3>
       <div class="flex flex-col" v-if="playersStore.players.length > 0">
-        <div v-for="p in playersStore.players" :key="p.id" class="flex items-center gap-2 py-2.5 cursor-pointer border-b border-line-light last:border-b-0 transition-opacity duration-fast active:opacity-70" @click="goToPlayer(p.id)">
+        <div v-for="p in playersStore.players" :key="p.id" class="flex items-center gap-2 py-2 cursor-pointer border-b border-line-light last:border-b-0 transition-opacity duration-fast active:opacity-70" @click="goToPlayer(p.id)">
           <Avatar :name="p.name" :src="p.avatar" size="sm" />
           <span class="text-sm font-medium text-fg flex-1 min-w-0">{{ p.name }}</span>
-          <span v-if="getDisplayedTitle(p)" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-hover shrink-0">
+          <span v-if="getDisplayedTitle(p)" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full shrink-0" :class="titlePillClass(getDisplayedTitle(p).level)">
             <TitleIcon :title-id="getDisplayedTitle(p).id" :size="12" />
-            <span class="text-2xs text-fg-muted max-w-20 truncate">{{ getDisplayedTitle(p).name }}</span>
+            <span class="text-2xs max-w-20 truncate">{{ getDisplayedTitle(p).name }}</span>
           </span>
           <ChevronRight :size="16" class="text-fg-muted shrink-0" />
         </div>
@@ -144,6 +164,10 @@ function getMatchTypeLabel(m) { return m.seasonId ? '赛季' : '友谊' }
       <div class="text-center">
         <span class="block text-xl font-bold text-accent">{{ matchesStore.historyMatches.length }}</span>
         <span class="text-xs text-fg-muted">比赛</span>
+      </div>
+      <div v-if="totalBookingHours" class="text-center">
+        <span class="block text-xl font-bold text-accent">{{ totalBookingHours }}h</span>
+        <span class="text-xs text-fg-muted">时长</span>
       </div>
     </div>
   </div>

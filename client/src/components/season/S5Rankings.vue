@@ -61,7 +61,7 @@ const skillCards = computed(() => {
         id: `pause-${p.id}`, type: 'pause', tone: 'order',
         icon: PauseCircle, title: '暂停卡', subject: p.name || p.id,
         detail: rewardText(p), badge: `贯穿 ×${p.pierceCount}`,
-        used: !!use, usedAt: use?.usedAt || null, payload: p
+        used: !!use, usedNote: use?.note || '', payload: p
       }
     }),
     ...debtActionRows.value.map(r => {
@@ -100,9 +100,15 @@ function fmtDt(v) {
 function getPauseUse(pid) { return pauseUses.value.find(u => u.playerId === pid) || null }
 function getDebtSettlement(rn) { return debtSettlements.value[String(rn)] || null }
 
+function activeRoundNo() {
+  const active = props.rounds?.find(r => r.status === 'in_progress')
+  return active?.roundNo || props.rounds?.length || ''
+}
+
 async function recordPauseUse(p) {
   if (!props.season?.id || getPauseUse(p.id)) return
-  await recordSeasonAction(props.season.id, 's5_pause_use', { playerId: p.id }, '暂停卡已使用')
+  const rn = activeRoundNo()
+  await recordSeasonAction(props.season.id, 's5_pause_use', { playerId: p.id, note: rn ? `第${rn}轮使用` : '' }, '暂停卡已使用')
 }
 async function recordDebtSettlement(r) {
   if (!props.season?.id || !r || getDebtSettlement(r.roundNo)) return
@@ -172,7 +178,7 @@ const ruleTitle = computed(() => RULE_TITLES[ruleSheet.value] || '')
               <Badge :variant="c.tone === 'mutation' ? 'danger' : 'purple'" size="sm">{{ c.title }}</Badge>
             </div>
             <p class="text-xs text-fg-muted truncate mt-0.5">{{ c.detail }}</p>
-            <p v-if="c.used" class="text-xs text-success mt-0.5">已使用 · {{ fmtDt(c.usedAt) }}</p>
+            <p v-if="c.used && c.usedNote" class="text-xs text-success mt-0.5">已使用 · {{ c.usedNote }}</p>
           </div>
           <div class="s5-skill-act">
             <Badge :variant="c.tone === 'mutation' ? 'danger' : 'purple'" size="sm">{{ c.badge }}</Badge>

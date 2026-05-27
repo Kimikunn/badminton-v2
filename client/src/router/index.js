@@ -5,10 +5,6 @@ import HomeView from '@/views/HomeView.vue'
 
 // 动态导入（代码分割）
 const ScoringView = () => import('@/views/ScoringView.vue')
-const SeasonOverview = () => import('@/views/SeasonOverview.vue')
-const SeasonRounds = () => import('@/views/SeasonRounds.vue')
-const SeasonRankings = () => import('@/views/SeasonRankings.vue')
-const RuleDashboard = () => import('@/views/RuleDashboard.vue')
 const MatchHubView = () => import('@/views/MatchHubView.vue')
 const MatchDetailView = () => import('@/views/MatchDetailView.vue')
 const PlayerDetailView = () => import('@/views/PlayerDetailView.vue')
@@ -27,34 +23,6 @@ const routes = [
     name: 'scoring',
     component: ScoringView,
     meta: { title: '记分', hideTab: true, depth: 2 }
-  },
-  {
-    path: '/season',
-    redirect: '/season/overview'
-  },
-  {
-    path: '/season/overview',
-    name: 'season-overview',
-    component: SeasonOverview,
-    meta: { title: '赛季概览', tab: 'season', depth: 0 }
-  },
-  {
-    path: '/season/rounds',
-    name: 'season-rounds',
-    component: SeasonRounds,
-    meta: { title: '轮次记录', tab: 'season', depth: 0 }
-  },
-  {
-    path: '/season/rankings',
-    name: 'season-rankings',
-    component: SeasonRankings,
-    meta: { title: '积分榜', tab: 'season', depth: 0 }
-  },
-  {
-    path: '/season/rules',
-    name: 'rule-dashboard',
-    component: RuleDashboard,
-    meta: { title: '规则面板', tab: 'season', depth: 0 }
   },
   {
     path: '/matches',

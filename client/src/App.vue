@@ -95,7 +95,6 @@ const tabs = [
 const activeTab = computed(() => {
   const tab = route.meta.tab
   if (tab) return tab
-  if (route.path.startsWith('/season')) return 'matches'
   return 'home'
 })
 

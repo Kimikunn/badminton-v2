@@ -56,9 +56,14 @@ export function useTheme() {
 
   function applyTheme(dark) {
     document.documentElement.classList.toggle('dark', dark)
-    const meta = document.querySelector('meta[name="theme-color"]')
-    if (meta) {
-      meta.content = dark ? '#26292e' : '#f6f8fa'
+    document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
+    const themeMeta = document.querySelector('meta[name="theme-color"]')
+    if (themeMeta) {
+      themeMeta.content = dark ? '#1c1c1e' : '#f6f8fa'
+    }
+    const statusMeta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')
+    if (statusMeta) {
+      statusMeta.content = dark ? 'black-translucent' : 'default'
     }
   }
 
