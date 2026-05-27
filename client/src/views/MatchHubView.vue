@@ -542,7 +542,16 @@ onMounted(() => {
 .compact-empty { @apply text-center p-4 text-sm text-fg-muted; }
 .matches { @apply flex flex-col gap-2; }
 .m-row { @apply flex items-center gap-2 py-2.5 border-b border-line-light last:border-b-0 pl-2.5; }
-.m-row.live { background: linear-gradient(to right, var(--color-success) 3px, oklch(0.62 0.19 145 / 0.06) 3px); @apply rounded-md pr-1; }
+.m-row.live { @apply relative rounded-md; }
+.m-row.live::before {
+  content: '';
+  position: absolute;
+  inset: -4px -8px;
+  border-radius: inherit;
+  background: linear-gradient(to right, var(--color-success) 3px, oklch(0.62 0.19 145 / 0.06) 3px);
+  z-index: -1;
+  pointer-events: none;
+}
 .m-teams { @apply flex-1 text-sm font-medium truncate; }
 .m-teams.clickable { @apply cursor-pointer; }
 .m-score { @apply text-sm font-semibold font-mono text-accent; }
