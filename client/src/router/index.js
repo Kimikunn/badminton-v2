@@ -20,7 +20,7 @@ const routes = [
     path: '/',
     name: 'home',
     component: HomeView,
-    meta: { title: 'BAD Club', tab: 'home', depth: 0 }
+    meta: { title: 'The Plume Championship', tab: 'home', depth: 0 }
   },
   {
     path: '/scoring/:matchId',

@@ -130,8 +130,8 @@ onMounted(async () => {
         :class="headerHidden ? '-translate-y-full' : 'translate-y-0'"
         style="padding-top: env(safe-area-inset-top, 0px); min-height: calc(var(--header-height) + env(safe-area-inset-top, 0px))"
       >
-        <h1 class="font-display text-xl font-bold tracking-tight flex items-center gap-2">
-          BAD Club
+        <h1 class="text-base italic tracking-wide flex items-center gap-2" style="font-family: 'Playfair Display', serif;">
+          The&nbsp;Plume&nbsp;Championship
           <span v-if="isTestMode" class="text-3xs font-mono font-normal px-1.5 py-0.5 rounded-full bg-warning-subtle text-warning border border-warning/30">TEST</span>
         </h1>
         <div class="flex gap-2">

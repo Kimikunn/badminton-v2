@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { api } from '@/api/client'
 
 export const useClubStore = defineStore('club', () => {
-  const club = ref({ name: 'BAD Club', description: '', avatar: null })
+  const club = ref({ name: 'The Plume Championship', description: '', avatar: null })
   const loading = ref(false)
   const initialized = ref(false)
   const error = ref(null)

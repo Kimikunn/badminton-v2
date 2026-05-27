@@ -77,9 +77,7 @@ function getMatchTypeLabel(m) { return m.seasonId ? '赛季' : '友谊' }
     >
       <template v-if="!editingClub">
         <div class="flex items-center gap-4">
-          <div class="w-[52px] h-[52px] rounded-xl bg-gradient-to-br from-accent to-[var(--color-avatar-fallback-end)] flex items-center justify-center text-fg-inverse shrink-0 shadow-sm">
-            <Dumbbell :size="24" />
-          </div>
+          <img src="/icon-192.png" class="w-[52px] h-[52px] rounded-xl shrink-0 shadow-sm object-cover" alt="TPC" />
           <div class="flex-1 min-w-0">
             <h2 class="text-lg font-semibold text-fg">{{ clubStore.club.name }}</h2>
             <p class="text-sm text-fg-secondary mt-0.5">{{ clubStore.club.description || '暂无介绍' }}</p>
