@@ -6,11 +6,12 @@ import { STATUS, TITLE_LEVELS } from '@/constants'
 import Card from '@/components/ui/Card.vue'
 import Avatar from '@/components/ui/Avatar.vue'
 import Badge from '@/components/ui/Badge.vue'
+import TitleIcon from '@/components/ui/TitleIcon.vue'
 import Button from '@/components/ui/Button.vue'
 import Input from '@/components/ui/Input.vue'
 import Sheet from '@/components/ui/Sheet.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
-import { User, Award, ArrowLeft, Pencil, Trash2, Camera } from 'lucide-vue-next'
+import { User, Award, ArrowLeft, Pencil, Trash2 } from 'lucide-vue-next'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import { api } from '@/api/client'
@@ -26,7 +27,23 @@ const { confirm: confirmAction } = useConfirm()
 
 const playerId = computed(() => route.params.id)
 const player = computed(() => playersStore.getPlayerById(playerId.value))
-const playerTitles = computed(() => titlesStore.getPlayerTitles(playerId.value))
+const LEVEL_ORDER = { S: 0, A: 1, B: 2, C: 3, hidden: 4 }
+const playerTitles = computed(() => {
+  const titles = titlesStore.getPlayerTitles(playerId.value)
+  return [...titles].sort((a, b) => (LEVEL_ORDER[a.level] ?? 5) - (LEVEL_ORDER[b.level] ?? 5))
+})
+
+const LEVEL_ICON_STYLE = {
+  S: 'bg-[linear-gradient(135deg,#d4a017,#e8c547)] text-white',
+  A: 'bg-[var(--color-badge-purple-bg)] text-[var(--color-badge-purple)]',
+  B: 'bg-accent-subtle text-accent',
+  C: 'bg-success-subtle text-success',
+  hidden: 'bg-surface-hover text-fg-muted'
+}
+function levelIconStyle(level) { return LEVEL_ICON_STYLE[level] || LEVEL_ICON_STYLE.hidden }
+
+// Title detail
+const selectedTitle = ref(null)
 
 // Displayed title
 const displayedTitle = computed(() => {
@@ -84,7 +101,15 @@ async function saveEdit() {
 
 // Avatar upload
 const avatarInput = ref(null)
-function triggerAvatarUpload() { avatarInput.value?.click() }
+const showAvatarSheet = ref(false)
+
+function openAvatarSheet() { showAvatarSheet.value = true }
+
+function triggerAvatarUpload() {
+  showAvatarSheet.value = false
+  setTimeout(() => avatarInput.value?.click(), 200)
+}
+
 async function handleAvatarChange(e) {
   const file = e.target.files?.[0]
   if (!file) return
@@ -172,10 +197,9 @@ function getTitleLevelVariant(level) {
     <template v-else>
       <!-- Profile -->
       <div class="flex items-center gap-4 relative">
-        <div class="relative cursor-pointer rounded-full overflow-hidden shrink-0 avatar-wrap" @click="triggerAvatarUpload">
+        <button class="rounded-full overflow-hidden cursor-pointer border-none p-0 active:scale-95 transition-transform shrink-0" @click="openAvatarSheet">
           <Avatar :name="player.name" :src="player.avatar" size="xl" />
-          <div class="avatar-overlay"><Camera :size="24" /></div>
-        </div>
+        </button>
         <input ref="avatarInput" type="file" accept="image/*" class="hidden" @change="handleAvatarChange" />
         <div class="flex-1 relative">
           <div class="flex items-center gap-2 flex-wrap">
@@ -287,10 +311,12 @@ function getTitleLevelVariant(level) {
         <div v-else class="flex flex-col gap-2">
           <div v-for="title in playerTitles" :key="title.id" class="flex items-center gap-3 py-2 border-b border-line-light last:border-b-0"
             :class="{'bg-accent-subtle -mx-2 px-2 rounded-sm !border-b-0':displayedTitle?.id===title.id}">
-            <Badge :variant="getTitleLevelVariant(title.level)" size="md">{{ TITLE_LEVELS[title.level]?.label || title.level }}</Badge>
-            <span class="text-sm font-medium text-fg flex-1">{{ title.name }}</span>
+            <div class="w-8 h-8 rounded-full flex items-center justify-center shrink-0" :class="levelIconStyle(title.level)">
+              <TitleIcon :title-id="title.id" :size="16" />
+            </div>
+            <span class="text-sm font-medium text-fg flex-1 cursor-pointer active:opacity-70" @click="selectedTitle = title">{{ title.name }}</span>
             <button v-if="displayedTitle?.id!==title.id" class="title-set" @click="setDisplayedTitle(title.id)">设为展示</button>
-            <span v-else class="text-xs text-success font-medium">展示中</span>
+            <span v-else class="text-xs text-success font-medium shrink-0">展示中</span>
           </div>
         </div>
       </Card>
@@ -306,15 +332,42 @@ function getTitleLevelVariant(level) {
         </div>
       </div>
     </Sheet>
+
+    <!-- Avatar preview sheet -->
+    <Sheet :show="showAvatarSheet" title="头像" @close="showAvatarSheet = false">
+      <div class="flex flex-col items-center gap-4 py-4">
+        <div class="w-48 h-48 rounded-full overflow-hidden bg-canvas shadow-lg">
+          <img v-if="player.avatar" :src="player.avatar" :alt="player.name" class="w-full h-full object-cover" />
+          <div v-else class="w-full h-full flex items-center justify-center text-5xl font-bold text-fg-muted bg-[linear-gradient(135deg,var(--color-accent),var(--color-avatar-fallback-end))] text-fg-inverse">
+            {{ player.name?.charAt(0) }}
+          </div>
+        </div>
+        <button
+          class="w-full py-3 rounded-xl bg-accent text-white text-base font-semibold active:opacity-80 transition-opacity"
+          @click="triggerAvatarUpload"
+        >更换照片</button>
+      </div>
+    </Sheet>
+
+    <!-- Title detail sheet -->
+    <Sheet :show="!!selectedTitle" :title="selectedTitle?.name || ''" @close="selectedTitle = null">
+      <div class="flex flex-col gap-4">
+        <div class="flex items-center gap-3" v-if="selectedTitle">
+          <div class="w-10 h-10 rounded-full flex items-center justify-center" :class="levelIconStyle(selectedTitle.level)">
+            <TitleIcon :title-id="selectedTitle.id" :size="20" />
+          </div>
+          <div>
+            <span class="block text-base font-semibold text-fg">{{ TITLE_LEVELS[selectedTitle.level]?.label }}称号</span>
+          </div>
+        </div>
+        <p class="text-sm text-fg leading-relaxed">{{ selectedTitle?.conditionDesc || '暂无说明' }}</p>
+      </div>
+    </Sheet>
   </div>
 </template>
 
 <style scoped>
 @reference "@/styles/global.css";
-/* Avatar overlay — needs :hover on parent */
-.avatar-overlay { @apply absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 transition-opacity duration-fast; }
-.avatar-wrap:hover .avatar-overlay { opacity:1; }
-
 /* Icon button — shared with VenueView */
 .icon-btn { @apply w-7 h-7 border-none rounded-full bg-surface-hover text-fg-muted flex items-center justify-center cursor-pointer transition-all duration-fast active:scale-90; }
 .icon-btn:hover { @apply bg-accent-subtle text-accent; }

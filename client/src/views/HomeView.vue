@@ -9,7 +9,8 @@ import Avatar from '@/components/ui/Avatar.vue'
 import Button from '@/components/ui/Button.vue'
 import Input from '@/components/ui/Input.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
-import { Dumbbell, Crown, Star, Diamond, Clover, CircleHelp, ChevronRight, Users } from 'lucide-vue-next'
+import TitleIcon from '@/components/ui/TitleIcon.vue'
+import { ChevronRight, Users } from 'lucide-vue-next'
 
 const router = useRouter()
 const clubStore = useClubStore()
@@ -38,11 +39,6 @@ function getDisplayedTitle(player) {
     return titlesStore.allTitles.find(t => t.id === player.displayedTitleId)
   }
   return titlesStore.getHighestTitle(player.id)
-}
-const titleIconMap = { S: Crown, A: Star, B: Diamond, C: Clover, hidden: CircleHelp }
-function getTitleIcon(title) {
-  if (!title) return null
-  return titleIconMap[title.level] || null
 }
 function goToPlayer(id) { router.push({ name: 'player-detail', params: { id } }) }
 
@@ -125,9 +121,11 @@ function getMatchTypeLabel(m) { return m.seasonId ? '赛季' : '友谊' }
         <div v-for="p in playersStore.players" :key="p.id" class="flex items-center gap-2 py-2.5 cursor-pointer border-b border-line-light last:border-b-0 transition-opacity duration-fast active:opacity-70" @click="goToPlayer(p.id)">
           <Avatar :name="p.name" :src="p.avatar" size="sm" />
           <span class="text-sm font-medium text-fg flex-1 min-w-0">{{ p.name }}</span>
-          <component v-if="getDisplayedTitle(p) && getTitleIcon(getDisplayedTitle(p))" :is="getTitleIcon(getDisplayedTitle(p))" :size="14" class="text-2xs" />
-          <span class="text-xs text-fg-muted">{{ getDisplayedTitle(p)?.name || '' }}</span>
-          <ChevronRight :size="14" class="text-fg-muted shrink-0" />
+          <span v-if="getDisplayedTitle(p)" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-hover shrink-0">
+            <TitleIcon :title-id="getDisplayedTitle(p).id" :size="12" />
+            <span class="text-2xs text-fg-muted max-w-20 truncate">{{ getDisplayedTitle(p).name }}</span>
+          </span>
+          <ChevronRight :size="16" class="text-fg-muted shrink-0" />
         </div>
       </div>
       <EmptyState v-else icon="Users" title="暂无成员" />

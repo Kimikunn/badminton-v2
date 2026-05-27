@@ -112,6 +112,7 @@ Component → Composable → Store → api(client.js) → Backend
 | 工作流正反例 | `WORKFLOW_EXAMPLES.md` |
 | 前端优化待办 | `FRONTEND_OPTIMIZATION_BACKLOG.md` |
 | 后端待办 | `BACKEND_TODO.md` |
+| 赛季规则 UI 设计范式 | `docs/SEASON_RULE_DESIGN.md` |
 
 ---
 

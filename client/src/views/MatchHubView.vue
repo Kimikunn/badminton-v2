@@ -338,8 +338,7 @@ onMounted(() => {
         <Card padding="md">
           <div class="head">
             <div>
-              <h2>{{ currentSeason.name }}</h2>
-              <p class="sub">已完成 {{ stats.completed }} 轮 · {{ {standard:'标准',s2:'S2绝地反击',s3:'S3超能饮料',s4:'S4星尘之征',s5:'S5异变秩序'}[currentSeason.ruleId]||currentSeason.ruleId }}</p>
+              <h3 class="text-sm font-semibold text-fg">第 {{ stats.completed }}/{{ stats.total }} 轮</h3>
             </div>
             <Badge :variant="seasonStatusVariant(currentSeason.status)" size="sm">{{ seasonStatusLabel(currentSeason.status) }}</Badge>
           </div>

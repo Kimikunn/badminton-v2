@@ -23,3 +23,28 @@ export const TITLE_LEVELS = {
   hidden: { label: '隐藏', color: 'gray', order: 4 }
 }
 
+// Each title has a unique lucide icon name
+export const TITLE_ICONS = {
+  't_s1_champion': 'Trophy',
+  't_s2_champion': 'Medal',
+  't_s3_champion': 'Award',
+  't_s4_winner': 'Crown',
+  't_glass_cannon': 'Bomb',
+  't_weapon_collector': 'Swords',
+  't_nest_master': 'Fish',
+  't_first_try': 'Sword',
+  't_equipment_expert': 'Wrench',
+  't_edge_winner': 'Target',
+  't_snow_melting': 'Snowflake',
+  't_spring_messenger': 'Sparkles',
+  't_thousand_goals': 'Goal',
+  't_yonex_fan': 'Shirt',
+  't_victor_fan': 'Footprints',
+  't_lining_fan': 'Zap',
+  't_zero_purchase': 'ShoppingCart',
+  't_devil_king': 'Skull',
+  't_not_lee': 'SmilePlus',
+  't_third_person': 'Eye',
+  't_silent': 'VolumeX'
+}
+
