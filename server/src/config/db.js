@@ -197,7 +197,8 @@ function transaction(fn) {
     const result = fn();
     transactionDepth -= 1;
     db.run(isOuterTransaction ? 'COMMIT' : `RELEASE SAVEPOINT ${savepoint}`);
-    scheduleSave();
+    // 外层事务提交后立刻写盘，避免 debounce 窗口期数据丢失
+    if (isOuterTransaction) saveDatabase();
     return result;
   } catch (err) {
     transactionDepth -= 1;
@@ -225,6 +226,13 @@ function saveDatabase() {
   if (!db) return;
   const data = db.export();
   const buffer = Buffer.from(data);
+
+  // 写盘前备份旧文件（如果存在）。备份始终是上一次成功写入的版本。
+  if (fs.existsSync(DB_PATH)) {
+    const backupPath = `${DB_PATH}.backup`;
+    try { fs.copyFileSync(DB_PATH, backupPath); } catch (_) { /* 备份失败不阻塞写入 */ }
+  }
+
   const tempPath = `${DB_PATH}.tmp-${process.pid}`;
   fs.writeFileSync(tempPath, buffer);
   fs.renameSync(tempPath, DB_PATH);

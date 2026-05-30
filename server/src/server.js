@@ -28,13 +28,25 @@ async function startServer() {
 
 function gracefulShutdown() {
   logger.info('正在关闭...');
+
+  // 10s 后仍未正常关闭时，强制保存数据库后退出，避免数据丢失
+  const forceExit = setTimeout(() => {
+    logger.warn('正常关闭超时，强制保存数据库');
+    closeDatabase();
+    process.exit(1);
+  }, 10000);
+
   if (server) {
-    server.close(() => { closeDatabase(); process.exit(0); });
+    server.close(() => {
+      clearTimeout(forceExit);
+      closeDatabase();
+      process.exit(0);
+    });
   } else {
+    clearTimeout(forceExit);
     closeDatabase();
     process.exit(0);
   }
-  setTimeout(() => process.exit(1), 10000);
 }
 
 process.on('SIGTERM', gracefulShutdown);

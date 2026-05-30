@@ -1,13 +1,6 @@
 -- BAD Club v2 — Database Schema
 -- SQLite
 
-CREATE TABLE IF NOT EXISTS users (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  username TEXT UNIQUE NOT NULL,
-  password TEXT NOT NULL,
-  role TEXT DEFAULT 'admin'
-);
-
 CREATE TABLE IF NOT EXISTS players (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
