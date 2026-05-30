@@ -1,6 +1,6 @@
 {
   "name": "badminton-backend-v2",
-  "version": "2.2.1",
+  "version": "2.2.2",
   "description": "Backend API for BAD Club v2",
   "main": "src/server.js",
   "scripts": {
@@ -15,6 +15,7 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.0",
     "express": "^4.21.0",
+    "express-rate-limit": "^8.5.2",
     "express-validator": "^7.2.0",
     "helmet": "^8.2.0",
     "jsonwebtoken": "^9.0.2",
