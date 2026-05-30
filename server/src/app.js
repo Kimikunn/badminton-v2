@@ -71,9 +71,26 @@ app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');
 app.use(express.static(clientDist));
 
-// Health check
+// Health check — 数据库连接 + 版本 + uptime
 app.get('/api/health', (_req, res) => {
-  res.json({ success: true, data: { status: 'ok', timestamp: new Date().toISOString() } });
+  const db = require('./config/db');
+  let dbOk = false;
+  try {
+    db.prepare('SELECT 1').get();
+    dbOk = true;
+  } catch (_) { /* database unavailable */ }
+
+  const healthy = dbOk;
+  res.status(healthy ? 200 : 503).json({
+    success: true,
+    data: {
+      status: healthy ? 'ok' : 'degraded',
+      version: require('../package.json').version,
+      uptime: Math.floor(process.uptime()),
+      checks: { database: dbOk ? 'ok' : 'fail' },
+      timestamp: new Date().toISOString()
+    }
+  });
 });
 
 // API routes
