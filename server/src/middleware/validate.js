@@ -10,12 +10,14 @@ const { validationResult } = require('express-validator');
 function validate(req, res, next) {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
+    const messages = errors.array().map(e => e.msg);
+    // 保持与 controller 手动验证相同的格式：message 使用第一个具体错误
     return res.status(422).json({
       success: false,
       error: {
         code: 'VALIDATION_ERROR',
-        message: '数据验证失败',
-        details: errors.array().map(e => e.msg)
+        message: messages[0],
+        details: messages
       }
     });
   }
