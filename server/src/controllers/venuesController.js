@@ -1,5 +1,4 @@
 const { success, notFound, validationError } = require('../utils/response');
-const { sendControllerError } = require('../utils/errorHandling');
 const { validateNonNegativeNumber, validateText } = require('../utils/validators');
 const venueService = require('../services/venueService');
 
@@ -51,42 +50,34 @@ function validateVenuePayload(body, options = {}) {
 }
 
 function getAll(req, res) {
-  try {
-    const rows = venueService.listVenues();
-    success(res, rows.map(venueService.formatVenue));
-  } catch (err) { sendControllerError(res, err, 'venuesController'); }
+  const rows = venueService.listVenues();
+  success(res, rows.map(venueService.formatVenue));
 }
 
 function create(req, res) {
-  try {
-    const payloadError = validateVenuePayload(req.body);
-    if (payloadError) return validationError(res, payloadError);
+  const payloadError = validateVenuePayload(req.body);
+  if (payloadError) return validationError(res, payloadError);
 
-    const row = venueService.createVenue(req.body);
-    success(res, venueService.formatVenue(row), 201);
-  } catch (err) { sendControllerError(res, err, 'venuesController'); }
+  const row = venueService.createVenue(req.body);
+  success(res, venueService.formatVenue(row), 201);
 }
 
 function update(req, res) {
-  try {
-    const existing = venueService.getVenueById(req.params.id);
-    if (!existing) return notFound(res, '场地不存在');
+  const existing = venueService.getVenueById(req.params.id);
+  if (!existing) return notFound(res, '场地不存在');
 
-    const payloadError = validateVenuePayload(req.body, { partial: true });
-    if (payloadError) return validationError(res, payloadError);
+  const payloadError = validateVenuePayload(req.body, { partial: true });
+  if (payloadError) return validationError(res, payloadError);
 
-    const row = venueService.updateVenue(req.params.id, req.body);
-    success(res, venueService.formatVenue(row));
-  } catch (err) { sendControllerError(res, err, 'venuesController'); }
+  const row = venueService.updateVenue(req.params.id, req.body);
+  success(res, venueService.formatVenue(row));
 }
 
 function remove(req, res) {
-  try {
-    const existing = venueService.getVenueById(req.params.id);
-    if (!existing) return notFound(res, '场地不存在');
+  const existing = venueService.getVenueById(req.params.id);
+  if (!existing) return notFound(res, '场地不存在');
 
-    success(res, venueService.deleteVenue(req.params.id));
-  } catch (err) { sendControllerError(res, err, 'venuesController'); }
+  success(res, venueService.deleteVenue(req.params.id));
 }
 
 module.exports = {

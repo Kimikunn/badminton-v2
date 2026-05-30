@@ -1,5 +1,4 @@
 const { success, notFound, validationError } = require('../utils/response');
-const { sendControllerError } = require('../utils/errorHandling');
 const seasonService = require('../services/seasonService');
 const seasonActionService = require('../services/seasonActionService');
 
@@ -10,14 +9,10 @@ function sendActionResult(res, result) {
 }
 
 function recordSeasonAction(req, res) {
-  try {
-    return sendActionResult(
-      res,
-      seasonActionService.recordSeasonAction(req.params.id, req.params.actionId, req.body)
-    );
-  } catch (err) {
-    return sendControllerError(res, err, 'seasonActionsController');
-  }
+  return sendActionResult(
+    res,
+    seasonActionService.recordSeasonAction(req.params.id, req.params.actionId, req.body)
+  );
 }
 
 module.exports = {

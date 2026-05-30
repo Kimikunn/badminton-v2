@@ -1,93 +1,84 @@
 const { success, notFound, validationError } = require('../utils/response');
-const { sendControllerError } = require('../utils/errorHandling');
 const { normalizeMatchFormat, validateNoTeamOverlap, validateTeam } = require('../utils/validators');
 const { parseJson } = require('../utils/json');
 const { MATCH_STATUS, ROUND_STATUS } = require('../constants');
 const matchService = require('../services/matchService');
 
 function getAll(req, res) {
-  try {
-    const rows = matchService.listMatches();
-    success(res, rows.map(matchService.formatMatch));
-  } catch (err) { sendControllerError(res, err, 'matchesController'); }
+  const rows = matchService.listMatches();
+  success(res, rows.map(matchService.formatMatch));
 }
 
 function getById(req, res) {
-  try {
-    const row = matchService.getMatchById(req.params.id);
-    if (!row) return notFound(res, '比赛不存在');
-    success(res, matchService.formatMatch(row));
-  } catch (err) { sendControllerError(res, err, 'matchesController'); }
+  const row = matchService.getMatchById(req.params.id);
+  if (!row) return notFound(res, '比赛不存在');
+  success(res, matchService.formatMatch(row));
 }
 
 function create(req, res) {
-  try {
-    const { id, seasonId, roundId, type, teamA, teamB, bestOf, matchFormat, date, venueId } = req.body;
+  const { id, seasonId, roundId, type, teamA, teamB, bestOf, matchFormat, date, venueId } = req.body;
 
-    const teamError = validateMatchTeams({ teamA, teamB, required: true });
-    if (teamError) return validationError(res, teamError);
+  const teamError = validateMatchTeams({ teamA, teamB, required: true });
+  if (teamError) return validationError(res, teamError);
 
-    const normalized = normalizeMatchFormat(bestOf ?? 3, matchFormat);
-    if (normalized.error) return validationError(res, normalized.error);
+  const normalized = normalizeMatchFormat(bestOf ?? 3, matchFormat);
+  if (normalized.error) return validationError(res, normalized.error);
 
-    const relation = resolveMatchRelation({ seasonId, roundId });
-    if (relation.notFound) return notFound(res, relation.notFound);
-    if (relation.validationError) return validationError(res, relation.validationError);
+  const relation = resolveMatchRelation({ seasonId, roundId });
+  if (relation.notFound) return notFound(res, relation.notFound);
+  if (relation.validationError) return validationError(res, relation.validationError);
 
-    const row = matchService.createMatch({
-      id,
-      seasonId: relation.seasonId,
-      roundId,
-      type,
-      teamA,
-      teamB,
-      bestOf: normalized.bestOf,
-      matchFormat: normalized.matchFormat,
-      date,
-      venueId
-    });
+  const row = matchService.createMatch({
+    id,
+    seasonId: relation.seasonId,
+    roundId,
+    type,
+    teamA,
+    teamB,
+    bestOf: normalized.bestOf,
+    matchFormat: normalized.matchFormat,
+    date,
+    venueId
+  });
 
-    success(res, matchService.formatMatch(row), 201);
-  } catch (err) { sendControllerError(res, err, 'matchesController'); }
+  success(res, matchService.formatMatch(row), 201);
 }
 
 function update(req, res) {
-  try {
-    const existing = matchService.getMatchById(req.params.id);
-    if (!existing) return notFound(res, '比赛不存在');
-    const locked = requireSeasonOpen(req.params.id);
-    if (locked) return validationError(res, locked);
+  const existing = matchService.getMatchById(req.params.id);
+  if (!existing) return notFound(res, '比赛不存在');
+  const locked = requireSeasonOpen(req.params.id);
+  if (locked) return validationError(res, locked);
 
-    const { teamA, teamB, bestOf, matchFormat, date, venueId } = req.body;
+  const { teamA, teamB, bestOf, matchFormat, date, venueId } = req.body;
 
-    const teamError = validateMatchTeams({
-      teamA,
-      teamB,
-      existingTeamA: parseJson(existing.team_a, []),
-      existingTeamB: parseJson(existing.team_b, [])
-    });
-    if (teamError) return validationError(res, teamError);
+  const teamError = validateMatchTeams({
+    teamA,
+    teamB,
+    existingTeamA: parseJson(existing.team_a, []),
+    existingTeamB: parseJson(existing.team_b, [])
+  });
+  if (teamError) return validationError(res, teamError);
 
-    const matchFormatData = (bestOf !== undefined || matchFormat !== undefined)
-      ? normalizeMatchFormat(bestOf ?? existing.best_of ?? 3, matchFormat ?? existing.match_format)
-      : null;
-    if (matchFormatData?.error) return validationError(res, matchFormatData.error);
+  const matchFormatData = (bestOf !== undefined || matchFormat !== undefined)
+    ? normalizeMatchFormat(bestOf ?? existing.best_of ?? 3, matchFormat ?? existing.match_format)
+    : null;
+  if (matchFormatData?.error) return validationError(res, matchFormatData.error);
 
-    if ((existing.status === MATCH_STATUS.COMPLETED || existing.status === MATCH_STATUS.IN_PROGRESS) &&
-        (teamA !== undefined || teamB !== undefined || bestOf !== undefined || matchFormat !== undefined)) {
-      return validationError(res, '比赛已开始或结束，不能修改队伍和赛制');
-    }
+  if ((existing.status === MATCH_STATUS.COMPLETED || existing.status === MATCH_STATUS.IN_PROGRESS) &&
+      (teamA !== undefined || teamB !== undefined || bestOf !== undefined || matchFormat !== undefined)) {
+    return validationError(res, '比赛已开始或结束，不能修改队伍和赛制');
+  }
 
-    const row = matchService.updateMatch(req.params.id, {
-      teamA,
-      teamB,
-      matchFormatData,
-      date,
-      venueId
-    });
+  const row = matchService.updateMatch(req.params.id, {
+    teamA,
+    teamB,
+    matchFormatData,
+    date,
+    venueId
+  });
 
-    success(res, matchService.formatMatch(row));
-  } catch (err) { sendControllerError(res, err, 'matchesController'); }
+  success(res, matchService.formatMatch(row));
 }
 
 function requireSeasonOpen(matchId) {
@@ -97,44 +88,38 @@ function requireSeasonOpen(matchId) {
 }
 
 function remove(req, res) {
-  try {
-    const existing = matchService.getMatchById(req.params.id);
-    if (!existing) return notFound(res, '比赛不存在');
-    const locked = requireSeasonOpen(req.params.id);
-    if (locked) return validationError(res, locked);
+  const existing = matchService.getMatchById(req.params.id);
+  if (!existing) return notFound(res, '比赛不存在');
+  const locked = requireSeasonOpen(req.params.id);
+  if (locked) return validationError(res, locked);
 
-    const result = matchService.deleteMatch(existing);
-    success(res, result);
-  } catch (err) { sendControllerError(res, err, 'matchesController'); }
+  const result = matchService.deleteMatch(existing);
+  success(res, result);
 }
 
 function startMatch(req, res) {
-  try {
-    const match = matchService.getMatchById(req.params.id);
-    if (!match) return notFound(res, '比赛不存在');
-    if (match.status === MATCH_STATUS.COMPLETED) return validationError(res, '比赛已结束，无法重新开始');
+  const match = matchService.getMatchById(req.params.id);
+  if (!match) return notFound(res, '比赛不存在');
+  if (match.status === MATCH_STATUS.COMPLETED) return validationError(res, '比赛已结束，无法重新开始');
 
-    if (match.round_id) {
-      const round = matchService.getRoundById(match.round_id);
-      if (round?.status === ROUND_STATUS.COMPLETED) return validationError(res, '该轮次已完成');
-    }
+  if (match.round_id) {
+    const round = matchService.getRoundById(match.round_id);
+    if (round?.status === ROUND_STATUS.COMPLETED) return validationError(res, '该轮次已完成');
+  }
 
-    const row = matchService.startExistingMatch(match);
-    success(res, matchService.formatMatch(row));
-  } catch (err) { sendControllerError(res, err, 'matchesController'); }
+  const row = matchService.startExistingMatch(match);
+  success(res, matchService.formatMatch(row));
 }
 
 function cancelMatch(req, res) {
-  try {
-    const match = matchService.getMatchById(req.params.id);
-    if (!match) return notFound(res, '比赛不存在');
-    const locked = requireSeasonOpen(req.params.id);
-    if (locked) return validationError(res, locked);
-    if (match.status !== MATCH_STATUS.IN_PROGRESS) return validationError(res, '只能取消进行中的比赛');
+  const match = matchService.getMatchById(req.params.id);
+  if (!match) return notFound(res, '比赛不存在');
+  const locked = requireSeasonOpen(req.params.id);
+  if (locked) return validationError(res, locked);
+  if (match.status !== MATCH_STATUS.IN_PROGRESS) return validationError(res, '只能取消进行中的比赛');
 
-    const row = matchService.cancelExistingMatch(match);
-    success(res, matchService.formatMatch(row));
-  } catch (err) { sendControllerError(res, err, 'matchesController'); }
+  const row = matchService.cancelExistingMatch(match);
+  success(res, matchService.formatMatch(row));
 }
 
 function resolveMatchRelation({ seasonId, roundId }) {

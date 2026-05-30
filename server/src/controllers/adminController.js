@@ -25,22 +25,16 @@ async function resetDb(req, res) {
     return error(res, '生产数据文件不存在', 'PROD_DB_NOT_FOUND', 400)
   }
 
-  try {
-    // Close current DB (saves before closing)
-    closeDatabase()
+  // Close current DB (saves before closing)
+  closeDatabase()
 
-    // Copy prod data → test data
-    fs.copyFileSync(prodPath, testPath)
+  // Copy prod data → test data
+  fs.copyFileSync(prodPath, testPath)
 
-    // Re-open with the new test data
-    await initDatabase()
+  // Re-open with the new test data
+  await initDatabase()
 
-    return success(res, { message: '已从生产数据恢复测试环境' })
-  } catch (err) {
-    // Try to reopen DB even on error
-    try { await initDatabase() } catch { /* ignore */ }
-    return error(res, '数据重置失败: ' + err.message, 'RESET_DB_FAILED', 500)
-  }
+  return success(res, { message: '已从生产数据恢复测试环境' })
 }
 
 module.exports = { resetDb }

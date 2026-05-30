@@ -1,12 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const ctrl = require('../controllers/gamesController');
+const { asyncHandler } = require('../utils/asyncHandler');
 
-router.get('/', ctrl.getAll);
-router.get('/:id', ctrl.getOne);
-router.put('/:id/score', ctrl.updateScore);
-router.post('/:id/end', ctrl.endGame);
-router.post('/:id/revert', ctrl.revertGame);
-router.post('/:id/update-completed-score', ctrl.updateCompletedScore);
+router.get('/', asyncHandler(ctrl.getAll, 'games.getAll'));
+router.get('/:id', asyncHandler(ctrl.getOne, 'games.getOne'));
+router.put('/:id/score', asyncHandler(ctrl.updateScore, 'games.updateScore'));
+router.post('/:id/end', asyncHandler(ctrl.endGame, 'games.endGame'));
+router.post('/:id/revert', asyncHandler(ctrl.revertGame, 'games.revertGame'));
+router.post('/:id/update-completed-score', asyncHandler(ctrl.updateCompletedScore, 'games.updateCompletedScore'));
 
 module.exports = router;

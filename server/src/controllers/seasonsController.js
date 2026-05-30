@@ -1,5 +1,4 @@
 const { success, notFound, validationError } = require('../utils/response');
-const { sendControllerError } = require('../utils/errorHandling');
 const seasonService = require('../services/seasonService');
 const {
   normalizeMatchFormat,
@@ -15,18 +14,14 @@ const { SEASON_STATUS } = require('../constants');
 const SEASON_STATUSES = Object.values(SEASON_STATUS);
 
 function getAll(req, res) {
-  try {
-    const rows = seasonService.listSeasons();
-    success(res, rows.map(seasonService.formatSeason));
-  } catch (err) { sendControllerError(res, err, 'seasonsController'); }
+  const rows = seasonService.listSeasons();
+  success(res, rows.map(seasonService.formatSeason));
 }
 
 function getById(req, res) {
-  try {
-    const row = seasonService.getSeasonById(req.params.id);
-    if (!row) return notFound(res, '赛季不存在');
-    success(res, seasonService.formatSeason(row));
-  } catch (err) { sendControllerError(res, err, 'seasonsController'); }
+  const row = seasonService.getSeasonById(req.params.id);
+  if (!row) return notFound(res, '赛季不存在');
+  success(res, seasonService.formatSeason(row));
 }
 
 function validateSeasonPayload(body, options = {}) {
@@ -61,44 +56,38 @@ function validateSeasonPayload(body, options = {}) {
 }
 
 function create(req, res) {
-  try {
-    const { participants } = req.body;
-    const payloadError = validateSeasonPayload(req.body);
-    if (payloadError) return validationError(res, payloadError);
+  const { participants } = req.body;
+  const payloadError = validateSeasonPayload(req.body);
+  if (payloadError) return validationError(res, payloadError);
 
-    const missingPlayers = seasonService.missingPlayerIds(participants || []);
-    if (missingPlayers.length) return validationError(res, `参赛选手不存在：${missingPlayers.join('、')}`);
+  const missingPlayers = seasonService.missingPlayerIds(participants || []);
+  if (missingPlayers.length) return validationError(res, `参赛选手不存在：${missingPlayers.join('、')}`);
 
-    const row = seasonService.createSeason(req.body);
-    success(res, seasonService.formatSeason(row), 201);
-  } catch (err) { sendControllerError(res, err, 'seasonsController'); }
+  const row = seasonService.createSeason(req.body);
+  success(res, seasonService.formatSeason(row), 201);
 }
 
 function update(req, res) {
-  try {
-    const existing = seasonService.getSeasonById(req.params.id);
-    if (!existing) return notFound(res, '赛季不存在');
+  const existing = seasonService.getSeasonById(req.params.id);
+  if (!existing) return notFound(res, '赛季不存在');
 
-    const { participants } = req.body;
-    const payloadError = validateSeasonPayload(req.body, { partial: true });
-    if (payloadError) return validationError(res, payloadError);
+  const { participants } = req.body;
+  const payloadError = validateSeasonPayload(req.body, { partial: true });
+  if (payloadError) return validationError(res, payloadError);
 
-    const missingPlayers = seasonService.missingPlayerIds(participants || []);
-    if (missingPlayers.length) return validationError(res, `参赛选手不存在：${missingPlayers.join('、')}`);
+  const missingPlayers = seasonService.missingPlayerIds(participants || []);
+  if (missingPlayers.length) return validationError(res, `参赛选手不存在：${missingPlayers.join('、')}`);
 
-    const row = seasonService.updateSeason(req.params.id, req.body);
-    success(res, seasonService.formatSeason(row));
-  } catch (err) { sendControllerError(res, err, 'seasonsController'); }
+  const row = seasonService.updateSeason(req.params.id, req.body);
+  success(res, seasonService.formatSeason(row));
 }
 
 function remove(req, res) {
-  try {
-    const season = seasonService.getSeasonById(req.params.id);
-    if (!season) return notFound(res, '赛季不存在');
-    if (process.env.ENABLE_TEST_FEATURES !== 'true' && season.status === 'completed') return validationError(res, '已完成赛季不允许删除');
+  const season = seasonService.getSeasonById(req.params.id);
+  if (!season) return notFound(res, '赛季不存在');
+  if (process.env.ENABLE_TEST_FEATURES !== 'true' && season.status === 'completed') return validationError(res, '已完成赛季不允许删除');
 
-    success(res, seasonService.deleteSeason(season));
-  } catch (err) { sendControllerError(res, err, 'seasonsController'); }
+  success(res, seasonService.deleteSeason(season));
 }
 
 module.exports = { getAll, getById, create, update, remove };

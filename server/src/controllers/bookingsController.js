@@ -1,5 +1,4 @@
 const { success, notFound, validationError } = require('../utils/response');
-const { sendControllerError } = require('../utils/errorHandling');
 const bookingService = require('../services/bookingService');
 const venueService = require('../services/venueService');
 const {
@@ -57,38 +56,32 @@ function validateBookingRecordPayload(body, options = {}) {
 }
 
 function getConfig(req, res) {
-  try {
-    success(res, bookingService.getConfig());
-  } catch (err) { sendControllerError(res, err, 'bookingsController'); }
+  success(res, bookingService.getConfig());
 }
 
 function updateConfig(req, res) {
-  try {
-    const { rotation, currentPersonIndex } = req.body;
-    const rotationError = validateStringArray(rotation, '订场轮换名单', { max: 32 });
-    if (rotationError) return validationError(res, rotationError);
+  const { rotation, currentPersonIndex } = req.body;
+  const rotationError = validateStringArray(rotation, '订场轮换名单', { max: 32 });
+  if (rotationError) return validationError(res, rotationError);
 
-    const missingPlayers = bookingService.missingPlayerIds(rotation || []);
-    if (missingPlayers.length) return validationError(res, `订场轮换选手不存在：${missingPlayers.join('、')}`);
+  const missingPlayers = bookingService.missingPlayerIds(rotation || []);
+  if (missingPlayers.length) return validationError(res, `订场轮换选手不存在：${missingPlayers.join('、')}`);
 
-    const currentConfig = bookingService.getConfig();
-    const nextRotation = rotation !== undefined ? rotation : currentConfig.rotation;
-    const indexError = validatePositiveInteger(
-      currentPersonIndex === undefined ? undefined : currentPersonIndex + 1,
-      '当前轮换序号',
-      { max: Math.max(nextRotation.length, 1) }
-    );
-    if (indexError) return validationError(res, '当前轮换序号必须是有效的数组索引');
+  const currentConfig = bookingService.getConfig();
+  const nextRotation = rotation !== undefined ? rotation : currentConfig.rotation;
+  const indexError = validatePositiveInteger(
+    currentPersonIndex === undefined ? undefined : currentPersonIndex + 1,
+    '当前轮换序号',
+    { max: Math.max(nextRotation.length, 1) }
+  );
+  if (indexError) return validationError(res, '当前轮换序号必须是有效的数组索引');
 
-    success(res, bookingService.updateConfig({ rotation, currentPersonIndex }));
-  } catch (err) { sendControllerError(res, err, 'bookingsController'); }
+  success(res, bookingService.updateConfig({ rotation, currentPersonIndex }));
 }
 
 function getRecords(req, res) {
-  try {
-    const rows = bookingService.listRecords();
-    success(res, rows.map(bookingService.formatRecord));
-  } catch (err) { sendControllerError(res, err, 'bookingsController'); }
+  const rows = bookingService.listRecords();
+  success(res, rows.map(bookingService.formatRecord));
 }
 
 function resolveCost(venueId, date, startTime, endTime, explicitCost) {
@@ -105,41 +98,35 @@ function resolveCost(venueId, date, startTime, endTime, explicitCost) {
 }
 
 function createRecord(req, res) {
-  try {
-    const { playerId, venueId, date, startTime, endTime, cost, notes } = req.body;
-    const payloadError = validateBookingRecordPayload(req.body);
-    if (payloadError) return validationError(res, payloadError);
+  const { playerId, venueId, date, startTime, endTime, cost, notes } = req.body;
+  const payloadError = validateBookingRecordPayload(req.body);
+  if (payloadError) return validationError(res, payloadError);
 
-    const finalCost = resolveCost(venueId, date, startTime, endTime, cost);
-    const row = bookingService.createRecord({ playerId, venueId, date, startTime, endTime, cost: finalCost, notes });
-    success(res, bookingService.formatRecord(row), 201);
-  } catch (err) { sendControllerError(res, err, 'bookingsController'); }
+  const finalCost = resolveCost(venueId, date, startTime, endTime, cost);
+  const row = bookingService.createRecord({ playerId, venueId, date, startTime, endTime, cost: finalCost, notes });
+  success(res, bookingService.formatRecord(row), 201);
 }
 
 function updateRecord(req, res) {
-  try {
-    const existing = bookingService.getRecordById(req.params.id);
-    if (!existing) return notFound(res, '记录不存在');
-    const { playerId, venueId, date, startTime, endTime, cost, notes } = req.body;
-    const payloadError = validateBookingRecordPayload(req.body, { partial: true });
-    if (payloadError) return validationError(res, payloadError);
+  const existing = bookingService.getRecordById(req.params.id);
+  if (!existing) return notFound(res, '记录不存在');
+  const { playerId, venueId, date, startTime, endTime, cost, notes } = req.body;
+  const payloadError = validateBookingRecordPayload(req.body, { partial: true });
+  if (payloadError) return validationError(res, payloadError);
 
-    const finalDate = date ?? existing.date;
-    const finalStart = startTime ?? existing.start_time;
-    const finalEnd = endTime ?? existing.end_time;
-    const finalVenue = venueId ?? existing.venue_id;
-    const finalCost = resolveCost(finalVenue, finalDate, finalStart, finalEnd, cost);
-    const row = bookingService.updateRecord(req.params.id, { playerId, venueId, date, startTime, endTime, cost: finalCost, notes });
-    success(res, bookingService.formatRecord(row));
-  } catch (err) { sendControllerError(res, err, 'bookingsController'); }
+  const finalDate = date ?? existing.date;
+  const finalStart = startTime ?? existing.start_time;
+  const finalEnd = endTime ?? existing.end_time;
+  const finalVenue = venueId ?? existing.venue_id;
+  const finalCost = resolveCost(finalVenue, finalDate, finalStart, finalEnd, cost);
+  const row = bookingService.updateRecord(req.params.id, { playerId, venueId, date, startTime, endTime, cost: finalCost, notes });
+  success(res, bookingService.formatRecord(row));
 }
 
 function deleteRecord(req, res) {
-  try {
-    const existing = bookingService.getRecordById(req.params.id);
-    if (!existing) return notFound(res, '记录不存在');
-    success(res, bookingService.deleteRecord(req.params.id));
-  } catch (err) { sendControllerError(res, err, 'bookingsController'); }
+  const existing = bookingService.getRecordById(req.params.id);
+  if (!existing) return notFound(res, '记录不存在');
+  success(res, bookingService.deleteRecord(req.params.id));
 }
 
 module.exports = { getConfig, updateConfig, getRecords, createRecord, updateRecord, deleteRecord };
