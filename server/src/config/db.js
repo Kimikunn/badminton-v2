@@ -134,7 +134,9 @@ function prepare(sql) {
     run(...params) {
       try {
         stmt.run(params);
-        scheduleSave();
+        // 事务内的写入由 transaction() COMMIT 时统一 saveDatabase()，
+        // 非事务写入才用 debounce 写盘，避免事务中重复触发 save。
+        if (transactionDepth === 0) scheduleSave();
         return { changes: db.getRowsModified() };
       } finally {
         stmt.free();
