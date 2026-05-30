@@ -49,11 +49,18 @@ app.use('/api', apiLimiter);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Request logging
-app.use((req, _res, next) => {
-  // Skip logging for static assets
-  if (!req.originalUrl.startsWith('/api')) return next();
-  logger.info(`${req.method} ${req.originalUrl}`);
+// Request logging (structured)
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    if (!req.originalUrl.startsWith('/api')) return;
+    logger.info({
+      method: req.method,
+      url: req.originalUrl,
+      status: res.statusCode,
+      ms: Date.now() - start
+    });
+  });
   next();
 });
 
