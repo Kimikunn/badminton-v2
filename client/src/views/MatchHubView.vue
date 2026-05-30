@@ -546,6 +546,8 @@ onMounted(() => {
   @apply relative rounded-md;
   border-left: 3px solid var(--color-success);
   background: oklch(0.62 0.19 145 / 0.06);
+  padding-left: calc(0.625rem - 3px);   /* 补偿 3px 边框，与历史记录选手名对齐 */
+  padding-right: 0.375rem;              /* 绿色背景不紧贴记分按钮 */
 }
 .m-teams { @apply flex-1 text-sm font-medium truncate; }
 .m-teams.clickable { @apply cursor-pointer; }
