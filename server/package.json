@@ -1,6 +1,6 @@
 {
   "name": "badminton-backend-v2",
-  "version": "2.2.10",
+  "version": "2.3.0",
   "description": "Backend API for BAD Club v2",
   "main": "src/server.js",
   "scripts": {
