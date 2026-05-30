@@ -7,7 +7,7 @@
 
 set -e
 
-APP_DIR="/opt/apps/badminton-v2"
+APP_DIR="/opt/apps/badminton"
 DIST_DIR="/tmp/baddist_deploy"
 
 echo "[BAD Club v2] Deploy"
@@ -21,7 +21,7 @@ npx vite build --outDir "$DIST_DIR" --emptyOutDir 2>&1 | tail -3
 
 # Step 2: Deploy to running containers via docker cp
 echo "[2/4] Deploying to containers..."
-sg docker -c "docker cp $DIST_DIR/. badminton-v2:/app/client/dist/ && docker cp $DIST_DIR/. badminton-v2-test:/app/client/dist/"
+sg docker -c "docker cp $DIST_DIR/. badminton:/app/client/dist/ && docker cp $DIST_DIR/. badminton-test:/app/client/dist/"
 
 # Step 3: Quick HTTP check
 echo "[3/4] Verifying HTTP..."

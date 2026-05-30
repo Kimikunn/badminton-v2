@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: badminton-v2
+    container_name: badminton
     restart: unless-stopped
     ports:
       - "8088:3000"

@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
       args:
         BUILD_DIR: dist-test
-    container_name: badminton-v2-test
+    container_name: badminton-test
     restart: unless-stopped
     ports:
       - "8090:3000"

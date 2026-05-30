@@ -38,8 +38,8 @@
 6. **部署**
    - 每个优化点完成后重新构建并部署生产与测试环境：
      ```bash
-     docker compose -p badminton-v2-prod up -d --build
-     docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build
+     docker compose -p badminton up -d --build
+     docker compose -p badminton-test -f docker-compose.test.yml up -d --build
      ```
    - 部署后验证：
      ```bash
@@ -458,8 +458,8 @@
   - `cd client && npm run build:test`：通过。
   - `cd server && npm test`：未涉及后端代码，本项未执行。
 - 部署：
-  - `docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build`：通过。
-  - `docker compose -p badminton-v2-prod up -d --build`：通过。
+  - `docker compose -p badminton-test -f docker-compose.test.yml up -d --build`：通过。
+  - `docker compose -p badminton up -d --build`：通过。
   - `curl -fsS http://127.0.0.1:8088/api/health`：通过。
   - `curl -fsS http://127.0.0.1:8090/api/health`：通过。
 - 剩余风险：
@@ -565,8 +565,8 @@
   - `cd client && npm run build`：通过。
   - `cd server && npm test`：未涉及后端代码，本项未执行。
 - 部署：
-  - `docker compose -p badminton-v2-prod up -d --build`：通过，容器 `badminton-v2` 已启动。
-  - `docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-v2-test` 已启动。
+  - `docker compose -p badminton up -d --build`：通过，容器 `badminton-v2` 已启动。
+  - `docker compose -p badminton-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-test` 已启动。
   - `curl -fsS http://127.0.0.1:8088/api/health`：通过。
   - `curl -fsS http://127.0.0.1:8090/api/health`：通过。
 - 剩余风险：
@@ -700,8 +700,8 @@
   - `cd client && npm run build`：通过。
   - `cd server && npm test`：未涉及后端代码，本项未执行。
 - 部署：
-  - `docker compose -p badminton-v2-prod up -d --build`：通过，容器 `badminton-v2` 已启动。
-  - `docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-v2-test` 已启动。
+  - `docker compose -p badminton up -d --build`：通过，容器 `badminton-v2` 已启动。
+  - `docker compose -p badminton-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-test` 已启动。
   - `curl -fsS http://127.0.0.1:8088/api/health`：通过。
   - `curl -fsS http://127.0.0.1:8090/api/health`：通过。
 - 剩余风险：
@@ -770,8 +770,8 @@
   - `cd client && npm run build`：通过。
   - `cd server && npm test`：未涉及后端代码，本项未执行。
 - 部署：
-  - `docker compose -p badminton-v2-prod up -d --build`：通过，容器 `badminton-v2` 已启动。
-  - `docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-v2-test` 已启动。
+  - `docker compose -p badminton up -d --build`：通过，容器 `badminton-v2` 已启动。
+  - `docker compose -p badminton-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-test` 已启动。
   - `curl -fsS http://127.0.0.1:8088/api/health`：通过。
   - `curl -fsS http://127.0.0.1:8090/api/health`：通过。
 - 剩余风险：
@@ -823,8 +823,8 @@
   - `cd client && npm run build`：通过。
   - `cd server && npm test`：未涉及后端代码，本项未执行。
 - 部署：
-  - `docker compose -p badminton-v2-prod up -d --build`：通过，容器 `badminton-v2` 已启动。
-  - `docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-v2-test` 已启动。
+  - `docker compose -p badminton up -d --build`：通过，容器 `badminton-v2` 已启动。
+  - `docker compose -p badminton-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-test` 已启动。
   - `curl -fsS http://127.0.0.1:8088/api/health`：通过。
   - `curl -fsS http://127.0.0.1:8090/api/health`：通过。
 - 剩余风险：
@@ -876,8 +876,8 @@
   - `cd client && npm run build`：通过。
   - `cd server && npm test`：未涉及后端代码，本项未执行。
 - 部署：
-  - `docker compose -p badminton-v2-prod up -d --build`：通过，容器 `badminton-v2` 已启动。
-  - `docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-v2-test` 已启动。
+  - `docker compose -p badminton up -d --build`：通过，容器 `badminton-v2` 已启动。
+  - `docker compose -p badminton-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-test` 已启动。
   - `curl -fsS http://127.0.0.1:8088/api/health`：通过。
   - `curl -fsS http://127.0.0.1:8090/api/health`：通过。
 - 剩余风险：
@@ -939,8 +939,8 @@
   - `cd client && npm run build`：通过。
   - `cd server && npm test`：未涉及后端代码，本项未执行。
 - 部署：
-  - `docker compose -p badminton-v2-prod up -d --build`：通过，容器 `badminton-v2` 已启动。
-  - `docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-v2-test` 已启动。
+  - `docker compose -p badminton up -d --build`：通过，容器 `badminton-v2` 已启动。
+  - `docker compose -p badminton-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-test` 已启动。
   - `curl -fsS http://127.0.0.1:8088/api/health`：通过。
   - `curl -fsS http://127.0.0.1:8090/api/health`：通过。
 - 剩余风险：
@@ -1013,8 +1013,8 @@
   - `cd client && npm run build`：通过。
   - `cd server && npm test`：未涉及后端代码，本项未执行。
 - 部署：
-  - `docker compose -p badminton-v2-prod up -d --build`：通过，容器 `badminton-v2` 已启动。
-  - `docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-v2-test` 已启动。
+  - `docker compose -p badminton up -d --build`：通过，容器 `badminton-v2` 已启动。
+  - `docker compose -p badminton-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-test` 已启动。
   - `curl -fsS http://127.0.0.1:8088/api/health`：通过。
   - `curl -fsS http://127.0.0.1:8090/api/health`：通过。
 - 剩余风险：
@@ -1070,8 +1070,8 @@
   - `cd client && npm run build`：通过。
   - `cd server && npm test`：未涉及后端代码，本项未执行。
 - 部署：
-  - `docker compose -p badminton-v2-prod up -d --build`：通过，容器 `badminton-v2` 已启动。
-  - `docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-v2-test` 已启动。
+  - `docker compose -p badminton up -d --build`：通过，容器 `badminton-v2` 已启动。
+  - `docker compose -p badminton-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-test` 已启动。
   - `curl -fsS http://127.0.0.1:8088/api/health`：通过。
   - `curl -fsS http://127.0.0.1:8090/api/health`：通过。
 - 剩余风险：
@@ -1149,8 +1149,8 @@
   - `cd client && npm run build`：通过。
   - `cd server && npm test`：未涉及后端代码，本项未执行。
 - 部署：
-  - `docker compose -p badminton-v2-prod up -d --build`：通过，容器 `badminton-v2` 已启动。
-  - `docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-v2-test` 已启动。
+  - `docker compose -p badminton up -d --build`：通过，容器 `badminton-v2` 已启动。
+  - `docker compose -p badminton-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-test` 已启动。
   - `curl -fsS http://127.0.0.1:8088/api/health`：通过。
   - `curl -fsS http://127.0.0.1:8090/api/health`：通过。
 - 剩余风险：
@@ -1223,8 +1223,8 @@
   - `cd client && npm run build`：通过。
   - `cd server && npm test`：通过，55 passed / 0 failed。
 - 部署：
-  - `docker compose -p badminton-v2-prod up -d --build`：通过，容器 `badminton-v2` 已启动。
-  - `docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-v2-test` 已启动。
+  - `docker compose -p badminton up -d --build`：通过，容器 `badminton-v2` 已启动。
+  - `docker compose -p badminton-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-test` 已启动。
   - `curl -fsS http://127.0.0.1:8088/api/health`：通过。
   - `curl -fsS http://127.0.0.1:8090/api/health`：通过。
 - 剩余风险：
@@ -1297,8 +1297,8 @@
   - `cd client && npm run build`：通过。
   - `cd server && npm test`：未涉及后端代码，本项未执行。
 - 部署：
-  - `docker compose -p badminton-v2-prod up -d --build`：通过，容器 `badminton-v2` 已启动。
-  - `docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-v2-test` 已启动。
+  - `docker compose -p badminton up -d --build`：通过，容器 `badminton-v2` 已启动。
+  - `docker compose -p badminton-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-test` 已启动。
   - `curl -fsS http://127.0.0.1:8088/api/health`：通过。
   - `curl -fsS http://127.0.0.1:8090/api/health`：通过。
 - 剩余风险：
@@ -1366,8 +1366,8 @@
   - `cd client && npm run build`：通过。
   - `cd server && npm test`：未涉及后端代码，本项未执行。
 - 部署：
-  - `docker compose -p badminton-v2-prod up -d --build`：通过，容器 `badminton-v2` 已启动。
-  - `docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-v2-test` 已启动。
+  - `docker compose -p badminton up -d --build`：通过，容器 `badminton-v2` 已启动。
+  - `docker compose -p badminton-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-test` 已启动。
   - `curl -fsS http://127.0.0.1:8088/api/health`：通过。
   - `curl -fsS http://127.0.0.1:8090/api/health`：通过。
 - 剩余风险：
@@ -1436,8 +1436,8 @@
   - `cd client && npm run build`：通过。
   - `cd server && npm test`：未涉及后端代码，本项未执行。
 - 部署：
-  - `docker compose -p badminton-v2-prod up -d --build`：通过，容器 `badminton-v2` 已启动。
-  - `docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-v2-test` 已启动。
+  - `docker compose -p badminton up -d --build`：通过，容器 `badminton-v2` 已启动。
+  - `docker compose -p badminton-test -f docker-compose.test.yml up -d --build`：通过，容器 `badminton-test` 已启动。
   - `curl -fsS http://127.0.0.1:8088/api/health`：通过。
   - `curl -fsS http://127.0.0.1:8090/api/health`：通过。
 - 剩余风险：

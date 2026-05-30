@@ -63,7 +63,7 @@
 ### 2.1 目录结构
 
 ```
-badminton-v2/
+badminton/
 ├── client/src/
 │   ├── api/client.js          ← axios 实例 + token 拦截
 │   ├── stores/                ← Pinia（7 个: club/players/seasons/matches/venues/titles/bookings）

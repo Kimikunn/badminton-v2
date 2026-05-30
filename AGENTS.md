@@ -42,11 +42,11 @@
 ```bash
 # 测试
 cd client && npm run build:test
-docker compose -p badminton-v2-test -f docker-compose.test.yml up -d --build
+docker compose -p badminton-test -f docker-compose.test.yml up -d --build
 
 # 生产
 cd client && npm run build
-docker compose -p badminton-v2-prod up -d --build
+docker compose -p badminton up -d --build
 ```
 
 **示例见** `WORKFLOW_EXAMPLES.md`。
