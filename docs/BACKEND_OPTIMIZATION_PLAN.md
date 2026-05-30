@@ -58,7 +58,160 @@ Routes (Express Router) → Controllers → Services → DB (sql.js)
 
 ---
 
-## 二、现状评估
+## 二、影响范围评估与环境策略
+
+### 2.1 前端-后端契约分析
+
+在开始优化前，通过代码审查确定了前端对后端响应的**硬依赖**。这些是绝对不能打破的契约：
+
+| 契约 | 位置 | 说明 |
+|------|------|------|
+| `{ success: true, data: ... }` | `client/src/api/client.js:50` | 响应拦截器剥离外层，store 检查 `res.success` 布尔值 |
+| `{ success: false, error: { code, message } }` | `client/src/api/client.js:71` | 错误拦截器读取 `error.code` 和 `error.message` |
+| `error.code === 'UNAUTHORIZED'` + HTTP 401 | `client/src/api/client.js:56` | **唯一的程序化错误码**：触发管理令牌重试逻辑 |
+| `error.code === 'FORBIDDEN'` + HTTP 403 | `client/src/api/client.js:67` | **唯一的程序化错误码**：触发令牌清除 |
+| `error.message` (中文字符串) | 各 View 组件 | 用户的 toast 通知直接展示 `e.message` |
+
+**关键结论**：
+- 只有 `UNAUTHORIZED` 和 `FORBIDDEN` 两个错误码被前端**程序化使用**，其余（`NOT_FOUND`、`VALIDATION_ERROR`、`CONFLICT`、`SERVER_ERROR`）仅用于控制流，可以自由调整
+- 错误消息 (`error.message`) 直接展示给用户，优化过程中**不能改变中文语义**
+- 前端**没有**健康检查轮询 → 健康检查格式可自由改动
+- 前端**没有**日志解析逻辑 → 日志格式可自由改动
+- Service Worker 缓存 GET /api 请求（NetworkFirst，1h TTL）→ 部署后最多 1 小时陈旧数据窗口
+
+### 2.2 测试环境 vs 生产环境
+
+本项目已具备完整的测试环境：
+
+| | 生产环境 | 测试环境 |
+|---|---|---|
+| **配置文件** | `docker-compose.yml` | `docker-compose.test.yml` |
+| **端口映射** | `8088:3000` | `8090:3000` |
+| **数据库** | `badminton.db` | `test.db` |
+| **ENABLE_TEST_FEATURES** | 不设置 | `true`（绕过赛季完成锁） |
+| **构建产物** | `dist`（生产构建） | `dist-test`（测试构建） |
+| **启动命令** | `docker compose up -d` | `docker compose -f docker-compose.test.yml up -d --build` |
+
+### 2.3 每个 Phase 的影响评估
+
+| Phase | 版本 | 前端影响 | 数据库影响 | API 契约 | **风险等级** | 建议环境 |
+|-------|------|----------|-----------|----------|-------------|----------|
+| 1-1: helmet + compression | v2.2.1 | ❌ 无 | ❌ 无 | ❌ 不变 | 🟢 **极低** | 生产直接部署 |
+| 1-2: rate-limit | v2.2.2 | ⚠️ 触发 429 时 toast 显示 `error.message` | ❌ 无 | ✅ 新增 429 状态 | 🟡 **低** | 先测试后生产 |
+| 2-1: 自定义 Error 类 | v2.2.3 | ❌ 无（仅新增类，暂不使用） | ❌ 无 | ❌ 不变 | 🟢 **极低** | 任意环境 |
+| 2-2: asyncHandler | v2.2.4 | ❌ 无（错误路径不变） | ❌ 无 | ❌ 不变 | 🟡 **低** | 先测试后生产 |
+| 2-3: 全局错误处理增强 | v2.2.5 | ❌ 无 | ❌ 无 | ❌ 不变 | 🟡 **低** | 先测试后生产 |
+| 3: pino 结构化日志 | v2.2.6 | ❌ 无 | ❌ 无 | ❌ 不变 | 🟢 **极低** | 任意环境 |
+| 4: 增强健康检查 | v2.2.7 | ❌ 无（前端不调 /health） | ❌ 无 | ⚠️ /api/health 新增字段 | 🟢 **极低** | 任意环境 |
+| 5-1: 验证规则创建 | v2.2.8 | ❌ 无（仅新建文件） | ❌ 无 | ❌ 不变 | 🟢 **极低** | 任意环境 |
+| 5-2: 验证中间件化迁移 | v2.2.9 | ⚠️ 错误消息措辞可能变化 | ❌ 无 | ⚠️ 422 响应 details 格式变化 | 🔴 **中等** | **必须先在测试环境验证** |
+| 6: 清理未使用依赖 | v2.2.10 | ❌ 无 | ❌ 无 | ❌ 不变 | 🟢 **极低** | 任意环境 |
+| 7: v2.3.0 发布 | v2.3.0 | ❌ 无 | ❌ 无 | ❌ 不变 | - | 完整回归测试 |
+
+### 2.4 各 Phase 的详细风险说明
+
+#### 🟢 极低风险 — 可直接部署到生产环境
+
+**Phase 1-1 (helmet + compression)**:
+- Helmet 默认不开启 CSP → 不阻塞前端资源加载
+- Compression 对所有现代浏览器透明
+- 若 SPA 通过 `<iframe>` 嵌入，`X-Frame-Options: SAMEORIGIN` 可能阻止嵌入（本项目无此场景）
+
+**Phase 2-1 (自定义 Error 类)**:
+- 纯新增文件，不修改任何现有代码
+- Error 类继承标准 `Error`，`instanceof` 检查天然向后兼容
+
+**Phase 3 (pino)**:
+- pino 的 `logger.info(msg)` 签名与当前 logger 完全兼容
+- 唯一变化：生产环境输出 JSON 行代替纯文本。若有外部日志采集脚本读取 stdout，需适配
+
+**Phase 4 (增强健康检查)**:
+- 前端不调用 `/api/health`，无客户端影响
+- 新增字段 (`version`, `uptime`, `checks`) 是向后兼容的
+- 保留 `status: 'ok'` 值以兼容可能的监控脚本
+
+**Phase 5-1 (验证规则创建)**:
+- 仅新建 `server/src/validators/` 目录，不修改任何现有代码
+
+**Phase 6 (清理依赖)**:
+- 确认 `bcryptjs`、`jsonwebtoken`、`node-cron` 在整项目中无 `require` 引用即可安全移除
+
+#### 🟡 低风险 — 建议测试环境验证后上线
+
+**Phase 1-2 (rate-limit)**:
+- 风险场景：俱乐部所有成员共享同一 WiFi（同一公网 IP），100 次 / 15 分钟的默认配置可能过低
+- **缓解措施**：调整为 300 次 / 15 分钟，或将读取操作排除在限制之外。`express-rate-limit` 支持 `skip` 函数
+- 触发限制时返回 429 + `{ error: { code: 'RATE_LIMITED', message: '...' } }`，前端会正常展示 toast
+
+**Phase 2-2 (asyncHandler)**:
+- 改变每个 controller 的错误传播路径
+- 风险场景：若 controller 代码抛出非 Error 值（`throw 'string'`），`err.stack` 访问会失败
+- **缓解措施**：asyncHandler 实现中做防御性处理，`err?.stack || err?.message || String(err)`
+
+**Phase 2-3 (全局错误处理增强)**:
+- 修改全局 error handler，影响所有未捕获错误的响应
+- 风险场景：`NODE_ENV=production` 时消息硬编码为 `'服务器内部错误'`，丢失了现有中文错误详情
+- **缓解措施**：保留 `mapError` 的 SQLite 错误消息映射，只在非操作型错误时隐藏细节
+
+#### 🔴 中等风险 — 必须先在测试环境充分验证
+
+**Phase 5-2 (验证中间件化迁移)**:
+- 最大风险点：从手写 `validators.js` 函数切换到 `express-validator` 声明式规则
+- **影响**：
+  1. 错误消息措辞可能变化（中文表述不同）
+  2. 验证失败响应结构从 `{ error: { code, message } }` 变为 `{ error: { code, message, details: [...] } }`
+  3. 某些边界条件可能被不同地处理（例如空字符串 vs undefined vs null）
+- **缓解措施**：
+  1. 逐资源迁移（一次只迁移一个 route 的验证），每个资源迁移后立即测试
+  2. 保持错误消息措辞与原有 `validators.js` 完全一致
+  3. 在测试环境运行完整 test suite + 手动冒烟测试后再上线
+
+### 2.5 推荐部署流程
+
+每个 Phase 遵循相同的安全流程：
+
+```
+本地开发 → npm test (全部通过) → 测试环境部署验证 → 生产环境部署
+```
+
+**具体命令**：
+
+```bash
+# 1. 本地验证
+cd server && npm test
+
+# 2. 测试环境部署
+docker compose -f docker-compose.test.yml up -d --build
+# 访问 http://your-server:8090 手动验证关键功能
+# 检查：赛季列表、比赛创建、计分、局结束流程
+
+# 3. 生产环境部署
+docker compose up -d --build
+```
+
+**快速通道**：对于 🟢 极低风险 Phase（1-1, 2-1, 3, 4, 5-1, 6），可以跳过测试环境直接上生产，但仍需 `npm test` 通过。
+
+### 2.6 回滚方法
+
+每个 Phase 是独立 git commit，出现问题时精确回滚：
+
+```bash
+# 回滚单个 Phase（例如 v2.2.3）
+git revert <v2.2.3-commit-hash>
+git push origin master
+
+# 生产环境重新部署
+docker compose up -d --build
+
+# 或回到优化前的 v2.2.0
+git checkout v2.2.0  # 如果有 tag
+```
+
+由于数据库结构不变（没有 Phase 修改 schema.sql），回滚后数据完全兼容。
+
+---
+
+## 三、现状评估
 
 ### 2.1 做得好的地方 🏅
 
@@ -91,7 +244,7 @@ Routes (Express Router) → Controllers → Services → DB (sql.js)
 
 ---
 
-## 三、优化计划
+## 四、优化计划
 
 ### Phase 1-1: 安全中间件 — helmet + compression
 
@@ -133,11 +286,14 @@ cd server && npm install helmet compression
 // server/src/app.js
 const rateLimit = require('express-rate-limit');
 
+// 注意：俱乐部场景下多用户可能共享同一公网 IP（如场馆 WiFi）。
+// 因此使用较宽松的限制：每个 IP 300 次/15 分钟，仅限制写操作。
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,  // 15 分钟窗口
-  max: 100,                   // 每个 IP 最多 100 次
+  max: 300,                   // 每个 IP 最多 300 次（足够 30+ 用户正常使用）
   standardHeaders: true,      // 返回 RateLimit-* 头
   legacyHeaders: false,
+  skip: (req) => req.method === 'GET',  // 读操作不限流
   message: {
     success: false,
     error: { code: 'RATE_LIMITED', message: '请求过于频繁，请稍后再试' }
@@ -532,7 +688,7 @@ cd server && npm uninstall bcryptjs jsonwebtoken node-cron
 
 ---
 
-## 四、长期投资（v2.4.0+ 规划）
+## 五、长期投资（v2.4.0+ 规划）
 
 以下项目由于工作量大或需团队讨论，不在本优化周期内：
 
@@ -547,7 +703,7 @@ cd server && npm uninstall bcryptjs jsonwebtoken node-cron
 
 ---
 
-## 五、优化效果预期
+## 六、优化效果预期
 
 | 指标 | 优化前 | 优化后 |
 |------|--------|--------|
@@ -563,7 +719,7 @@ cd server && npm uninstall bcryptjs jsonwebtoken node-cron
 
 ---
 
-## 六、回滚策略
+## 七、回滚策略
 
 每个 phase 独立提交，如出现问题：
 
