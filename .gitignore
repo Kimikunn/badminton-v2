@@ -3,6 +3,9 @@ dist/
 client/dist-test/
 *.db
 *.db-journal
+*.db.backup-*
+*.db.pre-*
+server/database/backups/
 server/uploads/
 .DS_Store
 *.log
