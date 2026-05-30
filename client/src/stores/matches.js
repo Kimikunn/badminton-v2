@@ -95,30 +95,10 @@ export const useMatchesStore = defineStore('matches', () => {
     return res.success
   }
 
-  async function cancelMatch(matchId) {
-    const res = await api.post(`/matches/${matchId}/cancel`)
-    if (res.success) {
-      const idx = matches.value.findIndex(m => m.id === matchId)
-      if (idx >= 0) matches.value[idx].status = STATUS.PENDING
-      // Remove associated games
-      games.value = games.value.filter(g => g.matchId !== matchId)
-    }
-    return res.success
-  }
-
   async function createMatch(data) {
     const res = await api.post('/matches', data)
     if (res.success && res.data) {
       upsertMatches([res.data])
-    }
-    return res.success ? res.data : null
-  }
-
-  async function updateMatch(matchId, data) {
-    const res = await api.put(`/matches/${matchId}`, data)
-    if (res.success && res.data) {
-      const idx = matches.value.findIndex(m => m.id === matchId)
-      if (idx >= 0) matches.value[idx] = res.data
     }
     return res.success ? res.data : null
   }
@@ -172,7 +152,7 @@ export const useMatchesStore = defineStore('matches', () => {
     allMatches, historyMatches, ongoingMatches,
     getMatchById, getGamesByMatch, getMatchScore, getMatchBestOf,
     init, upsertMatches, removeMatchesByRound,
-    startMatch, cancelMatch, createMatch, updateMatch, deleteMatch, setGameScore,
+    startMatch, createMatch, deleteMatch, setGameScore,
     endGame, revertGame, updateCompletedGameScore
   }
 })

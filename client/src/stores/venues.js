@@ -7,10 +7,6 @@ export const useVenuesStore = defineStore('venues', () => {
   const loading = ref(false)
   const initialized = ref(false)
 
-  function getVenueById(id) {
-    return venues.value.find(v => v.id === id)
-  }
-
   function sortVenues() {
     venues.value = [...venues.value].sort((a, b) =>
       (a.name || '').localeCompare(b.name || '', 'zh-Hans-CN')
@@ -67,7 +63,6 @@ export const useVenuesStore = defineStore('venues', () => {
 
   return {
     venues, loading, initialized,
-    getVenueById,
     init, createVenue, updateVenue, deleteVenue
   }
 })
