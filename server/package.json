@@ -1,0 +1,27 @@
+{
+  "name": "badminton-backend-v2",
+  "version": "2.2.1",
+  "description": "Backend API for BAD Club v2",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test test/*.test.js",
+    "audit:data": "node scripts/audit-data-integrity.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "compression": "^1.8.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.0",
+    "express": "^4.21.0",
+    "express-validator": "^7.2.0",
+    "helmet": "^8.2.0",
+    "jsonwebtoken": "^9.0.2",
+    "node-cron": "^4.2.1",
+    "sql.js": "^1.11.0"
+  },
+  "devDependencies": {
+    "supertest": "^7.2.2"
+  }
+}

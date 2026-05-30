@@ -3,6 +3,8 @@
  */
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const compression = require('compression');
 const path = require('path');
 const config = require('./config/config');
 const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
@@ -25,7 +27,9 @@ const uploadRoutes = require('./routes/upload');
 const app = express();
 
 // Middleware
+app.use(helmet());
 app.use(cors(config.cors));
+app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
