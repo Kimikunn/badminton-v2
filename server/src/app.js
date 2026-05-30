@@ -28,7 +28,19 @@ const uploadRoutes = require('./routes/upload');
 const app = express();
 
 // Middleware
-app.use(helmet());
+// Helmet: 安全头配置。
+// 非 HTTPS 环境：
+//   1. 禁用 CSP（防止 upgrade-insecure-requests 强制 HTTPS → ERR_SSL_PROTOCOL_ERROR）
+//   2. 禁用 HSTS（HTTP 环境不应设置）
+//   3. 禁用 COOP/CORP（HTTP 不满足可信源要求 → 浏览器忽略 + 控制台 warning）
+// 保留：X-Frame-Options, X-Content-Type-Options, X-DNS-Prefetch-Control 等无副作用头。
+// 如果后续配置了 HTTPS（如 nginx 反向代理），可将 helmet() 改回默认无参数调用。
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginOpenerPolicy: false,
+  crossOriginResourcePolicy: false,
+  strictTransportSecurity: false
+}));
 app.use(cors(config.cors));
 app.use(compression());
 
