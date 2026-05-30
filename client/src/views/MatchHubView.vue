@@ -75,7 +75,8 @@ const stats = computed(() => {
   const rds = rounds.value
   const completed = rds.filter(r => r.status === STATUS.COMPLETED).length
   const current = rds.find(r => r.status === STATUS.IN_PROGRESS) || rds.find(r => r.status === STATUS.PENDING)
-  const currentRoundNo = Math.min(current?.roundNo || (completed > 0 ? completed + 1 : 1), currentSeason.value?.totalRounds || 1)
+  const maxRoundNo = rds.length > 0 ? Math.max(...rds.map(r => r.roundNo)) : 0
+  const currentRoundNo = Math.min(current?.roundNo || maxRoundNo, currentSeason.value?.totalRounds || 1)
   return { total: currentSeason.value?.totalRounds||0, completed, currentRound: current, currentRoundNo }
 })
 
@@ -351,7 +352,7 @@ onMounted(() => {
           </div>
           <div class="bar"><div class="fill" :style="{width:(stats.currentRoundNo/stats.total*100)+'%'}"></div></div>
           <div class="acts">
-            <Button v-if="canCreate" variant="primary" size="sm" @click="openCreate">+ 创建第 {{ stats.currentRoundNo+1 }} 轮</Button>
+            <Button v-if="canCreate" variant="primary" size="sm" @click="openCreate">+ 创建第 {{ nextRoundNo }} 轮</Button>
           </div>
         </Card>
 
@@ -389,7 +390,7 @@ onMounted(() => {
         <div v-else-if="stats.completed===stats.total" class="compact-empty">全部轮次已完成</div>
 
         <!-- Create button between current round and records -->
-        <Button v-if="canCreate && stats.currentRound" variant="primary" size="md" block @click="openCreate" class="!mt-0">+ 创建第 {{ stats.currentRoundNo+1 }} 轮</Button>
+        <Button v-if="canCreate && stats.currentRound" variant="primary" size="md" block @click="openCreate" class="!mt-0">+ 创建第 {{ nextRoundNo }} 轮</Button>
 
         <!-- Round-by-round history: all rounds with completed matches -->
         <Card v-if="completedRounds.length" padding="md">
