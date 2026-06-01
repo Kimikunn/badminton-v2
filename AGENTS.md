@@ -118,15 +118,13 @@ Component → Composable → Store → api(client.js) → Backend
 
 | 需要什么 | 去哪里 |
 |---------|--------|
-| 数据模型、API 完整清单、业务规则 | `DEVELOPMENT.md` |
 | 产品风格、用户故事 | `PRODUCT.md` |
 | 工作流正反例 | `WORKFLOW_EXAMPLES.md` |
 | 前端优化待办 | `FRONTEND_OPTIMIZATION_BACKLOG.md` |
-| 后端待办 | `BACKEND_TODO.md` |
 | 赛季规则 UI 设计范式 | `docs/SEASON_RULE_DESIGN.md` |
-| PWA 改进计划 | `docs/plan.md` |
 | UI 组件源码（直接读文件，不靠文档） | `client/src/components/ui/` |
 | Composable 源码（直接读文件，不靠文档） | `client/src/composables/` |
+| 数据模型、API、业务规则 | 直接读 `server/src/db/schema.sql` + `server/src/routes/` |
 
 ---
 

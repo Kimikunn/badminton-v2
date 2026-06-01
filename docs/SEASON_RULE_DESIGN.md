@@ -83,7 +83,9 @@ defineProps({
   rankings: Array,   // 排名数据（必传）
   season: Object,    // 当前赛季对象
   rounds: Array,     // 轮次列表
-  matches: Array     // 比赛列表（S4 专用）
+  matches: Array,    // 比赛列表（S4 专用）
+  comboRankings: Array,  // 组合排名（S4 专用）
+  topWinner: Object      // 最强王者（S4 专用）
 })
 ```
 
@@ -112,8 +114,6 @@ defineProps({
 |------|------|
 | 组件内规则文案与 `rules/` 代码逻辑一致 | 避免 UI 描述与实际机制不符 |
 | 点击元素有 `active:scale-95` 反馈 | 触控友好 |
-| 空状态用 `EmptyState` 组件 | 统一视觉 |
-| 分制/分数用 `font-display` + `font-mono` | 数字可读性 |
 
 ## 5. 新增赛季规则检查清单
 

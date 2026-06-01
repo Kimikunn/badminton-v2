@@ -3,9 +3,10 @@ dist/
 client/dist-test/
 *.db
 *.db-journal
+*.db.backup
 *.db.backup-*
 *.db.pre-*
-server/database/backups/
+server/database/
 server/uploads/
 .DS_Store
 *.log
@@ -13,10 +14,13 @@ rollout-*.jsonl
 .env.local
 .env.*.local
 
+# Agent / AI tooling
+.agents/
+.claude/
+.pi/
+
 # Playwright
 e2e/screenshots/
 test-results/
-/node_modules/
-package.json
-package-lock.json
+.playwright-cli/
 client/dist-old/

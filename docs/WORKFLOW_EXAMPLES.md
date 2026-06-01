@@ -157,44 +157,6 @@ npm run build && docker compose up -d --build
 
 ---
 
-## 正例：场地页日历视图（灰度阶段）
-
-### 代码改动
-
-| 文件 | 作用 |
-|---|---|
-| `components/venue/BookingCalendar.vue` | 月历组件：7 列网格、订场圆点、点击日期弹出详情 Sheet |
-| `views/VenueView.vue` | 订场记录卡片加 `SegmentedControl` 切换「列表/日历」 |
-| `.env.test` | 加 `VITE_ENABLE_BOOKING_CALENDAR=true` |
-
-### 灰度阶段
-
-`.env.test` 加 `VITE_ENABLE_BOOKING_CALENDAR=true`，代码：
-
-```js
-const enableCalendar = import.meta.env.VITE_ENABLE_BOOKING_CALENDAR === 'true'
-```
-
-`SegmentedControl` 的 options 根据 flag 决定是否包含「日历」选项；生产构建无此 flag，`recordViewOptions` 只有「列表」，用户看不到日历入口。
-
-### 部署流程
-
-1. 自测：`build:test` → 部署 `:8090` → Playwright 自检
-2. 告诉用户 `:8090` 已就绪，等用户在真实设备验证
-3. 用户确认没问题后，再执行上线步骤
-
-### 上线阶段
-
-用户确认后：删除 `enableCalendar` flag 和条件判断，日历 Tab 无条件渲染。`.env.test` 移除 `VITE_ENABLE_BOOKING_CALENDAR`。部署生产。
-
-### 关键决策
-
-- **功能开关只在灰度期存在**。上线后删除，不残留死代码
-- **SegmentedControl 单选项不渲染**。当 flag 关闭时 options 仅一项，组件隐藏避免无意义切换
-- **不改后端**。日历纯前端，直接消费 `bookingsStore.records` 已有数据
-
----
-
 ## 反例：直接部署生产 + 未加功能开关
 
 ### 做了什么
