@@ -35,7 +35,7 @@ const playerTitles = computed(() => {
 
 const LEVEL_ICON_STYLE = {
   S: 'bg-[linear-gradient(135deg,#d4a017,#e8c547)] text-white',
-  A: 'bg-[var(--color-badge-purple-bg)] text-[var(--color-badge-purple)]',
+  A: 'bg-badge-purple-bg text-badge-purple',
   B: 'bg-accent-subtle text-accent',
   C: 'bg-success-subtle text-success',
   hidden: 'bg-surface-hover text-fg-muted'

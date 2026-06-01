@@ -47,7 +47,7 @@ defineProps({
     </div>
     <!-- Footer: buff tags rendered inside the card, below the row -->
     <div v-if="$slots.footer" class="px-4 pb-3">
-      <div class="pt-2 border-t border-line-subtle">
+      <div class="pt-2 border-t border-line-light">
         <slot name="footer" />
       </div>
     </div>

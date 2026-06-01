@@ -223,7 +223,7 @@ async function handleDeleteMatch() {
           <span class="text-sm text-fg-muted font-bold">VS</span>
           <div class="flex-1"><Input label="B队得分" type="number" v-model.number="editForm.scoreB" /></div>
         </div>
-        <p class="text-xs min-h-[1.25rem] leading-tight" :class="editValidation.errorMessage ? 'text-[var(--color-danger)]' : 'text-fg-muted'">
+        <p class="text-xs min-h-[1.25rem] leading-tight" :class="editValidation.errorMessage ? 'text-danger' : 'text-fg-muted'">
           {{ editValidation.errorMessage || '需达到'+targetScore+'分且领先2分（或先到30）' }}
         </p>
         <div class="flex gap-3">

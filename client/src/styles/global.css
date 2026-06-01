@@ -6,6 +6,9 @@
 @import 'tailwindcss';
 @import './tokens.css';
 
+/* Dark mode support via .dark class on root element */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* ---------- Tailwind Theme Mapping ---------- */
 @theme {
   /* Colors — reference OKLCH CSS variables */
@@ -85,6 +88,7 @@
   --font-mono: var(--font-mono);
 
   /* Font sizes */
+  --text-3xs:  var(--text-3xs);
   --text-2xs:  var(--text-2xs);
   --text-xs:   var(--text-xs);
   --text-sm:   var(--text-sm);

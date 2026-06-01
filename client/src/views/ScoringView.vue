@@ -154,10 +154,10 @@ const showEndConfirm = ref(false)
 const scoreInputBorderClass = computed(() => {
   if (!hasCurrentGame.value || isMatchOver.value) return 'border-line'
   if (!currentValidation.isValid.value && (scoreA.value > 0 || scoreB.value > 0)) {
-    return 'border-[var(--color-danger)]'
+    return '!border-danger'
   }
   if (currentValidation.validation.value.canEnd) {
-    return 'border-[var(--color-success)]'
+    return '!border-success'
   }
   return 'border-line'
 })
@@ -280,7 +280,7 @@ onMounted(async () => { await ensureStarted(); isLoading.value = false })
       />
 
       <!-- Validation hint -->
-      <p v-if="hasCurrentGame && !isMatchOver && currentValidation.errorMessage" class="text-xs text-center text-[var(--color-danger)] -mt-2 mb-1 min-h-[1.25rem] leading-tight">
+      <p v-if="hasCurrentGame && !isMatchOver && currentValidation.errorMessage" class="text-xs text-center text-danger -mt-2 mb-1 min-h-[1.25rem] leading-tight">
         {{ currentValidation.errorMessage }}
       </p>
 
@@ -352,18 +352,18 @@ onMounted(async () => { await ensureStarted(); isLoading.value = false })
             <div class="flex-1 text-center">
               <label class="block text-sm font-medium text-fg mb-1">{{ teamAPlayers.join('/') }}</label>
               <input type="number" class="fld"
-                :class="{'!border-[var(--color-danger)]': !editValidation.isValid.value, '!border-[var(--color-success)]': editValidation.validation.value.canEnd}"
+                :class="{'!border-danger': !editValidation.isValid.value, '!border-success': editValidation.validation.value.canEnd}"
                 v-model.number="editForm.scoreA" />
             </div>
             <span class="text-sm text-fg-muted font-bold pt-6">VS</span>
             <div class="flex-1 text-center">
               <label class="block text-sm font-medium text-fg mb-1">{{ teamBPlayers.join('/') }}</label>
               <input type="number" class="fld"
-                :class="{'!border-[var(--color-danger)]': !editValidation.isValid.value, '!border-[var(--color-success)]': editValidation.validation.value.canEnd}"
+                :class="{'!border-danger': !editValidation.isValid.value, '!border-success': editValidation.validation.value.canEnd}"
                 v-model.number="editForm.scoreB" />
             </div>
           </div>
-          <p class="text-xs mb-4 min-h-[1.25rem] leading-tight" :class="editValidation.errorMessage ? 'text-[var(--color-danger)]' : 'text-fg-muted'">
+          <p class="text-xs mb-4 min-h-[1.25rem] leading-tight" :class="editValidation.errorMessage ? 'text-danger' : 'text-fg-muted'">
             {{ editValidation.errorMessage || '需符合21分制规则' }}
           </p>
           <div v-if="requiresWinner" class="mb-4 flex flex-col gap-2">

@@ -43,8 +43,8 @@ function getDisplayedTitle(player) {
 }
 
 const TITLE_PILL = {
-  S: 'bg-[var(--color-badge-gold-bg)] text-[var(--color-badge-gold)]',
-  A: 'bg-[var(--color-badge-purple-bg)] text-[var(--color-badge-purple)]',
+  S: 'bg-badge-gold-bg text-badge-gold',
+  A: 'bg-badge-purple-bg text-badge-purple',
   B: 'bg-accent-subtle text-accent',
   C: 'bg-success-subtle text-success',
   hidden: 'bg-surface-hover text-fg-muted'

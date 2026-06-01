@@ -333,8 +333,8 @@ async function deleteEditingVenue() {
     <!-- Add record sheet -->
     <Sheet :show="showAdd" title="新增订场记录" @close="showAdd=false">
       <div class="flex flex-col gap-4">
-        <div class="form-group">
-          <label class="form-label">场地</label>
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-semibold text-fg-secondary uppercase tracking-wide">场地</label>
           <select v-model="form.venueId" class="f-select">
             <option v-for="v in venuesStore.venues" :key="v.id" :value="v.id">{{ v.name }}（{{ pricingLabel(v) }}）</option>
           </select>
@@ -342,17 +342,17 @@ async function deleteEditingVenue() {
         <Input label="日期" type="date" v-model="form.date" />
         <div class="flex items-end gap-2">
           <div class="flex-1">
-            <label class="form-label">开始</label>
+            <label class="block text-xs font-semibold text-fg-secondary uppercase tracking-wide mb-1">开始</label>
             <select v-model="form.startHour" class="f-select"><option v-for="h in 14" :key="h" :value="String(h+7)">{{ h+7 }}:00</option></select>
           </div>
           <span class="pb-2 text-sm text-fg-muted">至</span>
           <div class="flex-1">
-            <label class="form-label">结束</label>
+            <label class="block text-xs font-semibold text-fg-secondary uppercase tracking-wide mb-1">结束</label>
             <select v-model="form.endHour" class="f-select"><option v-for="h in 14" :key="h" :value="String(h+8)">{{ h+8 }}:00</option></select>
           </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">费用</label>
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-semibold text-fg-secondary uppercase tracking-wide">费用</label>
           <div class="flex items-center gap-2">
             <span class="text-lg font-semibold text-accent">¥{{ autoCost || form.cost || '—' }}</span>
             <span class="text-xs text-fg-muted" v-if="autoCost">（按定价自动匹配）</span>
@@ -366,8 +366,8 @@ async function deleteEditingVenue() {
     <!-- Edit record sheet -->
     <Sheet :show="showEdit" title="编辑记录" @close="showEdit=false">
       <div class="flex flex-col gap-4">
-        <div class="form-group">
-          <label class="form-label">场地</label>
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-semibold text-fg-secondary uppercase tracking-wide">场地</label>
           <select v-model="editForm.venueId" class="f-select">
             <option v-for="v in venuesStore.venues" :key="v.id" :value="v.id">{{ v.name }}</option>
           </select>
@@ -375,17 +375,17 @@ async function deleteEditingVenue() {
         <Input label="日期" type="date" v-model="editForm.date" />
         <div class="flex items-end gap-2">
           <div class="flex-1">
-            <label class="form-label">开始</label>
+            <label class="block text-xs font-semibold text-fg-secondary uppercase tracking-wide mb-1">开始</label>
             <select v-model="editForm.startHour" class="f-select"><option v-for="h in 14" :key="h" :value="String(h+7)">{{ h+7 }}:00</option></select>
           </div>
           <span class="pb-2 text-sm text-fg-muted">至</span>
           <div class="flex-1">
-            <label class="form-label">结束</label>
+            <label class="block text-xs font-semibold text-fg-secondary uppercase tracking-wide mb-1">结束</label>
             <select v-model="editForm.endHour" class="f-select"><option v-for="h in 14" :key="h" :value="String(h+8)">{{ h+8 }}:00</option></select>
           </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">费用</label>
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-semibold text-fg-secondary uppercase tracking-wide">费用</label>
           <div class="flex items-center gap-2">
             <span class="text-lg font-semibold text-accent">¥{{ editAutoCost || editForm.cost || '—' }}</span>
             <span class="text-xs text-fg-muted" v-if="editAutoCost">（按定价自动匹配）</span>
@@ -404,7 +404,7 @@ async function deleteEditingVenue() {
 
         <!-- Pricing slots -->
         <div>
-          <label class="form-label">价格配置</label>
+          <label class="block text-xs font-semibold text-fg-secondary uppercase tracking-wide mb-1">价格配置</label>
           <div class="flex flex-col gap-2 mt-1">
             <div
               v-for="(slot, idx) in venueForm.pricing"
@@ -447,10 +447,10 @@ async function deleteEditingVenue() {
 
 <style scoped>
 @reference "@/styles/global.css";
-/* Shared UI patterns that need pseudo-selectors or can't be inline */
+/* Shared icon button — matches PlayerDetailView */
 .icon-btn { @apply w-7 h-7 border-none rounded-full bg-surface-hover text-fg-muted flex items-center justify-center cursor-pointer transition-all duration-fast active:scale-90; }
 .icon-btn:hover { @apply bg-accent-subtle text-accent; }
 
-.form-label { @apply block text-xs font-semibold text-fg-secondary uppercase tracking-wide mb-1; }
+/* Native select — needs appearance:none and custom chevron */
 .f-select { @apply w-full p-2.5 pl-3 bg-canvas border border-line rounded-lg text-base text-fg appearance-none focus:outline-none focus:border-accent focus:ring-[3px] focus:ring-accent-subtle transition-[border-color,box-shadow] duration-fast ease-out; }
 </style>
