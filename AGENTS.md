@@ -93,6 +93,17 @@ Component → Composable → Store → api(client.js) → Backend
 
 ---
 
+## 创建新代码前的检查流程
+
+**新增任何 UI 或交互逻辑前，必须先检查项目中是否已有可复用的基础设施：**
+
+1. **搜索已有组件** — `grep -r <关键词> src/components/ src/composables/ --include="*.vue" --include="*.js"`
+2. **阅读组件源码** — 直接读 `src/components/ui/` 下的 `.vue` 文件，了解已有 UI 能力
+3. **阅读 composable 源码** — 直接读 `src/composables/` 下的 `.js` 文件，了解已有交互逻辑
+4. **优先复用扩展** — 已有组件/composable 能覆盖的场景，禁止写自定义实现
+
+> 不要靠记忆或文档来判断「有没有现成的」——文档会过时，源码是唯一真相。
+
 ## 已知陷阱
 
 - `sql.js` 占位符只用 `?`，禁止字符串拼接 SQL
@@ -113,6 +124,9 @@ Component → Composable → Store → api(client.js) → Backend
 | 前端优化待办 | `FRONTEND_OPTIMIZATION_BACKLOG.md` |
 | 后端待办 | `BACKEND_TODO.md` |
 | 赛季规则 UI 设计范式 | `docs/SEASON_RULE_DESIGN.md` |
+| PWA 改进计划 | `docs/plan.md` |
+| UI 组件源码（直接读文件，不靠文档） | `client/src/components/ui/` |
+| Composable 源码（直接读文件，不靠文档） | `client/src/composables/` |
 
 ---
 

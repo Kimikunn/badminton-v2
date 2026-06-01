@@ -20,7 +20,7 @@ const { toasts, remove } = useToast()
             'bg-toast-success-bg text-fg-inverse': toast.type === 'success',
             'bg-toast-error-bg text-fg-inverse': toast.type === 'error'
           }"
-          @click="remove(toast.id)"
+          @click="toast.onClick ? toast.onClick() : remove(toast.id)"
         >
           <span>{{ toast.message }}</span>
         </div>

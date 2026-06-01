@@ -12,7 +12,7 @@ export default defineConfig(({ mode }) => {
       vue(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['apple-touch-icon.png', 'favicon.png'],
+        includeAssets: ['apple-touch-icon.png', 'favicon.png', 'offline.html'],
         manifest: {
           name: 'The Plume Championship',
           short_name: 'TPC',
@@ -21,15 +21,48 @@ export default defineConfig(({ mode }) => {
           background_color: '#f6f8fa',
           display: 'standalone',
           orientation: 'portrait',
-          start_url: '/',
+          start_url: '/?source=pwa',
+          lang: 'zh-CN',
+          dir: 'ltr',
+          categories: ['sports', 'utilities'],
           icons: [
+            { src: 'icon-72.png', sizes: '72x72', type: 'image/png' },
+            { src: 'icon-96.png', sizes: '96x96', type: 'image/png' },
+            { src: 'icon-128.png', sizes: '128x128', type: 'image/png' },
+            { src: 'icon-144.png', sizes: '144x144', type: 'image/png' },
+            { src: 'icon-152.png', sizes: '152x152', type: 'image/png' },
             { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
+            { src: 'icon-384.png', sizes: '384x384', type: 'image/png' },
             { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
           ]
         },
         workbox: {
           globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
+          // SPA NavigationRoute 已自动处理离线导航（index.html 在 precache 中），
+          // offline.html 仅作为 includeAssets 兜底预缓存，不额外注册 navigateFallback 避免冲突
           runtimeCaching: [
+            // 赛季/俱乐部/球员/场地/称号 — 变化慢，Stale While Revalidate
+            {
+              urlPattern: /\/api\/(club|players|seasons|titles|venues|bookings)/,
+              handler: 'StaleWhileRevalidate',
+              options: {
+                cacheName: 'api-reference',
+                expiration: { maxEntries: 50, maxAgeSeconds: 300 },
+                cacheableResponse: { statuses: [0, 200] }
+              }
+            },
+            // 比赛/轮次/对局 — 变化快，Network First 短缓存
+            {
+              urlPattern: /\/api\/(matches|rounds|games|match-games)/,
+              handler: 'NetworkFirst',
+              options: {
+                cacheName: 'api-matchdata',
+                networkTimeoutSeconds: 3,
+                expiration: { maxEntries: 50, maxAgeSeconds: 30 },
+                cacheableResponse: { statuses: [0, 200] }
+              }
+            },
+            // 其他 API 兜底 — Network First
             {
               urlPattern: /\/api\//,
               handler: 'NetworkFirst',
@@ -39,6 +72,14 @@ export default defineConfig(({ mode }) => {
               urlPattern: /\.(png|jpg|jpeg|svg|gif|webp)$/,
               handler: 'CacheFirst',
               options: { cacheName: 'image-cache', expiration: { maxEntries: 50, maxAgeSeconds: 2592000 } }
+            },
+            {
+              urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'google-fonts',
+                expiration: { maxEntries: 10, maxAgeSeconds: 31536000 }
+              }
             }
           ]
         }

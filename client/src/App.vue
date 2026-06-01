@@ -5,6 +5,10 @@ import { Home, Swords, Trophy, MapPin, ParkingCircle, Sun, Moon, SunMoon, FlaskC
 import { useTheme } from '@/composables/useTheme'
 import { useAppInit } from '@/composables/useAppInit'
 import { useSeasonTheme } from '@/composables/useSeasonTheme'
+import { useOnlineStatus } from '@/composables/useOnlineStatus'
+import { useSWUpdate } from '@/composables/useSWUpdate'
+import { usePWAInstall } from '@/composables/usePWAInstall'
+import { useToast } from '@/composables/useToast'
 
 const isTestMode = import.meta.env.VITE_TEST_MODE === 'true'
 import ToastContainer from '@/components/ui/ToastContainer.vue'
@@ -20,6 +24,54 @@ const router = useRouter()
 const { isDark, themeMode, initTheme, destroyTheme, toggleTheme } = useTheme()
 const { isInitialized, isInitializing, initError, initAllStores } = useAppInit()
 const { activeSeasonId } = useSeasonTheme()
+const { isOnline, wasOffline } = useOnlineStatus()
+const { updateReady, refreshApp } = useSWUpdate()
+const { isStandalone, canInstall, isIOS, install, dismissInstall, shouldShowGuide } = usePWAInstall()
+const toast = useToast()
+
+// 安装引导显示状态
+const showInstallGuide = ref(false)
+
+// 延迟弹出安装引导（首次加载 5 秒后，仅当非 standalone 时）
+onMounted(() => {
+  if (!isStandalone.value) {
+    setTimeout(() => {
+      if (shouldShowGuide()) {
+        showInstallGuide.value = true
+      }
+    }, 5000)
+  }
+})
+
+function handleDismissInstall() {
+  dismissInstall()
+  showInstallGuide.value = false
+}
+
+// ── 在线/离线状态 → Toast ──
+let offlineToastId = null
+watch(isOnline, (online) => {
+  if (!online) {
+    offlineToastId = toast.show('当前处于离线状态', 'error', 0)
+  } else if (offlineToastId !== null) {
+    toast.remove(offlineToastId)
+    offlineToastId = null
+    if (wasOffline.value) {
+      toast.show('网络已恢复', 'success', 2500)
+    }
+  }
+})
+
+// ── SW 更新就绪 → 可点击刷新的 Toast ──
+let updateToastId = null
+watch(updateReady, (ready) => {
+  if (ready && updateToastId === null) {
+    updateToastId = toast.show('新版本已就绪，点击刷新', 'info', 0, () => {
+      updateToastId = null
+      refreshApp()
+    })
+  }
+})
 
 const showParking = ref(false)
 const showDebug = ref(false)
@@ -212,6 +264,56 @@ onMounted(async () => {
     </Teleport>
 
     <AdminToolsSheet v-if="isTestMode && AdminToolsSheet" :show="showDebug" @close="showDebug = false" />
+
+    <!-- PWA 安装引导 Sheet -->
+    <Teleport to="body">
+      <transition name="sheet-fade">
+        <div v-if="showInstallGuide" class="fixed inset-0 z-[200] flex items-end justify-center bg-black/40 backdrop-blur-sm" @click.self="handleDismissInstall">
+          <transition name="sheet-slide">
+            <div v-if="showInstallGuide" class="w-full max-w-[480px] liquid-sheet px-5 pt-4 pb-[calc(var(--space-5)+var(--safe-bottom))]">
+              <div class="w-8 h-1 bg-fg-muted/25 rounded-full mx-auto mb-4"></div>
+
+              <h3 class="text-lg font-semibold mb-2 text-center">添加到主屏幕</h3>
+              <p class="text-sm text-fg-muted text-center mb-4 leading-relaxed">
+                安装到手机桌面，像 App 一样快速打开，支持离线使用
+              </p>
+
+              <!-- iOS 安装说明 -->
+              <div v-if="isIOS" class="flex flex-col gap-3 mb-4">
+                <div class="flex items-center gap-3 p-3 rounded-xl bg-surface-hover">
+                  <div class="w-9 h-9 flex items-center justify-center rounded-full bg-accent text-white font-semibold text-sm shrink-0">1</div>
+                  <span class="text-sm">点击 Safari 底部 <span class="font-semibold">分享按钮</span> <span class="text-fg-muted">⎋</span></span>
+                </div>
+                <div class="flex items-center gap-3 p-3 rounded-xl bg-surface-hover">
+                  <div class="w-9 h-9 flex items-center justify-center rounded-full bg-accent text-white font-semibold text-sm shrink-0">2</div>
+                  <span class="text-sm">向下滑动，点击 <span class="font-semibold">「添加到主屏幕」</span></span>
+                </div>
+                <div class="flex items-center gap-3 p-3 rounded-xl bg-surface-hover">
+                  <div class="w-9 h-9 flex items-center justify-center rounded-full bg-accent text-white font-semibold text-sm shrink-0">3</div>
+                  <span class="text-sm">点击右上角 <span class="font-semibold">「添加」</span> 完成安装</span>
+                </div>
+              </div>
+
+              <!-- Android/Desktop 安装按钮 -->
+              <button
+                v-if="canInstall"
+                class="block w-full py-3 rounded-lg text-center font-medium text-white border-none cursor-pointer bg-accent mb-2 transition-transform duration-fast active:scale-[0.97]"
+                @click="install(); showInstallGuide = false"
+              >
+                立即安装
+              </button>
+
+              <button
+                class="block w-full py-3 rounded-lg text-center font-medium border-none cursor-pointer bg-surface-hover text-fg-secondary transition-transform duration-fast active:scale-[0.97]"
+                @click="handleDismissInstall"
+              >
+                暂不需要
+              </button>
+            </div>
+          </transition>
+        </div>
+      </transition>
+    </Teleport>
   </div>
 </template>
 
