@@ -33,11 +33,10 @@ export const usePlayersStore = defineStore('players', () => {
 
   async function updatePlayer(id, data) {
     const res = await api.put(`/players/${id}`, data)
-    if (res.success) {
-      const idx = players.value.findIndex(p => p.id === id)
-      if (idx >= 0) players.value[idx] = { ...players.value[idx], ...data }
-    }
-    return res.success
+    if (!res.success) throw new Error(res.error || '更新选手失败')
+    const idx = players.value.findIndex(p => p.id === id)
+    if (idx >= 0) players.value[idx] = { ...players.value[idx], ...data }
+    return true
   }
 
   return { players, loading, initialized, error, getPlayerById, getPlayerName, init, updatePlayer }

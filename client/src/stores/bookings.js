@@ -45,7 +45,8 @@ export const useBookingsStore = defineStore('bookings', () => {
 
   async function addRecord(data) {
     const res = await api.post('/bookings/records', data)
-    if (res.success && res.data) {
+    if (!res.success) throw new Error(res.error || '添加记录失败')
+    if (res.data) {
       upsertRecord(res.data)
       // Backend advances the booking rotation when a record is created.
       // Mirror that state locally without sending a duplicate config update.
@@ -53,30 +54,27 @@ export const useBookingsStore = defineStore('bookings', () => {
         config.value.currentPersonIndex = (config.value.currentPersonIndex + 1) % config.value.rotation.length
       }
     }
-    return res.success ? res.data : null
+    return res.data
   }
 
   async function updateRecord(id, data) {
     const res = await api.put(`/bookings/records/${id}`, data)
-    if (res.success && res.data) {
-      upsertRecord(res.data)
-      return res.data
-    }
-    return null
+    if (!res.success) throw new Error(res.error || '更新记录失败')
+    if (res.data) upsertRecord(res.data)
+    return res.data
   }
 
   async function deleteRecord(id) {
     const res = await api.delete(`/bookings/records/${id}`)
-    if (res.success) {
-      records.value = records.value.filter(r => r.id !== id)
-      // Mirror the backend rotation rollback locally
-      if (config.value.rotation.length) {
-        config.value.currentPersonIndex = config.value.currentPersonIndex === 0
-          ? config.value.rotation.length - 1
-          : config.value.currentPersonIndex - 1
-      }
+    if (!res.success) throw new Error(res.error || '删除记录失败')
+    records.value = records.value.filter(r => r.id !== id)
+    // Mirror the backend rotation rollback locally
+    if (config.value.rotation.length) {
+      config.value.currentPersonIndex = config.value.currentPersonIndex === 0
+        ? config.value.rotation.length - 1
+        : config.value.currentPersonIndex - 1
     }
-    return res.success
+    return true
   }
 
   return {

@@ -1,9 +1,10 @@
 <script setup>
 import { computed } from 'vue'
 
+const scoreA = defineModel('scoreA', { type: Number, default: 0 })
+const scoreB = defineModel('scoreB', { type: Number, default: 0 })
+
 const props = defineProps({
-  scoreA: { type: Number, default: 0 },
-  scoreB: { type: Number, default: 0 },
   matchScore: { type: Object, required: true },
   teamAPlayers: { type: Array, default: () => [] },
   teamBPlayers: { type: Array, default: () => [] },
@@ -12,18 +13,6 @@ const props = defineProps({
   hasCurrentGame: { type: Boolean, default: false },
   isMatchOver: { type: Boolean, default: false },
   borderClass: { type: String, default: 'border-line' }
-})
-
-const emit = defineEmits(['update:scoreA', 'update:scoreB'])
-
-const localScoreA = computed({
-  get: () => props.scoreA,
-  set: value => emit('update:scoreA', value)
-})
-
-const localScoreB = computed({
-  get: () => props.scoreB,
-  set: value => emit('update:scoreB', value)
 })
 
 const canInput = computed(() => props.hasCurrentGame && !props.isMatchOver)
@@ -46,7 +35,7 @@ const canInput = computed(() => props.hasCurrentGame && !props.isMatchOver)
       >
         <input
           v-if="canInput"
-          v-model.number="localScoreA"
+          v-model.number="scoreA"
           type="number"
           class="score-input"
           min="0"
@@ -76,7 +65,7 @@ const canInput = computed(() => props.hasCurrentGame && !props.isMatchOver)
       >
         <input
           v-if="canInput"
-          v-model.number="localScoreB"
+          v-model.number="scoreB"
           type="number"
           class="score-input"
           min="0"

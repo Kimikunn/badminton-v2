@@ -60,38 +60,41 @@ export const useSeasonsStore = defineStore('seasons', () => {
 
   async function createRound(data) {
     const res = await api.post('/rounds', data)
-    if (res.success && res.data) {
+    if (!res.success) throw new Error(res.error || '创建轮次失败')
+    if (res.data) {
       upsertRound(res.data)
       if (res.data.season) upsertSeason(res.data.season)
     }
-    return res.success ? res.data : null
+    return res.data
   }
 
   async function createSeason(data) {
     const res = await api.post('/seasons', data)
-    if (res.success && res.data) upsertSeason(res.data)
-    return res.success ? res.data : null
+    if (!res.success) throw new Error(res.error || '创建赛季失败')
+    if (res.data) upsertSeason(res.data)
+    return res.data
   }
 
   async function deleteSeason(seasonId) {
     const res = await api.delete(`/seasons/${seasonId}`)
-    if (res.success) {
-      seasons.value = seasons.value.filter(s => s.id !== seasonId)
-      rounds.value = rounds.value.filter(r => r.seasonId !== seasonId)
-    }
-    return res.success
+    if (!res.success) throw new Error(res.error || '删除赛季失败')
+    seasons.value = seasons.value.filter(s => s.id !== seasonId)
+    rounds.value = rounds.value.filter(r => r.seasonId !== seasonId)
+    return true
   }
 
   async function updateRound(roundId, data) {
     const res = await api.put(`/rounds/${roundId}`, data)
-    if (res.success && res.data) upsertRound(res.data)
-    return res.success ? res.data : null
+    if (!res.success) throw new Error(res.error || '更新轮次失败')
+    if (res.data) upsertRound(res.data)
+    return res.data
   }
 
   async function deleteRound(roundId) {
     const res = await api.delete(`/rounds/${roundId}`)
-    if (res.success) rounds.value = rounds.value.filter(r => r.id !== roundId)
-    return res.success
+    if (!res.success) throw new Error(res.error || '删除轮次失败')
+    rounds.value = rounds.value.filter(r => r.id !== roundId)
+    return true
   }
 
   async function recordAction(seasonId, actionId, payload = {}) {

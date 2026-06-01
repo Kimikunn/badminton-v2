@@ -9,11 +9,10 @@
  * @props {string} error - 错误提示
  * @props {Array} options - select 类型的选项 [{ value, label }]
  * @props {number} rows - textarea 行数
- *
- * @events update:modelValue
  */
-const props = defineProps({
-  modelValue: { type: [String, Number], default: '' },
+const model = defineModel({ type: [String, Number], default: '' })
+
+defineProps({
   type: { type: String, default: 'text' },
   placeholder: { type: String, default: '' },
   label: { type: String, default: '' },
@@ -21,12 +20,6 @@ const props = defineProps({
   options: { type: Array, default: () => [] },
   rows: { type: Number, default: 3 }
 })
-
-const emit = defineEmits(['update:modelValue'])
-
-function onInput(e) {
-  emit('update:modelValue', e.target.value)
-}
 </script>
 
 <template>
@@ -35,18 +28,16 @@ function onInput(e) {
 
     <textarea
       v-if="type === 'textarea'"
+      v-model="model"
       class="w-full px-3 py-2.5 min-h-[80px] bg-canvas border border-line rounded-lg font-sans text-base text-fg placeholder:text-fg-muted focus:outline-none focus:border-accent focus:ring-[3px] focus:ring-accent-subtle transition-[border-color,box-shadow] duration-fast ease-out resize-y leading-normal appearance-none"
-      :value="modelValue"
       :placeholder="placeholder"
       :rows="rows"
-      @input="onInput"
     ></textarea>
 
     <select
       v-else-if="type === 'select'"
+      v-model="model"
       class="input-select w-full px-3 py-2.5 pr-8 bg-canvas border border-line rounded-lg font-sans text-base text-fg focus:outline-none focus:border-accent focus:ring-[3px] focus:ring-accent-subtle transition-[border-color,box-shadow] duration-fast ease-out appearance-none"
-      :value="modelValue"
-      @change="onInput"
     >
       <option value="" disabled>{{ placeholder || '请选择' }}</option>
       <option v-for="opt in options" :key="opt.value" :value="opt.value">
@@ -56,11 +47,10 @@ function onInput(e) {
 
     <input
       v-else
+      v-model="model"
       class="w-full px-3 py-2.5 bg-canvas border border-line rounded-lg font-sans text-base text-fg placeholder:text-fg-muted focus:outline-none focus:border-accent focus:ring-[3px] focus:ring-accent-subtle transition-[border-color,box-shadow] duration-fast ease-out appearance-none"
       :type="type"
-      :value="modelValue"
       :placeholder="placeholder"
-      @input="onInput"
     />
 
     <span v-if="error" class="text-xs text-danger">{{ error }}</span>

@@ -1,7 +1,7 @@
 /**
  * Per-page season accent
  */
-import { watch, ref } from 'vue'
+import { ref, computed } from 'vue'
 
 const viewAccent = ref(null)
 
@@ -14,20 +14,16 @@ export function useViewAccent() {
     viewAccent.value = null
   }
 
-  const viewStyle = ref({})
-
-  watch(viewAccent, (c) => {
-    if (c) {
-      viewStyle.value = {
-        '--color-accent': c.light,
-        '--color-accent-hover': c.light,
-        '--color-accent-subtle': c.light.replace(')', ' / 0.12)'),
-        '--color-accent-text': c.light,
-      }
-    } else {
-      viewStyle.value = {}
+  const viewStyle = computed(() => {
+    const c = viewAccent.value
+    if (!c) return {}
+    return {
+      '--color-accent': c.light,
+      '--color-accent-hover': c.light,
+      '--color-accent-subtle': c.light.replace(')', ' / 0.12)'),
+      '--color-accent-text': c.light,
     }
-  }, { immediate: true })
+  })
 
   return { setViewAccent, clearViewAccent, viewStyle }
 }

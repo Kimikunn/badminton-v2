@@ -97,19 +97,17 @@ export const useMatchesStore = defineStore('matches', () => {
 
   async function createMatch(data) {
     const res = await api.post('/matches', data)
-    if (res.success && res.data) {
-      upsertMatches([res.data])
-    }
-    return res.success ? res.data : null
+    if (!res.success) throw new Error(res.error || '创建比赛失败')
+    if (res.data) upsertMatches([res.data])
+    return res.data
   }
 
   async function deleteMatch(matchId) {
     const res = await api.delete(`/matches/${matchId}`)
-    if (res.success) {
-      matches.value = matches.value.filter(m => m.id !== matchId)
-      games.value = games.value.filter(g => g.matchId !== matchId)
-    }
-    return res.success ? res.data : null
+    if (!res.success) throw new Error(res.error || '删除比赛失败')
+    matches.value = matches.value.filter(m => m.id !== matchId)
+    games.value = games.value.filter(g => g.matchId !== matchId)
+    return true
   }
 
   async function setGameScore(matchId, scoreA, scoreB) {
@@ -124,8 +122,10 @@ export const useMatchesStore = defineStore('matches', () => {
   }
 
   async function endGame(gameId, scoreA, scoreB, winner, rulePayload = {}) {
-    await api.put(`/games/${gameId}/score`, { scoreA, scoreB })
+    const scoreRes = await api.put(`/games/${gameId}/score`, { scoreA, scoreB })
+    if (!scoreRes.success) throw new Error(scoreRes.error || '记录比分失败')
     const res = await api.post(`/games/${gameId}/end`, { winner, rulePayload })
+    if (!res.success) throw new Error(res.error || '结束本局失败')
     await init({ force: true })
     await useSeasonsStore().init({ force: true })
     return res
@@ -133,6 +133,7 @@ export const useMatchesStore = defineStore('matches', () => {
 
   async function revertGame(gameId) {
     const res = await api.post(`/games/${gameId}/revert`)
+    if (!res.success) throw new Error(res.error || '撤回失败')
     await init({ force: true })
     await useSeasonsStore().init({ force: true })
     return res
@@ -142,6 +143,7 @@ export const useMatchesStore = defineStore('matches', () => {
     const res = await api.post(`/games/${gameId}/update-completed-score`, {
       scoreA, scoreB, winner, rulePayload
     })
+    if (!res.success) throw new Error(res.error || '更新比分失败')
     await init({ force: true })
     await useSeasonsStore().init({ force: true })
     return res

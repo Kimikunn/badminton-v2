@@ -37,28 +37,23 @@ export const useVenuesStore = defineStore('venues', () => {
 
   async function createVenue(data) {
     const res = await api.post('/venues', data)
-    if (res.success && res.data) {
-      upsertVenue(res.data)
-      return res.data
-    }
-    return null
+    if (!res.success) throw new Error(res.error || '创建场地失败')
+    if (res.data) upsertVenue(res.data)
+    return res.data
   }
 
   async function updateVenue(id, data) {
     const res = await api.put(`/venues/${id}`, data)
-    if (res.success && res.data) {
-      upsertVenue(res.data)
-      return res.data
-    }
-    return null
+    if (!res.success) throw new Error(res.error || '更新场地失败')
+    if (res.data) upsertVenue(res.data)
+    return res.data
   }
 
   async function deleteVenue(id) {
     const res = await api.delete(`/venues/${id}`)
-    if (res.success) {
-      venues.value = venues.value.filter(v => v.id !== id)
-    }
-    return res.success
+    if (!res.success) throw new Error(res.error || '删除场地失败')
+    venues.value = venues.value.filter(v => v.id !== id)
+    return true
   }
 
   return {
