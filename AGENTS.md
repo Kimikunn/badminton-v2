@@ -55,17 +55,7 @@ docker compose -p badminton up -d --build
 
 ## Git 提交规范
 
-每次提交必须标注作者身份：
-
-```
-经由 [Claude / Codex] 完成。
-
-via [HAPI](https://hapi.run)
-
-Co-Authored-By: HAPI <noreply@hapi.run>
-```
-
-禁止以 `root` 身份提交。提交前设置 `git config user.name` 和 `user.email`。
+禁止以 `root` 身份提交。提交前设置正确的 `git config user.name` 和 `user.email`，让 git author 反映实际的提交者身份。
 
 ---
 
