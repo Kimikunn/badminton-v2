@@ -2,7 +2,7 @@
 /**
  * VenueView — 场地管理 & 订场
  */
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useBookingsStore, usePlayersStore, useVenuesStore } from '@/stores'
 import Card from '@/components/ui/Card.vue'
 import Avatar from '@/components/ui/Avatar.vue'
@@ -88,9 +88,10 @@ const hasMoreRecords = computed(() => bookingsStore.records.length > RECORD_PREV
 
 // 收起时回到列表顶部
 const recordsCardRef = ref(null)
-watch(showAllRecords, (val) => {
-  if (!val && recordsCardRef.value) {
-    recordsCardRef.value.scrollIntoView({ behavior: 'smooth', block: 'start' })
+watch(showAllRecords, async (val) => {
+  if (!val) {
+    await nextTick()
+    recordsCardRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 })
 
