@@ -4,6 +4,7 @@
  */
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useBookingsStore, usePlayersStore, useVenuesStore } from '@/stores'
+import { api } from '@/api/client'
 import Card from '@/components/ui/Card.vue'
 import Avatar from '@/components/ui/Avatar.vue'
 import Badge from '@/components/ui/Badge.vue'
@@ -95,7 +96,47 @@ watch(showAllRecords, async (val) => {
   }
 })
 
-onMounted(() => { bookingsStore.init(); venuesStore.init() })
+onMounted(() => { bookingsStore.init(); venuesStore.init(); fetchUnavailableDays() })
+
+// === Unavailable days ===
+const unavailableDays = ref([])
+
+async function fetchUnavailableDays() {
+  try {
+    const res = await api.get('/unavailable-days')
+    if (res.success) unavailableDays.value = res.data
+  } catch { /* non-critical */ }
+}
+
+const unavailableDateSet = computed(() =>
+  new Set(unavailableDays.value.map(u => u.date))
+)
+
+const markingUnavailable = ref(false)
+async function markUnavailable(date) {
+  markingUnavailable.value = true
+  try {
+    const res = await api.post('/unavailable-days', { playerId: nextPerson.value?.id, date })
+    if (res.success) {
+      await fetchUnavailableDays()
+      await bookingsStore.init({ force: true })
+      toast.show(res.data.deletedBookings ? `已标记不可用，同时删除了 ${res.data.deletedBookings} 条订场记录` : '已标记不可用', 'success')
+    }
+  } catch (e) { toast.show(e.message, 'error') }
+  markingUnavailable.value = false
+}
+
+async function unmarkUnavailable(id) {
+  try {
+    await api.delete(`/unavailable-days/${id}`)
+    await fetchUnavailableDays()
+    toast.show('已取消标记', 'success')
+  } catch (e) { toast.show(e.message, 'error') }
+}
+
+function getUnavailableForDate(date) {
+  return unavailableDays.value.find(u => u.date === date) || null
+}
 
 // === Rotation ===
 const nextPerson = computed(() => {
@@ -314,7 +355,11 @@ async function deleteEditingVenue() {
         :records="bookingsStore.records"
         :get-player-name="(id) => playersStore.getPlayerName(id)"
         :get-player-avatar="(id) => playersStore.getPlayerById(id)?.avatar"
+        :unavailable-date-set="unavailableDateSet"
+        :get-unavailable-for-date="getUnavailableForDate"
         @create-booking="(date) => { form.date = date; openAdd() }"
+        @mark-unavailable="markUnavailable"
+        @unmark-unavailable="unmarkUnavailable"
       />
     </Card>
 

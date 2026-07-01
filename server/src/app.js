@@ -24,6 +24,7 @@ const venuesRoutes = require('./routes/venues');
 const titlesRoutes = require('./routes/titles');
 const bookingsRoutes = require('./routes/bookings');
 const uploadRoutes = require('./routes/upload');
+const unavailableDaysRoutes = require('./routes/unavailableDays');
 
 const app = express();
 
@@ -118,6 +119,7 @@ app.use('/api/venues', venuesRoutes);
 app.use('/api/titles', titlesRoutes);
 app.use('/api/bookings', bookingsRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/unavailable-days', unavailableDaysRoutes);
 
 // Test-only admin routes (data reset etc.)
 if (process.env.ENABLE_TEST_FEATURES === 'true') {
