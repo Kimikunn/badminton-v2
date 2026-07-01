@@ -1,5 +1,6 @@
-const { prepare } = require('../config/db');
+const { prepare, transaction } = require('../config/db');
 const { getRule } = require('../rules');
+const { parseJson, stringifyJson } = require('../utils/json');
 const { MATCH_STATUS, ROUND_STATUS, SEASON_STATUS, RULE_ID } = require('../constants');
 
 function recalculateRound(roundId) {
@@ -38,7 +39,17 @@ function recalculateRound(roundId) {
       allRounds.every(r => r.status === ROUND_STATUS.COMPLETED);
 
     if (allRoundsDone && season.status !== SEASON_STATUS.COMPLETED) {
-      prepare('UPDATE seasons SET status = ? WHERE id = ?').run(SEASON_STATUS.COMPLETED, season.id);
+      const { champion, comboChampion } = calcSeasonChampion(season, allRounds);
+      if (comboChampion && season.rule_id === RULE_ID.S4) {
+        const comeback = parseJson(season.comeback_data, {});
+        comeback.s4 = comeback.s4 || {};
+        comeback.s4.comboChampion = comboChampion;
+        prepare('UPDATE seasons SET status = ?, champion_player_id = ?, comeback_data = ? WHERE id = ?')
+          .run(SEASON_STATUS.COMPLETED, champion, stringifyJson(comeback), season.id);
+      } else {
+        prepare('UPDATE seasons SET status = ?, champion_player_id = ? WHERE id = ?')
+          .run(SEASON_STATUS.COMPLETED, champion, season.id);
+      }
     } else if (!allRoundsDone && season.status === SEASON_STATUS.COMPLETED) {
       const newStatus = allRounds.some(r => r.status === ROUND_STATUS.IN_PROGRESS)
         ? SEASON_STATUS.ONGOING : SEASON_STATUS.PENDING;
@@ -47,6 +58,68 @@ function recalculateRound(roundId) {
   }
 
   return nextRound;
+}
+
+/**
+ * Calculate season champion by counting match wins per participant.
+ * Returns the player ID with the highest win count, or null if no completed matches.
+ */
+function calcSeasonChampion(season, allRounds) {
+  const participants = parseJson(season.participants, []);
+  if (!participants.length) return { champion: null, comboChampion: null };
+
+  const isS4 = season.rule_id === RULE_ID.S4;
+  let matches;
+  if (isS4) {
+    const topRoundIds = (allRounds || []).filter(r => r.round_no <= 4).map(r => r.id);
+    if (!topRoundIds.length) {
+      matches = prepare('SELECT team_a, team_b, winner FROM matches WHERE season_id = ? AND status = ?')
+        .all(season.id, MATCH_STATUS.COMPLETED);
+    } else {
+      const ph = topRoundIds.map(() => '?').join(',');
+      matches = prepare(`SELECT team_a, team_b, winner FROM matches WHERE season_id = ? AND status = ? AND round_id IN (${ph})`)
+        .all(season.id, MATCH_STATUS.COMPLETED, ...topRoundIds);
+    }
+  } else {
+    matches = prepare('SELECT team_a, team_b, winner FROM matches WHERE season_id = ? AND status = ?')
+      .all(season.id, MATCH_STATUS.COMPLETED);
+  }
+  if (!matches.length) return { champion: null, comboChampion: null };
+
+  const wins = {};
+  for (const pid of participants) wins[pid] = 0;
+  for (const m of matches) {
+    if (!m.winner) continue;
+    const winnerTeam = m.winner === 'a' ? parseJson(m.team_a, []) : parseJson(m.team_b, []);
+    for (const pid of winnerTeam) { if (wins[pid] !== undefined) wins[pid]++; }
+  }
+  let champion = null, maxWins = -1;
+  for (const pid of participants) {
+    if (wins[pid] > maxWins) { maxWins = wins[pid]; champion = pid; }
+  }
+
+  let comboChampion = null;
+  if (isS4) {
+    const comboRoundIds = (allRounds || []).filter(r => r.round_no >= 5).map(r => r.id);
+    if (comboRoundIds.length) {
+      const cph = comboRoundIds.map(() => '?').join(',');
+      const comboMatches = prepare(`SELECT team_a, team_b, winner FROM matches WHERE season_id = ? AND status = ? AND round_id IN (${cph})`)
+        .all(season.id, MATCH_STATUS.COMPLETED, ...comboRoundIds);
+      const pairWins = {};
+      for (const m of comboMatches) {
+        if (!m.winner) continue;
+        const winnerPair = (m.winner === 'a' ? parseJson(m.team_a, []) : parseJson(m.team_b, [])).sort();
+        const key = winnerPair.join('|');
+        pairWins[key] = (pairWins[key] || 0) + 1;
+      }
+      let bestPair = null, bestWins = -1;
+      for (const [key, w] of Object.entries(pairWins)) {
+        if (w > bestWins) { bestWins = w; bestPair = key; }
+      }
+      if (bestPair) comboChampion = { players: bestPair.split('|'), wins: bestWins };
+    }
+  }
+  return { champion, comboChampion };
 }
 
 function markRoundInProgress(roundId) {

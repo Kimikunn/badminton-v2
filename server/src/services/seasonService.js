@@ -16,6 +16,7 @@ function formatSeason(row) {
     ruleId: row.rule_id,
     comebackData: parseJson(row.comeback_data, {}),
     color: row.color,
+    championPlayerId: row.champion_player_id || null,
     createdAt: row.created_at
   };
 }

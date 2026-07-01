@@ -3,6 +3,7 @@
  * RankingsHubView — 积分榜调度中心
  */
 import { computed, ref, defineAsyncComponent } from 'vue'
+import { useRoute } from 'vue-router'
 import { useSeasonsStore, useMatchesStore, usePlayersStore } from '@/stores'
 import { STATUS } from '@/constants'
 import { getRule } from '@/rules'
@@ -28,6 +29,8 @@ const { getSeasonColor } = useSeasonTheme()
 const { getSelectedSeasonId, setSelectedSeasonId } = useSeasonSelector()
 const { setViewAccent, viewStyle } = useViewAccent()
 
+const route = useRoute()
+
 const parentTab = ref('season')
 const parentTabOptions = [
   { key: 'season', label: '赛季积分' },
@@ -38,6 +41,11 @@ const currentSeason = computed(() => seasonsStore.getSeasonById(selectedSeasonId
 const ruleId = computed(() => currentSeason.value?.ruleId || 'standard')
 
 function selectSeason(id) { selectedSeasonId.value=id; setSelectedSeasonId(id); const s=seasonsStore.getSeasonById(id); if(s?.color)setViewAccent(getSeasonColor(s.color)) }
+
+// Support ?season=xxx to pre-select
+if (route.query.season && typeof route.query.season === 'string') {
+  selectSeason(route.query.season)
+}
 
 // === Rankings computed via rule module ===
 const seasonRankings = computed(() => {

@@ -96,6 +96,10 @@ function runMigrationFile(migrationsDir, file) {
     migrateAddMatchFormat();
     return;
   }
+  if (file === '007_add_champion_player_id.sql') {
+    migrateAddChampionPlayerId();
+    return;
+  }
 
   const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf-8');
   db.run(sql);
@@ -122,6 +126,12 @@ function migrateAddMatchFormat() {
       OR (best_of = 1 AND match_format <> 'bo1')
       OR (best_of = 7 AND match_format <> 'pa7')
       OR (best_of NOT IN (1, 7) AND match_format <> 'bo3')`);
+}
+
+function migrateAddChampionPlayerId() {
+  if (!hasColumn('seasons', 'champion_player_id')) {
+    db.run('ALTER TABLE seasons ADD COLUMN champion_player_id TEXT REFERENCES players(id)');
+  }
 }
 
 /**

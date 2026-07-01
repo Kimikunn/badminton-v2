@@ -63,7 +63,7 @@ function getComboPlayers(teamIds) {
 const stageItems = computed(() => [
   { label:'上篇', value:`${topRounds.value.filter(r=>r.status==='completed').length}/${Math.max(topRounds.value.length,4)}`, hint:'四象之力', active:topRounds.value.length>0, percent:topRounds.value.filter(r=>r.status==='completed').length/4*100 },
   { label:'排位', value:seeds.value.A?'已生成':'待定', hint:'种子席位', active:!!seeds.value.A, percent:seeds.value.A?100:0 },
-  { label:'下篇', value:comboRounds.value.length?'进行中':'待开始', hint:'组合决战', active:comboRounds.value.length>0, percent:comboRounds.value.filter(r=>r.status==='completed').length/Math.max(comboRounds.value.length,3)*100 }
+  { label:'下篇', value:comboRounds.value.length && comboRounds.value.every(r=>r.status==='completed') ? `${comboRounds.value.length}/${Math.max(comboRounds.value.length,3)}` : comboRounds.value.length ? '进行中' : '待开始', hint:'组合决战', active:comboRounds.value.length>0, percent:comboRounds.value.filter(r=>r.status==='completed').length/Math.max(comboRounds.value.length,3)*100 }
 ])
 </script>
 

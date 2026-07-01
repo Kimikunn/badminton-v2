@@ -1,9 +1,10 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useClubStore, usePlayersStore, useSeasonsStore, useMatchesStore, useTitlesStore, useBookingsStore } from '@/stores'
+import { useClubStore, usePlayersStore, useSeasonsStore, useMatchesStore, useTitlesStore } from '@/stores'
 import { STATUS } from '@/constants'
 import Card from '@/components/ui/Card.vue'
+import HallOfFame from '@/components/HallOfFame.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Avatar from '@/components/ui/Avatar.vue'
 import Button from '@/components/ui/Button.vue'
@@ -18,7 +19,6 @@ const playersStore = usePlayersStore()
 const seasonsStore = useSeasonsStore()
 const matchesStore = useMatchesStore()
 const titlesStore = useTitlesStore()
-const bookingsStore = useBookingsStore()
 
 // Club - click to edit
 const editingClub = ref(false)
@@ -42,6 +42,8 @@ function getDisplayedTitle(player) {
   return titlesStore.getHighestTitle(player.id)
 }
 
+function goToPlayer(id) { router.push({ name: 'player-detail', params: { id } }) }
+
 const TITLE_PILL = {
   S: 'bg-badge-gold-bg text-badge-gold',
   A: 'bg-badge-purple-bg text-badge-purple',
@@ -50,17 +52,6 @@ const TITLE_PILL = {
   hidden: 'bg-surface-hover text-fg-muted'
 }
 function titlePillClass(level) { return TITLE_PILL[level] || TITLE_PILL.hidden }
-
-const totalBookingHours = computed(() => {
-  let total = 0
-  for (const r of bookingsStore.records) {
-    const sh = parseInt((r.startTime || '').split(':')[0], 10)
-    const eh = parseInt((r.endTime || '').split(':')[0], 10)
-    if (sh >= 0 && eh > sh) total += eh - sh
-  }
-  return total
-})
-function goToPlayer(id) { router.push({ name: 'player-detail', params: { id } }) }
 
 // Season
 const currentSeason = computed(() => seasonsStore.currentSeason)
@@ -151,25 +142,8 @@ function getMatchTypeLabel(m) { return m.seasonId ? '赛季' : '友谊' }
       <EmptyState v-else icon="Users" title="暂无成员" />
     </Card>
 
-    <!-- Stats -->
-    <div class="flex justify-around items-center">
-      <div class="text-center">
-        <span class="block text-xl font-bold text-accent">{{ playersStore.players.length }}</span>
-        <span class="text-xs text-fg-muted">成员</span>
-      </div>
-      <div class="text-center">
-        <span class="block text-xl font-bold text-accent">{{ seasonsStore.seasons.length }}</span>
-        <span class="text-xs text-fg-muted">赛季</span>
-      </div>
-      <div class="text-center">
-        <span class="block text-xl font-bold text-accent">{{ matchesStore.historyMatches.length }}</span>
-        <span class="text-xs text-fg-muted">比赛</span>
-      </div>
-      <div v-if="totalBookingHours" class="text-center">
-        <span class="block text-xl font-bold text-accent">{{ totalBookingHours }}h</span>
-        <span class="text-xs text-fg-muted">时长</span>
-      </div>
-    </div>
+    <!-- Hall of Fame -->
+    <HallOfFame />
   </div>
 </template>
 
