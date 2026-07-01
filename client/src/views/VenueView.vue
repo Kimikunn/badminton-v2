@@ -2,7 +2,7 @@
 /**
  * VenueView — 场地管理 & 订场
  */
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useBookingsStore, usePlayersStore, useVenuesStore } from '@/stores'
 import Card from '@/components/ui/Card.vue'
 import Avatar from '@/components/ui/Avatar.vue'
@@ -13,7 +13,7 @@ import Sheet from '@/components/ui/Sheet.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import BookingCalendar from '@/components/venue/BookingCalendar.vue'
-import { ClipboardList, Pencil, Trash2 } from 'lucide-vue-next'
+import { ClipboardList, Pencil, Trash2, ChevronDown } from 'lucide-vue-next'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 
@@ -71,11 +71,28 @@ const autoCost = computed(() => {
 })
 
 // === Record view mode ===
-const recordViewMode = ref('calendar')
+const recordViewMode = ref('list')
 const recordViewOptions = [
-  { key: 'calendar', label: '日历' },
-  { key: 'list', label: '列表' }
+  { key: 'list', label: '列表' },
+  { key: 'calendar', label: '日历' }
 ]
+
+// === List expand ===
+const RECORD_PREVIEW_COUNT = 5
+const showAllRecords = ref(false)
+const visibleRecords = computed(() => {
+  if (showAllRecords.value) return bookingsStore.records
+  return bookingsStore.records.slice(0, RECORD_PREVIEW_COUNT)
+})
+const hasMoreRecords = computed(() => bookingsStore.records.length > RECORD_PREVIEW_COUNT)
+
+// 收起时回到列表顶部
+const recordsCardRef = ref(null)
+watch(showAllRecords, (val) => {
+  if (!val && recordsCardRef.value) {
+    recordsCardRef.value.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+})
 
 onMounted(() => { bookingsStore.init(); venuesStore.init() })
 
@@ -251,10 +268,73 @@ async function deleteEditingVenue() {
 
 <template>
   <div class="flex flex-col gap-4">
+    <!-- Records -->
+    <Card ref="recordsCardRef" padding="md">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-xs font-semibold text-fg-secondary uppercase tracking-wide">订场记录</h3>
+        <SegmentedControl v-if="bookingsStore.records.length" v-model="recordViewMode" :options="recordViewOptions" size="sm" />
+      </div>
+      <EmptyState v-if="!bookingsStore.records.length" icon="ClipboardList" title="暂无记录" />
+
+      <!-- List view -->
+      <div v-else-if="recordViewMode === 'list'" class="flex flex-col">
+        <div v-for="r in visibleRecords" :key="r.id" class="flex items-center gap-2 py-2 border-b border-line-light last:border-b-0">
+          <div class="flex-1 flex items-center gap-3 cursor-pointer active:opacity-70" @click="openEdit(r)">
+            <div class="flex flex-col min-w-12">
+              <span class="text-xs font-medium text-fg">{{ r.date?.slice(5) }}</span>
+              <span class="text-2xs text-fg-muted">{{ r.startTime }}-{{ r.endTime }}</span>
+            </div>
+            <div class="flex-1 min-w-0">
+              <span class="text-sm text-fg">{{ playersStore.getPlayerName(r.playerId) }}</span>
+              <span class="block text-2xs text-fg-muted">{{ r.venueName || '—' }}</span>
+              <span class="block text-2xs text-warning" v-if="r.notes">{{ r.notes }}</span>
+            </div>
+            <span class="text-sm font-semibold text-accent">¥{{ r.cost }}</span>
+          </div>
+          <button class="icon-btn !text-danger" @click.stop="deleteRecord(r)" title="删除">
+            <Trash2 :size="12" />
+          </button>
+        </div>
+
+        <!-- Expand / collapse -->
+        <button
+          v-if="hasMoreRecords"
+          class="flex items-center justify-center gap-1 w-full py-2 mt-1 text-xs text-fg-muted hover:text-accent transition-colors duration-fast"
+          @click="showAllRecords = !showAllRecords"
+        >
+          <span>{{ showAllRecords ? '收起' : `展开全部（共 ${bookingsStore.records.length} 条）` }}</span>
+          <ChevronDown :size="14" :class="showAllRecords ? 'rotate-180' : ''" class="transition-transform duration-fast" />
+        </button>
+      </div>
+
+      <!-- Calendar view -->
+      <BookingCalendar
+        v-else
+        :records="bookingsStore.records"
+        :get-player-name="(id) => playersStore.getPlayerName(id)"
+        :get-player-avatar="(id) => playersStore.getPlayerById(id)?.avatar"
+        @create-booking="(date) => { form.date = date; openAdd() }"
+      />
+    </Card>
+
+    <!-- Rotation + Add -->
+    <Card padding="md">
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="text-xs font-semibold text-fg-secondary uppercase tracking-wide mb-3">订场轮换</h3>
+          <p class="text-sm text-fg-secondary mt-0.5" v-if="nextPerson">下一个：<strong class="text-accent">{{ nextPerson.name }}</strong></p>
+        </div>
+        <Avatar v-if="nextPerson" :name="nextPerson.name" :src="nextPerson.avatar" size="lg" />
+      </div>
+      <Button variant="primary" size="md" block @click="openAdd" class="mt-3">
+        <ClipboardList :size="16" class="inline mr-1" />{{ nextPerson ? nextPerson.name + ' 记录订场' : '新增记录' }}
+      </Button>
+    </Card>
+
     <!-- Venues -->
     <Card padding="md">
       <div class="flex items-center justify-between">
-        <h3 class="text-xs font-semibold text-fg-secondary uppercase tracking-wide mb-3">场地</h3>
+        <h3 class="text-xs font-semibold text-fg-secondary uppercase tracking-wide mb-3">场地信息</h3>
         <Button variant="ghost" size="sm" @click="openAddVenue">+ 新增</Button>
       </div>
       <div v-if="venuesStore.venues.length === 0">
@@ -275,59 +355,6 @@ async function deleteEditingVenue() {
           </button>
         </div>
       </div>
-    </Card>
-
-    <!-- Rotation + Add -->
-    <Card padding="md">
-      <div class="flex items-center justify-between">
-        <div>
-          <h3 class="text-xs font-semibold text-fg-secondary uppercase tracking-wide mb-3">订场轮换</h3>
-          <p class="text-sm text-fg-secondary mt-0.5" v-if="nextPerson">下一个：<strong class="text-accent">{{ nextPerson.name }}</strong></p>
-        </div>
-        <Avatar v-if="nextPerson" :name="nextPerson.name" :src="nextPerson.avatar" size="lg" />
-      </div>
-      <Button variant="primary" size="md" block @click="openAdd" class="mt-3">
-        <ClipboardList :size="16" class="inline mr-1" />{{ nextPerson ? nextPerson.name + ' 记录订场' : '新增记录' }}
-      </Button>
-    </Card>
-
-    <!-- Records -->
-    <Card padding="md">
-      <div class="flex items-center justify-between mb-3">
-        <h3 class="text-xs font-semibold text-fg-secondary uppercase tracking-wide">订场记录</h3>
-        <SegmentedControl v-if="bookingsStore.records.length" v-model="recordViewMode" :options="recordViewOptions" size="sm" />
-      </div>
-      <EmptyState v-if="!bookingsStore.records.length" icon="ClipboardList" title="暂无记录" />
-
-      <!-- List view -->
-      <div v-else-if="recordViewMode === 'list'" class="flex flex-col">
-        <div v-for="r in bookingsStore.records" :key="r.id" class="flex items-center gap-2 py-2 border-b border-line-light last:border-b-0">
-          <div class="flex-1 flex items-center gap-3 cursor-pointer active:opacity-70" @click="openEdit(r)">
-            <div class="flex flex-col min-w-12">
-              <span class="text-xs font-medium text-fg">{{ r.date?.slice(5) }}</span>
-              <span class="text-2xs text-fg-muted">{{ r.startTime }}-{{ r.endTime }}</span>
-            </div>
-            <div class="flex-1 min-w-0">
-              <span class="text-sm text-fg">{{ playersStore.getPlayerName(r.playerId) }}</span>
-              <span class="block text-2xs text-fg-muted">{{ r.venueName || '—' }}</span>
-              <span class="block text-2xs text-warning" v-if="r.notes">{{ r.notes }}</span>
-            </div>
-            <span class="text-sm font-semibold text-accent">¥{{ r.cost }}</span>
-          </div>
-          <button class="icon-btn !text-danger" @click.stop="deleteRecord(r)" title="删除">
-            <Trash2 :size="12" />
-          </button>
-        </div>
-      </div>
-
-      <!-- Calendar view -->
-      <BookingCalendar
-        v-else
-        :records="bookingsStore.records"
-        :get-player-name="(id) => playersStore.getPlayerName(id)"
-        :get-player-avatar="(id) => playersStore.getPlayerById(id)?.avatar"
-        @create-booking="(date) => { form.date = date; openAdd() }"
-      />
     </Card>
 
     <!-- Add record sheet -->
