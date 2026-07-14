@@ -52,15 +52,18 @@ const gameConfig = computed(() => {
   if (season.value?.ruleId === 's5' && round.value) {
     return getRule('s5').getGameConfig(round.value.roundNo, { season: season.value })
   }
-  return { scoringMode: 'standard', targetScore: 21, maxScore: 30, requiresWinner: false }
+  return { scoringMode: 'standard', targetScore: 21, maxScore: 30, requiresWinner: false, supportsPierce: false }
 })
 const targetScore = computed(() => gameConfig.value.targetScore || 21)
+const requiresWinner = computed(() => !!gameConfig.value.requiresWinner)
+const supportsPierce = computed(() => !!gameConfig.value.supportsPierce)
 
-function validateEditScores(scoreA, scoreB) {
+function validateEditScores(scoreA, scoreB, winner = null) {
   return editValidation.validateGameScore(scoreA, scoreB, {
     targetScore: targetScore.value,
     maxScore: gameConfig.value.maxScore || 30,
-    scoringMode: gameConfig.value.scoringMode
+    scoringMode: gameConfig.value.scoringMode,
+    winnerOverride: winner
   })
 }
 
@@ -96,26 +99,31 @@ function goBack() {
 
 // Edit game
 const editingGame = ref(null)
-const editForm = ref({ scoreA: 0, scoreB: 0 })
+const editForm = ref({ scoreA: 0, scoreB: 0, winner: null, pierceTeam: '' })
 const showEditGame = ref(false)
 const editSaving = ref(false)
 
 function openEditGame(game) {
   editingGame.value = game
-  editForm.value = { scoreA: game.scoreA || 0, scoreB: game.scoreB || 0 }
+  editForm.value = { scoreA: game.scoreA || 0, scoreB: game.scoreB || 0, winner: game.winner || null, pierceTeam: getPierceTeam(game) }
   showEditGame.value = true
+}
+
+function getPierceTeam(game) {
+  return getGameRuleEvents(game).find(e => e.type === 'pierce')?.payload?.team || ''
 }
 
 async function saveGameEdit() {
   const scoreA = Number(editForm.value.scoreA)
   const scoreB = Number(editForm.value.scoreB)
-  const result = validateEditScores(scoreA, scoreB)
+  const result = validateEditScores(scoreA, scoreB, editForm.value.winner)
   if (!result.canEnd) { toast.show(result.reason, 'warning'); return }
 
   editSaving.value = true
   try {
     await matchesStore.updateCompletedGameScore(
-      editingGame.value.id, scoreA, scoreB, result.winner
+      editingGame.value.id, scoreA, scoreB, result.winner,
+      { pierceTeam: editForm.value.pierceTeam || null }
     )
     toast.show('比分已更新', 'success')
     showEditGame.value = false
@@ -123,8 +131,8 @@ async function saveGameEdit() {
   editSaving.value = false
 }
 
-watch(() => [editForm.value.scoreA, editForm.value.scoreB], ([a, b]) => {
-  validateEditScores(a, b)
+watch(() => [editForm.value.scoreA, editForm.value.scoreB, editForm.value.winner], ([a, b, winner]) => {
+  validateEditScores(a, b, winner)
 })
 
 // Delete game
@@ -216,16 +224,31 @@ async function handleDeleteMatch() {
 
     <!-- Edit game sheet -->
     <Sheet :show="showEditGame" title="修改比分" @close="showEditGame=false">
-      <div class="flex flex-col gap-4">
+      <div class="flex flex-col gap-2">
         <p v-if="editingGame" class="text-sm text-fg-secondary">G{{ editingGame.gameNo }} · {{ teamAPlayers.join('/') }} vs {{ teamBPlayers.join('/') }}</p>
         <div class="flex items-center gap-3">
           <div class="flex-1"><Input label="A队得分" type="number" v-model.number="editForm.scoreA" /></div>
           <span class="text-sm text-fg-muted font-bold">VS</span>
           <div class="flex-1"><Input label="B队得分" type="number" v-model.number="editForm.scoreB" /></div>
         </div>
-        <p class="text-xs min-h-[1.25rem] leading-tight" :class="editValidation.errorMessage ? 'text-danger' : 'text-fg-muted'">
+        <p class="text-xs leading-tight" :class="editValidation.errorMessage ? 'text-danger' : 'text-fg-muted'">
           {{ editValidation.errorMessage || '需达到'+targetScore+'分且领先2分（或先到30）' }}
         </p>
+        <div v-if="requiresWinner" class="flex flex-col gap-2">
+          <span class="text-xs font-medium text-fg-secondary">本局胜方</span>
+          <div class="grid grid-cols-2 gap-2">
+            <button class="rule-choice" :class="{ active: editForm.winner === 'a' }" @click="editForm.winner='a'">{{ teamAPlayers.join('/') }}</button>
+            <button class="rule-choice" :class="{ active: editForm.winner === 'b' }" @click="editForm.winner='b'">{{ teamBPlayers.join('/') }}</button>
+          </div>
+        </div>
+        <div v-if="supportsPierce" class="flex flex-col gap-2">
+          <span class="text-xs font-medium text-fg-secondary">贯穿触发</span>
+          <div class="grid grid-cols-3 gap-2">
+            <button class="rule-choice" :class="{ active: editForm.pierceTeam === '' }" @click="editForm.pierceTeam=''">无</button>
+            <button class="rule-choice" :class="{ active: editForm.pierceTeam === 'a' }" @click="editForm.pierceTeam='a'">A队</button>
+            <button class="rule-choice" :class="{ active: editForm.pierceTeam === 'b' }" @click="editForm.pierceTeam='b'">B队</button>
+          </div>
+        </div>
         <div class="flex gap-3">
           <Button variant="secondary" size="md" class="flex-1" @click="showEditGame=false">取消</Button>
           <Button variant="primary" size="md" class="flex-1" :loading="editSaving" @click="saveGameEdit">保存</Button>
@@ -239,4 +262,6 @@ async function handleDeleteMatch() {
 @reference "@/styles/global.css";
 .g-btn { @apply w-[26px] h-[26px] border-none rounded-full bg-transparent text-fg-muted flex items-center justify-center cursor-pointer transition-all duration-fast active:scale-90; }
 .g-btn:hover { @apply bg-accent-subtle text-accent; }
+.rule-choice { @apply min-h-9 px-3 py-2 rounded-lg border border-line bg-canvas text-sm text-fg-secondary font-medium cursor-pointer transition-all duration-fast active:scale-[0.98]; }
+.rule-choice.active { @apply border-accent bg-accent-subtle text-accent; }
 </style>

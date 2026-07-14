@@ -50,7 +50,6 @@ function validateResistanceGame(ctx, input) {
   const winner = input.winner || null;
 
   if (scoreA < 0 || scoreB < 0) return { canEnd: false, winner: null, reason: '比分不能为负数' };
-  if (scoreA === scoreB) return { canEnd: false, winner: null, reason: '比分不能相等' };
   if (scoreA > config.maxScore || scoreB > config.maxScore) {
     return { canEnd: false, winner: null, reason: `最高${config.maxScore}分封顶` };
   }

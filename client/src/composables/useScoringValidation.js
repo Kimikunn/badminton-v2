@@ -140,9 +140,6 @@ function canEndResistanceGame(scoreA, scoreB, options = {}) {
   if (scoreA > maxScore || scoreB > maxScore) {
     return { canEnd: false, winner: null, reason: `最高${maxScore}分封顶` }
   }
-  if (scoreA === scoreB) {
-    return { canEnd: false, winner: null, reason: '比分不能相等' }
-  }
   if (!['a', 'b'].includes(winner)) {
     return { canEnd: false, winner: null, reason: '抵抗局需要选择胜方' }
   }
