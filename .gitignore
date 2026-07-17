@@ -11,6 +11,9 @@ server/uploads/
 .DS_Store
 *.log
 rollout-*.jsonl
+
+# Python runtime artifacts (Trellis scripts)
+__pycache__/
 .env.local
 .env.*.local
 
