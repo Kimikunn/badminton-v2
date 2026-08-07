@@ -23,5 +23,19 @@ export default defineConfig({
         viewport: { width: 390, height: 844 },
       },
     },
+    {
+      name: 'android-light',
+      use: {
+        colorScheme: 'light',
+        viewport: { width: 360, height: 640 },
+      },
+    },
+    {
+      name: 'android-dark',
+      use: {
+        colorScheme: 'dark',
+        viewport: { width: 360, height: 640 },
+      },
+    },
   ],
 })

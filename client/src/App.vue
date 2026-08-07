@@ -7,7 +7,6 @@ import { useAppInit } from '@/composables/useAppInit'
 import { useSeasonTheme } from '@/composables/useSeasonTheme'
 import { useOnlineStatus } from '@/composables/useOnlineStatus'
 import { useSWUpdate } from '@/composables/useSWUpdate'
-import { usePWAInstall } from '@/composables/usePWAInstall'
 import { useToast } from '@/composables/useToast'
 
 const isTestMode = import.meta.env.VITE_TEST_MODE === 'true'
@@ -26,27 +25,7 @@ const { isInitialized, isInitializing, initError, initAllStores } = useAppInit()
 const { activeSeasonId } = useSeasonTheme()
 const { isOnline, wasOffline } = useOnlineStatus()
 const { updateReady, refreshApp } = useSWUpdate()
-const { isStandalone, canInstall, isIOS, install, dismissInstall, shouldShowGuide } = usePWAInstall()
 const toast = useToast()
-
-// 安装引导显示状态
-const showInstallGuide = ref(false)
-
-// 延迟弹出安装引导（首次加载 5 秒后，仅当非 standalone 时）
-onMounted(() => {
-  if (!isStandalone.value) {
-    setTimeout(() => {
-      if (shouldShowGuide()) {
-        showInstallGuide.value = true
-      }
-    }, 5000)
-  }
-})
-
-function handleDismissInstall() {
-  dismissInstall()
-  showInstallGuide.value = false
-}
 
 // ── 在线/离线状态 → Toast ──
 let offlineToastId = null
@@ -181,11 +160,11 @@ onMounted(async () => {
         :class="headerHidden ? '-translate-y-full' : 'translate-y-0'"
         style="padding-top: env(safe-area-inset-top, 0px); min-height: calc(var(--header-height) + env(safe-area-inset-top, 0px))"
       >
-        <h1 class="text-base italic tracking-wide flex items-center gap-2" style="font-family: 'Playfair Display', serif;">
-          The&nbsp;Plume&nbsp;Championship
-          <span v-if="isTestMode" class="text-3xs font-mono font-normal px-1.5 py-0.5 rounded-full bg-warning-subtle text-warning border border-warning/30">TEST</span>
+        <h1 class="text-base italic tracking-wide flex items-center gap-2 min-w-0" style="font-family: 'Playfair Display', serif;">
+          <span class="truncate">The&nbsp;Plume&nbsp;Championship</span>
+          <span v-if="isTestMode" class="shrink-0 text-3xs font-mono font-normal px-1.5 py-0.5 rounded-full bg-warning-subtle text-warning border border-warning/30">TEST</span>
         </h1>
-        <div class="flex gap-2">
+        <div class="flex gap-2 shrink-0">
           <button
             v-if="isTestMode"
             class="w-9 h-9 flex items-center justify-center border-none rounded-full bg-warning-subtle text-warning cursor-pointer transition-all duration-fast ease-out active:scale-90"
@@ -264,56 +243,6 @@ onMounted(async () => {
     </Teleport>
 
     <AdminToolsSheet v-if="isTestMode && AdminToolsSheet" :show="showDebug" @close="showDebug = false" />
-
-    <!-- PWA 安装引导 Sheet -->
-    <Teleport to="body">
-      <transition name="sheet-fade">
-        <div v-if="showInstallGuide" class="fixed inset-0 z-[200] flex items-end justify-center bg-black/40 backdrop-blur-sm" @click.self="handleDismissInstall">
-          <transition name="sheet-slide">
-            <div v-if="showInstallGuide" class="w-full max-w-[480px] liquid-sheet px-5 pt-4 pb-[calc(var(--space-5)+var(--safe-bottom))]">
-              <div class="w-8 h-1 bg-fg-muted/25 rounded-full mx-auto mb-4"></div>
-
-              <h3 class="text-lg font-semibold mb-2 text-center">添加到主屏幕</h3>
-              <p class="text-sm text-fg-muted text-center mb-4 leading-relaxed">
-                安装到手机桌面，像 App 一样快速打开，支持离线使用
-              </p>
-
-              <!-- iOS 安装说明 -->
-              <div v-if="isIOS" class="flex flex-col gap-3 mb-4">
-                <div class="flex items-center gap-3 p-3 rounded-xl bg-surface-hover">
-                  <div class="w-9 h-9 flex items-center justify-center rounded-full bg-accent text-white font-semibold text-sm shrink-0">1</div>
-                  <span class="text-sm">点击 Safari 底部 <span class="font-semibold">分享按钮</span> <span class="text-fg-muted">⎋</span></span>
-                </div>
-                <div class="flex items-center gap-3 p-3 rounded-xl bg-surface-hover">
-                  <div class="w-9 h-9 flex items-center justify-center rounded-full bg-accent text-white font-semibold text-sm shrink-0">2</div>
-                  <span class="text-sm">向下滑动，点击 <span class="font-semibold">「添加到主屏幕」</span></span>
-                </div>
-                <div class="flex items-center gap-3 p-3 rounded-xl bg-surface-hover">
-                  <div class="w-9 h-9 flex items-center justify-center rounded-full bg-accent text-white font-semibold text-sm shrink-0">3</div>
-                  <span class="text-sm">点击右上角 <span class="font-semibold">「添加」</span> 完成安装</span>
-                </div>
-              </div>
-
-              <!-- Android/Desktop 安装按钮 -->
-              <button
-                v-if="canInstall"
-                class="block w-full py-3 rounded-lg text-center font-medium text-white border-none cursor-pointer bg-accent mb-2 transition-transform duration-fast active:scale-[0.97]"
-                @click="install(); showInstallGuide = false"
-              >
-                立即安装
-              </button>
-
-              <button
-                class="block w-full py-3 rounded-lg text-center font-medium border-none cursor-pointer bg-surface-hover text-fg-secondary transition-transform duration-fast active:scale-[0.97]"
-                @click="handleDismissInstall"
-              >
-                暂不需要
-              </button>
-            </div>
-          </transition>
-        </div>
-      </transition>
-    </Teleport>
   </div>
 </template>
 

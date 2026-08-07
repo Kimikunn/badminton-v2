@@ -141,7 +141,16 @@
   --header-height: 3.5rem;
   --tabbar-height: 3.5rem;
   --safe-top: env(safe-area-inset-top, 0px);
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-bottom-min, 0px));
+}
+
+/* Android standalone PWA: env(safe-area-inset-bottom) may report 0 on some
+   devices/Chrome versions — enforce a minimum so TabBar / bottom Sheets are
+   not covered by the gesture bar. Browser mode stays untouched. */
+@media (display-mode: standalone) {
+  :root {
+    --safe-bottom-min: 16px;
+  }
 }
 
 /* ---------- Dark Mode ---------- */
