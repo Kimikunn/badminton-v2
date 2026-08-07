@@ -29,7 +29,8 @@ test runner — build + e2e are the client checks.
 
 ## Mobile-first, both color schemes
 
-Playwright projects run light + dark at 390×844 (`playwright.config.js`).
+Playwright projects run light + dark at 390×844 and android-light +
+android-dark at 360×640 (`playwright.config.js`).
 Use design-token colors (see `component-guidelines.md`) so both themes work;
 `e2e/contrast.spec.js` flags low-contrast text.
 

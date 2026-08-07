@@ -52,8 +52,15 @@ Location: `e2e/*.spec.js`, config `playwright.config.js`.
 Run: `npx playwright test` (requires the app running at
 `PLAYWRIGHT_BASE_URL`, default `http://localhost:8089`).
 
-- Two projects, `light` + `dark`, both at mobile viewport 390×844 — features
-  are mobile-first; check both color schemes.
+- Four projects: `light` + `dark` at 390×844 (iPhone baseline), plus
+  `android-light` + `android-dark` at 360×640 (smallest supported Android
+  width) — features are mobile-first; check both color schemes and both
+  widths. `smoke.spec.js` asserts no horizontal scroll on every page.
+- Test deployment runs alongside prod on the same host. The prod and test
+  compose files both name their service `app`, so always pass an explicit
+  project name for the test env — `docker compose -p badminton-test -f
+  docker-compose.test.yml ...` — otherwise compose may adopt and recreate
+  the prod container (`badminton`, :8088).
 - Existing specs: `smoke.spec.js`, `season-management.spec.js`,
   `contrast.spec.js` (text/background contrast), `screenshots.spec.js`
   (visual record into `e2e/screenshots/`, gitignored).

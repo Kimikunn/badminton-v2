@@ -55,4 +55,11 @@ Tailwind 4 utilities with project design tokens — use token colors
 (`bg-canvas`, `text-fg`, `text-fg-secondary`, `text-fg-muted`, `border-line`,
 `accent`, `danger`, `duration-fast`) instead of raw palette colors so
 light/dark themes keep working (`styles/tokens.css`). Mobile-first layout;
-e2e tests run at 390×844.
+e2e tests run at 390×844 and 360×640 — keep pages free of horizontal
+overflow at 360px (wrap long flex titles in `truncate` + `min-w-0`).
+
+Bottom-fixed UI (TabBar, bottom Sheets) must pad with `var(--safe-bottom)`,
+never a hardcoded value. `--safe-bottom` is
+`max(env(safe-area-inset-bottom, 0px), var(--safe-bottom-min, 0px))`: in
+standalone display-mode a 16px floor applies because some Android Chrome
+versions report the inset as 0 (gesture bar would cover bottom buttons).

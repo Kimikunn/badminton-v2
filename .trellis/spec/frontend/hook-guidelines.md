@@ -17,7 +17,7 @@
 | `useSeasonTheme` / `useViewAccent` / `useTheme` | Theming per season/view |
 | `useSeasonSelector`, `useSeasonAction`, `useMatchTab` | Season/match view logic |
 | `useScoringValidation` | Score input validation |
-| `usePWAInstall`, `useSWUpdate` | PWA install prompt / service-worker update |
+| `useSWUpdate` | Service-worker update prompt |
 
 ## Patterns
 
