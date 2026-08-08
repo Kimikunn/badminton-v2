@@ -1,16 +1,43 @@
 import { test, expect } from '@playwright/test'
 
+function adminHeaders() {
+  const adminToken = process.env.PLAYWRIGHT_ADMIN_TOKEN || ''
+  return adminToken ? { 'x-admin-token': adminToken } : {}
+}
+
+// 让 S6 成为「下一个可创建赛季」：清掉已存在的 S6，并确保 S5 已完成
+// （创建向导只展示下一个预设，且前一赛季必须 completed）
+async function ensureS6IsNextPreset(request, baseURL) {
+  const headers = adminHeaders()
+  const listRes = await request.get(`${baseURL}/api/seasons`)
+  const seasons = (await listRes.json()).data || []
+
+  const existingS6 = seasons.find(s => s.ruleId === 's6')
+  if (existingS6) {
+    const del = await request.delete(`${baseURL}/api/seasons/${existingS6.id}`, { headers })
+    expect(del.ok()).toBeTruthy()
+  }
+
+  const s5 = seasons.find(s => s.ruleId === 's5')
+  if (s5 && s5.status !== 'completed') {
+    const put = await request.put(`${baseURL}/api/seasons/${s5.id}`, { headers, data: { status: 'completed' } })
+    expect(put.ok()).toBeTruthy()
+  }
+}
+
 test.describe('Season management', () => {
-  test('shows season creation button when the feature flag is enabled', async ({ page }) => {
+  test('shows season creation button when the feature flag is enabled', async ({ page, request, baseURL }) => {
     test.skip(!process.env.PLAYWRIGHT_EXPECT_SEASON_CREATE, 'season creation is not expected in this environment')
+
+    await ensureS6IsNextPreset(request, baseURL)
 
     await page.goto('/matches', { waitUntil: 'networkidle' })
 
     await page.getByRole('button', { name: '+ 创建赛季' }).click()
 
-    await expect(page.getByText('创建预设赛季')).toBeVisible()
-    await expect(page.getByRole('button', { name: /S1 · 标准赛季/ })).toBeVisible()
-    await expect(page.getByRole('button', { name: /S5 · 异变秩序/ })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '创建赛季' })).toBeVisible()
+    await expect(page.getByText('S6 · 王权之争')).toBeVisible()
+    await expect(page.getByRole('button', { name: '确认创建' })).toBeVisible()
   })
 
   test('hides season creation button when the feature flag is disabled', async ({ page }) => {
@@ -43,14 +70,14 @@ test.describe('Season management', () => {
     })
 
     await test.step('open season creation from match hub', async () => {
+      await ensureS6IsNextPreset(request, baseURL)
+
       await page.goto('/matches', { waitUntil: 'networkidle' })
 
       await page.getByRole('button', { name: '+ 创建赛季' }).click()
 
-      await expect(page.getByText('创建预设赛季')).toBeVisible()
-      await page.getByRole('button', { name: /S1 · 标准赛季/ }).click()
-
-      await expect(page.getByText('确认创建赛季')).toBeVisible()
+      await expect(page.getByRole('heading', { name: '创建赛季' })).toBeVisible()
+      await expect(page.getByText('S6 · 王权之争')).toBeVisible()
       await expect(page.getByText('参赛成员（固定 4 人）')).toBeVisible()
       await expect(page.getByText('三局两胜')).toBeVisible()
       await expect(page.getByText('7 轮', { exact: true })).toBeVisible()
@@ -69,10 +96,10 @@ test.describe('Season management', () => {
       createdSeasonId = payload.data?.id
       expect(createdSeasonId).toBeTruthy()
       expect(payload.data?.participants).toHaveLength(4)
-      expect(payload.data?.ruleId).toBe('standard')
+      expect(payload.data?.ruleId).toBe('s6')
 
       await expect(page).toHaveURL(/\/matches$/)
-      await expect(page.getByText(/已创建：/)).toBeVisible()
+      await expect(page.getByText(/已创建 S6-王权之争/)).toBeVisible()
     })
 
     await test.step('delete created season to keep test data stable', async () => {
