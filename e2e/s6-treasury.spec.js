@@ -3,15 +3,16 @@ import { test, expect } from '@playwright/test'
 /**
  * S6 下篇切片三：王之宝库卡片执行端到端验证
  *
- * 脚本化设计（全部骰点经 API 固定，仅 UI 独有的流程走页面）：
+ * 脚本化设计（全部骰点经 API 固定，仅 UI 独有的流程走页面；暗选为逐人提交、仅限本人选到的卡）：
  * - 灵魂契合：AB 掷 5/5 → 同点 11（第三阶，后投者 p2 两选）→ p1 爆破、p2 时空裂隙+存储器
- *             CD 掷 2/2 → 同点 5（第一阶，后投者 p4 两选）→ p3 阻碍、p4 进击+名刀
+ *             CD 掷 2/2（p4 先投、p3 后投）→ 同点 5（第一阶，后投者 p3 两选）→ p3 阻碍+进击、
+ *             p4 名刀（随时卡 → p4 成为「没有可启用局前卡」的选手，覆盖空态文案）
  * - PA7 比赛（A=AB vs B=CD）逐局：
- *   G1 A暗选爆破/B不使用 → B 胜 9:11（爆破 11 分制校验）
- *   G2 A暗选时空裂隙/B不使用 → B 胜 19:21（局中 B 用名刀）
- *   G3 B暗选阻碍 → A 胜 21:18（A 终结 B 两连胜但被阻碍压住 +3）
- *   G4 A暗选存储器 → A 胜 21:15（赛后录 4 分 → G5 A 4:0 开局）
- *   G5 B暗选进击 → B 胜 19:21（A 的 19 含存储器 4 分开局；进击复制连胜）
+ *   G1 p1 暗选爆破（余人不使用，4 人集齐才亮出/可开始）→ B 胜 9:11（爆破 11 分制校验）
+ *   G2 p2 暗选时空裂隙 → B 胜 19:21（局中 B 方用名刀）
+ *   G3 p3 暗选阻碍 → A 胜 21:18（A 终结 B 两连胜但被阻碍压住 +3）
+ *   G4 p2 暗选存储器 → A 胜 21:15（赛后录 4 分 → G5 A 4:0 开局）
+ *   G5 p3 暗选进击 → B 胜 19:21（A 的 19 含存储器 4 分开局；进击复制连胜）
  *   回溯：时空裂隙回溯 1 局 → G5 重回进行中（保留 19:21，进击暗选继承）→ 重打同分
  *   G6 B 胜 16:21；G7 B 胜 19:21 → CD 5-2 获胜
  * - 星尘手工核算（client/src/rules/s6.js applyTreasurySettlement 口径）：
@@ -77,15 +78,20 @@ test.describe('S6 treasury (王之宝库)', () => {
     let matchId = ''
     let players = []
     const playerName = (id) => players.find(p => p.id === id)?.name || id
+    // 第 5 轮 PA7 对阵固定为 teamA=[A,B] teamB=[C,D]（种子=选手 ID 排序），
+    // 暗选条目按 teamA → teamB 顺序渲染，已提交者按钮消失，故永远点第一个「录入暗选」
+    const matchPlayerOrder = () => [...players.map(p => p.id)].sort()
 
-    // 提交一局暗选：A 方先、B 方后（一方提交后其「录入暗选」按钮消失，剩余的即另一方）
-    async function submitSecrets(gameNo, aCardName, bCardName) {
+    // 逐人提交一局暗选：cardByPlayer 为该局的用卡分配（缺省选手提交「不使用」），
+    // 仅限本人选到的卡（服务端 422 校验归属）
+    async function submitSecrets(gameNo, cardByPlayer = {}) {
       await expect(page.getByText(`G${gameNo} 局前暗选`)).toBeVisible()
-      for (const cardName of [aCardName, bCardName]) {
+      for (const pid of matchPlayerOrder()) {
+        const cardName = cardByPlayer[pid] || null
         await page.getByRole('button', { name: '录入暗选' }).first().click()
-        await expect(page.getByRole('heading', { name: new RegExp(`G${gameNo} 暗选 ·`) })).toBeVisible()
+        await expect(page.getByRole('heading', { name: `G${gameNo} 暗选 · ${playerName(pid)}` })).toBeVisible()
         const activatePromise = page.waitForResponse(response => response.url().includes('/actions/s6_card_activate'))
-        await page.getByRole('button', { name: new RegExp(`^${cardName}`) }).click()
+        await page.getByRole('button', { name: cardName ? new RegExp(`^${cardName}`) : /^不使用/ }).click()
         expect((await activatePromise).ok()).toBeTruthy()
         // Sheet 关闭有 leave 动画，期间选项按钮仍在 DOM，等其移除再点下一位
         await expect(page.getByRole('heading', { name: /暗选 ·/ })).toHaveCount(0)
@@ -190,11 +196,12 @@ test.describe('S6 treasury (王之宝库)', () => {
       await postAction(request, baseURL, seasonId, 's6_soul_pick', { roundNo: 5, comboLabel: 'AB', playerId: b, cardId: 'rift' })
       await postAction(request, baseURL, seasonId, 's6_soul_pick', { roundNo: 5, comboLabel: 'AB', playerId: b, cardId: 'storage' })
 
-      // CD：2/2 同点 → 总点数 5 解锁第一阶，后投者（D 位）两选
-      await postAction(request, baseURL, seasonId, 's6_soul_roll', { roundNo: 5, comboLabel: 'CD', playerId: c, rollChoice: 1, dice: [2] })
+      // CD：2/2 同点 → 总点数 5 解锁第一阶；D 先投、C 后投 → 后投者 C 位两选
+      // （D 位只选随时卡名刀 → 成为「没有可启用局前卡」的选手，覆盖空态文案）
       await postAction(request, baseURL, seasonId, 's6_soul_roll', { roundNo: 5, comboLabel: 'CD', playerId: d, rollChoice: 1, dice: [2] })
+      await postAction(request, baseURL, seasonId, 's6_soul_roll', { roundNo: 5, comboLabel: 'CD', playerId: c, rollChoice: 1, dice: [2] })
       await postAction(request, baseURL, seasonId, 's6_soul_pick', { roundNo: 5, comboLabel: 'CD', playerId: c, cardId: 'block' })
-      await postAction(request, baseURL, seasonId, 's6_soul_pick', { roundNo: 5, comboLabel: 'CD', playerId: d, cardId: 'charge' })
+      await postAction(request, baseURL, seasonId, 's6_soul_pick', { roundNo: 5, comboLabel: 'CD', playerId: c, cardId: 'charge' })
       await postAction(request, baseURL, seasonId, 's6_soul_pick', { roundNo: 5, comboLabel: 'CD', playerId: d, cardId: 'blade' })
 
       const roundRes = await request.post(`${baseURL}/api/rounds`, {
@@ -213,42 +220,74 @@ test.describe('S6 treasury (王之宝库)', () => {
       expect(res.status()).toBe(422)
     })
 
-    await test.step('G1 secret picks gate match start, then blast game validates 11-point target', async () => {
+    await test.step('negative: activating a card owned by another player is rejected', async () => {
+      // 存储器是 B 位选手选到的卡，A 位选手暗选它 → 422 该选手未获得此卡
+      const [a, b] = [...players.map(p => p.id)].sort()
+      const res = await postAction(request, baseURL, seasonId, 's6_card_activate', {
+        matchId, gameNo: 1, playerId: a, cardId: 'storage'
+      }, false)
+      expect(res.status()).toBe(422)
+      expect((await res.json()).error?.message).toContain('该选手未获得此卡')
+    })
+
+    await test.step('G1 per-player secret picks gate match start, then blast game validates 11-point target', async () => {
+      const [a, b, c, d] = [...players.map(p => p.id)].sort()
+
       await page.goto('/matches', { waitUntil: 'networkidle' })
       await page.getByRole('button', { name: /S6-王权之争/ }).click()
       await page.getByRole('button', { name: '开始' }).click()
       await expect(page).toHaveURL(/\/scoring\//)
 
-      // S6 组合赛不自动开局：G1 双方暗选亮出前开始按钮不可用
-      const startButton = page.getByRole('button', { name: '请先完成 G1 双方暗选' })
+      // S6 组合赛不自动开局：G1 四人暗选集齐前开始按钮不可用
+      const startButton = page.getByRole('button', { name: '请先完成 G1 四人暗选' })
       await expect(startButton).toBeDisabled()
 
-      // A 方先提交：亮出前只显示「已暗选」，不暴露卡名
+      // p1（A 位）提交爆破：Sheet 只列出本人选到的卡（看不到 B 位的时空裂隙）
       await page.getByRole('button', { name: '录入暗选' }).first().click()
-      await expect(page.getByRole('heading', { name: /G1 暗选 · / })).toBeVisible()
-      // A 方（AB 组合）库存：爆破/时空裂隙/存储器可选，阻碍/进击为 0 禁用
-      await expect(page.getByRole('button', { name: /^阻碍/ })).toBeDisabled()
+      await expect(page.getByRole('heading', { name: `G1 暗选 · ${playerName(a)}` })).toBeVisible()
+      await expect(page.getByRole('button', { name: /^爆破/ })).toBeEnabled()
+      await expect(page.getByRole('button', { name: /^时空裂隙/ })).toHaveCount(0)
       let activatePromise = page.waitForResponse(response => response.url().includes('/actions/s6_card_activate'))
       await page.getByRole('button', { name: /^爆破/ }).click()
       expect((await activatePromise).ok()).toBeTruthy()
       // Sheet 关闭有 leave 动画，等其移除后再断言页面文本
       await expect(page.getByRole('heading', { name: /暗选 ·/ })).toHaveCount(0)
-      await expect(page.getByText('已暗选', { exact: true })).toBeVisible()
+      // 亮出前只显示该选手的「已暗选」徽标，不暴露卡名
+      await expect(page.getByText('已暗选', { exact: true })).toHaveCount(1)
       await expect(page.getByText('爆破', { exact: true })).toHaveCount(0)
+      await expect(startButton).toBeDisabled()
 
-      // B 方提交「不使用」→ 双方同时亮出
+      // p2 提交「不使用」（其 Sheet 列出时空裂隙/存储器）
       await page.getByRole('button', { name: '录入暗选' }).first().click()
+      await expect(page.getByRole('heading', { name: `G1 暗选 · ${playerName(b)}` })).toBeVisible()
+      await expect(page.getByRole('button', { name: /^时空裂隙/ })).toBeEnabled()
+      activatePromise = page.waitForResponse(response => response.url().includes('/actions/s6_card_activate'))
+      await page.getByRole('button', { name: /^不使用/ }).click()
+      expect((await activatePromise).ok()).toBeTruthy()
+      await expect(page.getByRole('heading', { name: /暗选 ·/ })).toHaveCount(0)
+      await expect(page.getByText('已暗选', { exact: true })).toHaveCount(2)
+      await expect(page.getByText('已亮出')).toHaveCount(0)
+
+      // p3 提交「不使用」
+      await page.getByRole('button', { name: '录入暗选' }).first().click()
+      await expect(page.getByRole('heading', { name: `G1 暗选 · ${playerName(c)}` })).toBeVisible()
+      activatePromise = page.waitForResponse(response => response.url().includes('/actions/s6_card_activate'))
+      await page.getByRole('button', { name: /^不使用/ }).click()
+      expect((await activatePromise).ok()).toBeTruthy()
+      await expect(page.getByRole('heading', { name: /暗选 ·/ })).toHaveCount(0)
+
+      // p4 只选了随时卡 → 空态文案，仍可提交「不使用」；第 4 人提交后全部亮出
+      await page.getByRole('button', { name: '录入暗选' }).first().click()
+      await expect(page.getByRole('heading', { name: `G1 暗选 · ${playerName(d)}` })).toBeVisible()
+      await expect(page.getByText(/该选手没有可启用的局前卡/)).toBeVisible()
       activatePromise = page.waitForResponse(response => response.url().includes('/actions/s6_card_activate'))
       await page.getByRole('button', { name: /^不使用/ }).click()
       expect((await activatePromise).ok()).toBeTruthy()
       await expect(page.getByRole('heading', { name: /暗选 ·/ })).toHaveCount(0)
       await expect(page.getByText('已亮出')).toBeVisible()
       await expect(page.getByText('爆破', { exact: true })).toBeVisible()
-
-      // 已开始的局不允许暗选（API 负面）
-      const lateActivate = await postAction(request, baseURL, seasonId, 's6_card_activate', {
-        matchId, gameNo: 1, side: 'a', cardId: null
-      }, false)
+      // 集齐后按钮文案切换为「开始比赛」并可用
+      await expect(page.getByRole('button', { name: '开始比赛' })).toBeEnabled()
 
       // 开始比赛 → G1 进行中，爆破提示条出现
       const startPromise = page.waitForResponse(response => response.url().includes('/start') && response.request().method() === 'POST')
@@ -256,16 +295,14 @@ test.describe('S6 treasury (王之宝库)', () => {
       expect((await startPromise).ok()).toBeTruthy()
       await expect(page.getByText('爆破：每球得 2 分，先到 11 分结束（封顶 12）')).toBeVisible()
 
-      // 开局后对 G1 的暗选（上一步发起时比赛可能尚未开始，此处兜底再断言一次）
-      if (lateActivate.status() !== 422) {
-        const retry = await postAction(request, baseURL, seasonId, 's6_card_activate', {
-          matchId, gameNo: 1, side: 'a', cardId: null
-        }, false)
-        expect(retry.status()).toBe(422)
-      }
+      // 已开始的局不允许暗选（API 负面）
+      const lateActivate = await postAction(request, baseURL, seasonId, 's6_card_activate', {
+        matchId, gameNo: 1, playerId: a, cardId: null
+      }, false)
+      expect(lateActivate.status()).toBe(422)
 
-      // G2 暗选（须在 G1 进行中提交）：A 时空裂隙 / B 不使用
-      await submitSecrets(2, '时空裂隙', '不使用')
+      // G2 暗选（须在 G1 进行中提交）：p2 时空裂隙，其余三人不使用
+      await submitSecrets(2, { [b]: '时空裂隙' })
 
       // 爆破局校验：10:9 不可结束，9:11 可结束
       const inputs = page.getByRole('spinbutton')
@@ -279,8 +316,9 @@ test.describe('S6 treasury (王之宝库)', () => {
     })
 
     await test.step('G2 blade anytime card, then B wins', async () => {
-      // G3 暗选：A 不使用 / B 阻碍
-      await submitSecrets(3, '不使用', '阻碍')
+      // G3 暗选：p3 阻碍，其余三人不使用
+      const [, , c] = [...players.map(p => p.id)].sort()
+      await submitSecrets(3, { [c]: '阻碍' })
 
       // 随时卡：B 方使用名刀 → 提示条 + 库存扣减（3 → 2）
       await page.getByRole('button', { name: /^名刀 ×3/ }).click()
@@ -294,8 +332,9 @@ test.describe('S6 treasury (王之宝库)', () => {
     await test.step('G3 block banner, A wins (breaker suppressed)', async () => {
       await expect(page.getByText(/阻碍：.*启用，对方本局获胜无法获得终结分/)).toBeVisible()
 
-      // G4 暗选：A 存储器 / B 不使用
-      await submitSecrets(4, '存储器', '不使用')
+      // G4 暗选：p2 存储器，其余三人不使用
+      const [, b] = [...players.map(p => p.id)].sort()
+      await submitSecrets(4, { [b]: '存储器' })
 
       await endCurrentGame(21, 18, 5)
     })
@@ -303,8 +342,9 @@ test.describe('S6 treasury (王之宝库)', () => {
     await test.step('G4 storage game, A wins, then record 4 extra-ball points', async () => {
       await expect(page.getByText(/存储器：.*本局结束后录入额外球得分/)).toBeVisible()
 
-      // G5 暗选：A 不使用 / B 进击
-      await submitSecrets(5, '不使用', '进击')
+      // G5 暗选：p3 进击，其余三人不使用
+      const [, , c] = [...players.map(p => p.id)].sort()
+      await submitSecrets(5, { [c]: '进击' })
 
       await endCurrentGame(21, 15, 6)
 
@@ -334,7 +374,7 @@ test.describe('S6 treasury (王之宝库)', () => {
       await expect(page.getByText(/进击：.*本局获胜额外获得一次连胜计数/)).toBeVisible()
 
       // G6 暗选：双方不使用
-      await submitSecrets(6, '不使用', '不使用')
+      await submitSecrets(6)
 
       // B 胜：A 的 19 分含存储器 4 分开局
       await endCurrentGame(19, 21, 7)
@@ -367,7 +407,7 @@ test.describe('S6 treasury (王之宝库)', () => {
 
     await test.step('finish G6 and G7, CD wins the match 5-2', async () => {
       // G7 暗选：双方不使用
-      await submitSecrets(7, '不使用', '不使用')
+      await submitSecrets(7)
       await endCurrentGame(16, 21, null)
 
       // G7 之后无暗选卡（无第 8 局）
@@ -395,13 +435,23 @@ test.describe('S6 treasury (王之宝库)', () => {
       await expect(page.getByText('存储器 ×1')).toBeVisible()
       await expect(page.getByText('名刀 ×2')).toBeVisible()
 
-      // 激活记录：局前暗选按 待亮出/已亮出/已消耗，随时卡为 已使用
-      // （面板每组合只展示最近 6 条，G1 爆破已被滚动出列表）
-      await expect(page.getByText(/G2 时空裂隙/).first()).toBeVisible()
-      await expect(page.getByText(/G5 进击/).first()).toBeVisible()
+      // 激活记录 chips（逐人带选手名，如「G5 王铮昊·进击」）；
+      // 面板每组合仅展示最近 6 条（slice(-6)），G1-G4 的卡片记录已滚出列表
+      const [a, b, c] = [...players.map(p => p.id)].sort()
+      await expect(page.getByText(`G5 ${playerName(c)}·进击`)).toBeVisible()
       await expect(page.getByText('已亮出').first()).toBeVisible()
-      await expect(page.getByText('已消耗').first()).toBeVisible()
-      await expect(page.getByText('已使用').first()).toBeVisible()
+
+      // 已消耗/已使用状态经 API 校验（面板滚动窗口外的记录）
+      const seasonRes = await request.get(`${baseURL}/api/seasons/${seasonId}`)
+      const treasury = (await seasonRes.json()).data?.comebackData?.s6?.treasury || {}
+      const abActs = treasury.AB?.activations || []
+      const cdActs = treasury.CD?.activations || []
+      expect(abActs.find(e => e.cardId === 'rift')?.consumed).toBe(true)
+      expect(abActs.find(e => e.cardId === 'storage')?.consumed).toBe(true)
+      expect(abActs.find(e => e.cardId === 'blast')?.playerId).toBe(a)
+      expect(abActs.find(e => e.cardId === 'storage')?.playerId).toBe(b)
+      const bladeUse = cdActs.find(e => e.cardId === 'blade' && e.timing === 'anytime')
+      expect(bladeUse?.consumed).toBe(true)
     })
 
     await test.step('delete created season to keep test data stable', async () => {
