@@ -151,16 +151,13 @@ test.describe('S6 treasury (王之宝库)', () => {
     await test.step('fast-forward top phase rounds 1-4 via API', async () => {
       const [a, b, c, d] = [...players.map(p => p.id)].sort()
 
+      // 一次性王选（仅第 1 轮创建前）：王序 [C, A, B, D]，骰点 6/5/4/3
+      await postAction(request, baseURL, seasonId, 's6_king_roll', {
+        order: [c, a, b, d].map((pid, i) => ({ playerId: pid, dice: 6 - i }))
+      })
+
       for (let roundNo = 1; roundNo <= 4; roundNo++) {
-        await postAction(request, baseURL, seasonId, 's6_king_roll', {
-          roundNo,
-          rolls: [
-            { playerId: a, dice: 1 },
-            { playerId: b, dice: 2 },
-            { playerId: c, dice: 3 },
-            { playerId: d, dice: 6 }
-          ]
-        })
+        // 王取自王序（kingOrder[roundNo-1]）；每轮只需提交形态，选绯红（无开局分）
         await postAction(request, baseURL, seasonId, 's6_king_form', { roundNo, form: 'feihong' })
 
         const roundRes = await request.post(`${baseURL}/api/rounds`, {

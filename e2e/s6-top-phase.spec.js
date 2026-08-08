@@ -2,10 +2,11 @@ import { test, expect } from '@playwright/test'
 
 /**
  * S6 上篇（1-4 轮）王选流程端到端验证
- * 覆盖：UI 创建 S6 预设赛季 → 第 1 轮强制王选（投骰 / 并列重投 / 选形态黛青）
- * → 创建轮次生成比赛 → 进入含王的比赛记分页，黛青形态下王所在方 2:0 开局（服务端写入）
- * 附加：第 2 轮月白王（API 固定骰点）→ 抵抗局 UI —— 提示条、「月白 · 抵抗」胜方选择卡、
- * 未选胜方/胜方不足 21 分不可结束、21:29 分低者获胜（服务端接受）
+ * 覆盖：UI 创建 S6 预设赛季 → 一次性王选 Sheet（投骰定第 1-4 轮王序、同点组内重投、
+ * 王序校验）→ 第 1 轮形态（黛青）→ 创建轮次 → 黛青形态下王所在方 2:0 开局（服务端写入）。
+ * 第 2 轮走形态-only Sheet（王取自王序）→ 月白抵抗局 UI：提示条、「月白 · 抵抗」胜方选择卡、
+ * 未选胜方/胜方不足 21 分不可结束、21:29 分低者获胜（服务端接受）。
+ * API 负面：非排列王序 422、重复王选 422、未选形态建第 2 轮 422。
  * Run: PLAYWRIGHT_BASE_URL=http://localhost:8090 PLAYWRIGHT_EXPECT_SEASON_CREATE=1 npx playwright test e2e/s6-top-phase.spec.js --project=light
  */
 
@@ -33,10 +34,31 @@ async function ensureS6IsNextPreset(request, baseURL) {
   }
 }
 
+// 投掷序列逐次降序比较（与客户端 compareKingRolls 同口径：重投只决定同点组内顺序）
+function compareRolls(x, y) {
+  const len = Math.max(x.rolls.length, y.rolls.length)
+  for (let i = 0; i < len; i++) {
+    const diff = (y.rolls[i] || 0) - (x.rolls[i] || 0)
+    if (diff) return diff
+  }
+  return 0
+}
+
+// 王序行文本形如「第 1 轮的王：王铮昊6（重投 4 2）」，解析出轮次/名字/投掷序列
+function parseOrderRow(text) {
+  const m = text.match(/第 (\d) 轮的王：([^0-9]+?)([0-9].*)?$/)
+  expect(m, `王序行可解析: ${text}`).toBeTruthy()
+  return {
+    round: Number(m[1]),
+    name: m[2].trim(),
+    rolls: (m[3] || '').match(/\d/g).map(Number)
+  }
+}
+
 test.describe('S6 top phase (王选)', () => {
-  test('king selection, round creation and daiqing opening score', async ({ page, request, baseURL }) => {
+  test('one-time king order, daiqing opening score and yuebai resistance game', async ({ page, request, baseURL }) => {
     test.skip(!process.env.PLAYWRIGHT_EXPECT_SEASON_CREATE, 'season creation is not expected in this environment')
-    test.setTimeout(90000)
+    test.setTimeout(120000)
 
     const adminToken = process.env.PLAYWRIGHT_ADMIN_TOKEN || ''
     if (adminToken) {
@@ -46,12 +68,19 @@ test.describe('S6 top phase (王选)', () => {
     }
 
     let seasonId = ''
-    let kingName = ''
+    let players = []
+    let kingName = '' // 第 1 轮的王（UI 投掷产生，随机）
+    let r2KingName = '' // 第 2 轮的王（取自王序）
+    const playerName = (id) => players.find(p => p.id === id)?.name || id
 
     await test.step('reset test data and unlock the S6 preset', async () => {
       const resetRes = await request.post(`${baseURL}/api/admin/reset-db`, { headers: adminHeaders() })
       expect(resetRes.ok()).toBeTruthy()
       await ensureS6IsNextPreset(request, baseURL)
+
+      const playersRes = await request.get(`${baseURL}/api/players`)
+      players = (await playersRes.json()).data || []
+      expect(players.length).toBe(4)
     })
 
     await test.step('create the S6 preset season through the business UI', async () => {
@@ -80,29 +109,55 @@ test.describe('S6 top phase (王选)', () => {
       await page.getByRole('button', { name: /S6-王权之争/ }).click()
     })
 
-    await test.step('king selection sheet handles dice rolls and ties', async () => {
-      await page.getByRole('button', { name: '+ 创建第 1 轮' }).click()
-      await expect(page.getByRole('heading', { name: '第 1 轮 · 王选' })).toBeVisible()
-
-      // 投骰是随机的：出现并列时点击「重投并列者」清空并列者骰子并补投，直到产生唯一的王
-      const rerollButton = page.getByRole('button', { name: '重投并列者' })
-      for (let attempt = 0; attempt < 10; attempt++) {
-        const rollButtons = page.getByRole('button', { name: '投骰', exact: true })
-        while (await rollButtons.count() > 0) {
-          await rollButtons.first().click()
+    await test.step('negative: malformed king order is rejected', async () => {
+      const [a, b, c] = [...players.map(p => p.id)].sort()
+      const res = await request.post(`${baseURL}/api/seasons/${seasonId}/actions/s6_king_roll`, {
+        headers: adminHeaders(),
+        data: {
+          order: [
+            { playerId: a, dice: 6 },
+            { playerId: a, dice: 5 }, // 重复选手 → 非排列
+            { playerId: b, dice: 4 },
+            { playerId: c, dice: 3 }
+          ]
         }
-        if (await rerollButton.count() === 0) break
-        await rerollButton.click()
+      })
+      expect(res.status()).toBe(422)
+    })
+
+    await test.step('king selection sheet rolls a full order with group re-rolls', async () => {
+      await page.getByRole('button', { name: '+ 创建第 1 轮' }).click()
+      await expect(page.getByRole('heading', { name: '王选 · 定第 1-4 轮王序' })).toBeVisible()
+
+      // 投骰是随机的：轮询点击「投骰/重投」按钮直到王序出现（按钮点击对非待投选手
+      // 是客户端 no-op，轮询天然规避渲染竞态）；过程中采样并列横幅（同点组存在期间一直可见）
+      let sawTieBanner = false
+      await expect.poll(async () => {
+        const rollButton = page.getByRole('button', { name: /^(投骰|重投)$/ }).first()
+        if (await rollButton.count() > 0) await rollButton.click()
+        if (await page.getByText(/同点并列：.*组内重投/).count() > 0) sawTieBanner = true
+        return page.getByText('第 1 轮的王：').count()
+      }, { timeout: 15000, intervals: [100] }).toBe(1)
+
+      // 王序列表：4 行，轮次 1-4 顺次排列
+      const orderBox = page.locator('div.bg-accent-subtle', { hasText: '第 1 轮的王：' })
+      await expect(orderBox).toBeVisible()
+      const rows = (await orderBox.locator(':scope > div').allTextContents()).map(parseOrderRow)
+      expect(rows).toHaveLength(4)
+      expect(rows.map(r => r.round)).toEqual([1, 2, 3, 4])
+
+      // 王序正确性：与投掷序列逐次降序一致，且首投点数全局非递增（重投不做全局重排）
+      const expectedOrder = [...rows].sort(compareRolls).map(r => r.name)
+      expect(rows.map(r => r.name)).toEqual(expectedOrder)
+      for (let i = 0; i < rows.length - 1; i++) {
+        expect(rows[i].rolls[0]).toBeGreaterThanOrEqual(rows[i + 1].rolls[0])
       }
 
-      const kingLine = page.getByText('本轮的王：')
-      await expect(kingLine).toBeVisible()
-      kingName = (await kingLine.textContent()).replace('本轮的王：', '').trim()
-      expect(kingName).toBeTruthy()
+      // 出现过重投 ⟺ 过程中出现过并列横幅
+      expect(rows.some(r => r.rolls.length > 1)).toBe(sawTieBanner)
 
-      // 王所在的行高亮（accent 边框 + 底色）
-      const kingRow = page.locator('div.border-accent.bg-accent-subtle', { hasText: kingName })
-      await expect(kingRow).toBeVisible()
+      kingName = rows[0].name
+      r2KingName = rows[1].name
     })
 
     await test.step('select daiqing form and submit king selection', async () => {
@@ -114,14 +169,24 @@ test.describe('S6 top phase (王选)', () => {
       expect((await rollActionPromise).ok()).toBeTruthy()
       expect((await formActionPromise).ok()).toBeTruthy()
 
-      // 服务端已持久化第 1 轮的王与形态
+      // 服务端已持久化一次性王序与第 1 轮形态
       const seasonRes = await request.get(`${baseURL}/api/seasons/${seasonId}`)
-      const king = (await seasonRes.json()).data?.comebackData?.s6?.topKings?.['1']
-      expect(king?.kingId).toBeTruthy()
-      expect(king?.form).toBe('daiqing')
+      const s6 = (await seasonRes.json()).data?.comebackData?.s6
+      expect(s6?.kingOrder).toHaveLength(4)
+      expect(s6.kingOrder.map(e => playerName(e.playerId))[0]).toBe(kingName)
+      expect(s6.topKings?.['1']?.form).toBe('daiqing')
 
       // 王选提交后自动打开创建轮次面板
       await expect(page.getByRole('heading', { name: '创建下一轮' })).toBeVisible()
+    })
+
+    await test.step('negative: king selection cannot be submitted twice', async () => {
+      const sorted = [...players.map(p => p.id)].sort()
+      const res = await request.post(`${baseURL}/api/seasons/${seasonId}/actions/s6_king_roll`, {
+        headers: adminHeaders(),
+        data: { order: sorted.map((pid, i) => ({ playerId: pid, dice: 6 - i })) }
+      })
+      expect(res.status()).toBe(422)
     })
 
     await test.step('create round 1 and verify matches are generated', async () => {
@@ -161,14 +226,14 @@ test.describe('S6 top phase (王选)', () => {
       expect(sides.find(s => !s.names.includes(kingName))?.value).toBe('0')
     })
 
-    await test.step('fast-forward round 1 and rig round 2 with a yuebai king via API', async () => {
-      // 打完第 1 轮全部 3 场（teamA 2-0；start 幂等，逐局写绝对比分后结束）
+    await test.step('fast-forward round 1 via API', async () => {
       const roundsRes = await request.get(`${baseURL}/api/rounds?seasonId=${seasonId}`)
       const round1 = ((await roundsRes.json()).data || []).find(r => r.roundNo === 1)
       const matchesRes = await request.get(`${baseURL}/api/matches?seasonId=${seasonId}`)
       const round1Matches = ((await matchesRes.json()).data || []).filter(m => m.roundId === round1.id)
       expect(round1Matches).toHaveLength(3)
       for (const match of round1Matches) {
+        // start 幂等；逐局写绝对比分后结束（teamA 2-0）
         await request.post(`${baseURL}/api/matches/${match.id}/start`, { headers: adminHeaders() })
         for (let i = 0; i < 2; i++) {
           const gamesRes = await request.get(`${baseURL}/api/matches/${match.id}/games`)
@@ -179,43 +244,43 @@ test.describe('S6 top phase (王选)', () => {
           expect(endRes.ok()).toBeTruthy()
         }
       }
+    })
 
-      // 第 2 轮王选：固定骰点 1/2/3/6 → 王 = 种子 D 位选手，形态月白
-      const seasonRes = await request.get(`${baseURL}/api/seasons/${seasonId}`)
-      const participants = (await seasonRes.json()).data?.participants || []
-      const sorted = [...participants].sort()
-      const dice = [1, 2, 3, 6]
-      const rollRes = await request.post(`${baseURL}/api/seasons/${seasonId}/actions/s6_king_roll`, {
-        headers: adminHeaders(),
-        data: { roundNo: 2, rolls: sorted.map((pid, i) => ({ playerId: pid, dice: dice[i] })) }
-      })
-      expect(rollRes.ok()).toBeTruthy()
-      const formRes = await request.post(`${baseURL}/api/seasons/${seasonId}/actions/s6_king_form`, {
-        headers: adminHeaders(),
-        data: { roundNo: 2, form: 'yuebai' }
-      })
-      expect(formRes.ok()).toBeTruthy()
-
-      const roundRes = await request.post(`${baseURL}/api/rounds`, {
+    await test.step('negative: creating round 2 without a king form is rejected', async () => {
+      const res = await request.post(`${baseURL}/api/rounds`, {
         headers: adminHeaders(),
         data: { seasonId, roundNo: 2 }
       })
-      expect(roundRes.status()).toBe(201)
-      expect((await roundRes.json()).data?.matches || []).toHaveLength(3)
+      expect(res.status()).toBe(422)
+      expect((await res.json()).error?.message).toContain('请先为本轮的王选择形态')
+    })
+
+    await test.step('round 2 uses the form-only sheet with the king from the order', async () => {
+      await page.goto('/matches', { waitUntil: 'networkidle' })
+      await page.getByRole('button', { name: /S6-王权之争/ }).click()
+
+      await page.getByRole('button', { name: '+ 创建第 2 轮' }).click()
+      await expect(page.getByRole('heading', { name: '第 2 轮 · 王形态' })).toBeVisible()
+      // 本轮的王取自一次性王序（UI 投掷产生的第 2 位）
+      await expect(page.getByText(`本轮的王：${r2KingName}`)).toBeVisible()
+
+      await page.getByRole('button', { name: /月白/ }).click()
+      const formActionPromise = page.waitForResponse(response => response.url().includes('/actions/s6_king_form'))
+      await page.getByRole('button', { name: '确认形态' }).click()
+      expect((await formActionPromise).ok()).toBeTruthy()
+
+      // 形态提交后自动打开创建轮次面板
+      await expect(page.getByRole('heading', { name: '创建下一轮' })).toBeVisible()
+      const roundResponsePromise = page.waitForResponse(response =>
+        response.url().includes('/api/rounds') && response.request().method() === 'POST'
+      )
+      await page.getByRole('button', { name: '确认', exact: true }).click()
+      expect((await roundResponsePromise).ok()).toBeTruthy()
+      await expect(page.getByText('第 2 轮已创建')).toBeVisible()
     })
 
     await test.step('yuebai king games require explicit winner selection (resistance)', async () => {
-      const seasonRes = await request.get(`${baseURL}/api/seasons/${seasonId}`)
-      const participants = (await seasonRes.json()).data?.participants || []
-      const playersRes = await request.get(`${baseURL}/api/players`)
-      const players = (await playersRes.json()).data || []
-      const name = id => players.find(p => p.id === id)?.name || id
-      // 第 2 轮 M1 固定对阵：teamA=participants[0..1]，teamB=participants[2..3]
-      const teamALabel = `${name(participants[0])}/${name(participants[1])}`
-      const teamBLabel = `${name(participants[2])}/${name(participants[3])}`
-
-      await page.goto('/matches', { waitUntil: 'networkidle' })
-      await page.getByRole('button', { name: /S6-王权之争/ }).click()
+      // 每场都包含全部 4 名参赛者（含王），直接进第一场
       await page.getByRole('button', { name: '开始' }).first().click()
       await expect(page).toHaveURL(/\/scoring\//)
 
@@ -224,6 +289,11 @@ test.describe('S6 top phase (王选)', () => {
       await expect(page.getByText('月白 · 抵抗')).toBeVisible()
       const inputs = page.getByRole('spinbutton')
       await expect(inputs).toHaveCount(2)
+
+      // 胜方选择按钮（text 即队伍名，A 方在前）
+      const choiceButtons = page.locator('button.rule-choice')
+      await expect(choiceButtons).toHaveCount(2)
+      const teamALabel = (await choiceButtons.nth(0).textContent()).trim()
 
       // 未选胜方不可结束
       await inputs.nth(0).fill('21')
@@ -235,12 +305,12 @@ test.describe('S6 top phase (王选)', () => {
       // 胜方不足 21 分不可结束（选 A 方但 A 只有 20 分）
       await inputs.nth(0).fill('20')
       await inputs.nth(1).fill('22')
-      await page.getByRole('button', { name: teamALabel, exact: true }).first().click()
+      await choiceButtons.nth(0).click()
       await page.getByRole('button', { name: '结束本局' }).click()
       await expect(page.getByText(/抵抗局胜方需至少达到21分/).first()).toBeVisible()
       await expect(page.getByText('确认结束本局？')).toHaveCount(0)
 
-      // 分低者获胜：21:29 选 A 方（A 保持选中），服务端接受
+      // 分低者获胜：21:29 选 A 方（保持选中），服务端接受
       await inputs.nth(0).fill('21')
       await inputs.nth(1).fill('29')
       const endPromise = page.waitForResponse(response =>
