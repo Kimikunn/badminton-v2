@@ -20,6 +20,7 @@ const S2Rankings = defineAsyncComponent(() => import('@/components/season/S2Rank
 const S3Rankings = defineAsyncComponent(() => import('@/components/season/S3Rankings.vue'))
 const S4Rankings = defineAsyncComponent(() => import('@/components/season/S4Rankings.vue'))
 const S5Rankings = defineAsyncComponent(() => import('@/components/season/S5Rankings.vue'))
+const S6Rankings = defineAsyncComponent(() => import('@/components/season/S6Rankings.vue'))
 const FriendlyStats = defineAsyncComponent(() => import('@/components/FriendlyStats.vue'))
 
 const seasonsStore = useSeasonsStore()
@@ -76,6 +77,24 @@ const s4TopWinner = computed(() => {
   if (topDone < 4) return null
   return [...seasonRankings.value].sort((a,b) => (b.stars||0) - (a.stars||0))[0] || null
 })
+
+// S6-specific
+const s6ComboRankings = computed(() => {
+  if (ruleId.value !== 's6' || !currentSeason.value) return []
+  const rule = getRule('s6')
+  return rule?.calcComboRankings ? rule.calcComboRankings(seasonMatches.value, (mid) => matchesStore.getGamesByMatch(mid), seasonRounds.value, {
+    season: currentSeason.value,
+    participants: currentSeason.value.participants || [],
+    getPlayerById: (id) => playersStore.getPlayerById(id)
+  }) : []
+})
+// 上篇个人冠军：4 轮上篇全部完成后，按标准大分/小分结算的第一名
+const s6TopWinner = computed(() => {
+  if (ruleId.value !== 's6') return null
+  const topDone = seasonRounds.value.filter(r => r.roundNo <= 4 && r.status === 'completed').length
+  if (topDone < 4) return null
+  return seasonRankings.value[0] || null
+})
 </script>
 
 <template>
@@ -92,6 +111,7 @@ const s4TopWinner = computed(() => {
       <S3Rankings v-else-if="ruleId==='s3'" :rankings="seasonRankings" :season="currentSeason" :rounds="seasonRounds" />
       <S4Rankings v-else-if="ruleId==='s4'" :rankings="seasonRankings" :season="currentSeason" :rounds="seasonRounds" :matches="seasonMatches" :combo-rankings="s4ComboRankings" :top-winner="s4TopWinner" />
       <S5Rankings v-else-if="ruleId==='s5'" :rankings="seasonRankings" :season="currentSeason" :rounds="seasonRounds" />
+      <S6Rankings v-else-if="ruleId==='s6'" :rankings="seasonRankings" :season="currentSeason" :rounds="seasonRounds" :matches="seasonMatches" :combo-rankings="s6ComboRankings" :top-winner="s6TopWinner" />
     </template>
 
     <!-- Friendly tab -->

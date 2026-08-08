@@ -53,6 +53,16 @@ export const SEASON_PRESETS = [
     bestOf: 3,
     color: 'red',
     description: '启用 S5 15/21 分制骰子与异变结算规则。'
+  },
+  {
+    key: 's6-kings',
+    code: 'S6',
+    label: '王权之争',
+    ruleId: 's6',
+    totalRounds: 7,
+    bestOf: 3,
+    color: 'purple',
+    description: '启用 S6 上篇王选掷骰与王形态（黛青/绯红/月白）规则。'
   }
 ]
 

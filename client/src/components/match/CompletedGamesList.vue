@@ -7,7 +7,9 @@ defineProps({
   games: { type: Array, default: () => [] },
   hasCurrentGame: { type: Boolean, default: false },
   isMatchOver: { type: Boolean, default: false },
-  getRuleEventBadges: { type: Function, required: true }
+  getRuleEventBadges: { type: Function, required: true },
+  // S6 时空裂隙可用时由记分页隐藏普通撤回（回溯走 s6_rift 动作）
+  hideRevert: { type: Boolean, default: false }
 })
 
 const emit = defineEmits(['edit-game', 'revert-last'])
@@ -51,7 +53,7 @@ const emit = defineEmits(['edit-game', 'revert-last'])
     </div>
 
     <Button
-      v-if="games.length > 0"
+      v-if="games.length > 0 && !hideRevert"
       variant="ghost"
       size="sm"
       class="mt-2 !text-2xs"

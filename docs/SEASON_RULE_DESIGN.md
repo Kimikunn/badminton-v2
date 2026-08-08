@@ -1,6 +1,6 @@
 # 赛季规则设计范式
 
-> 本文档定义赛季积分榜规则展示的设计规范和约束。所有赛季规则组件（S1-S5）必须遵循。
+> 本文档定义赛季积分榜规则展示的设计规范和约束。所有赛季规则组件（S1-S6）必须遵循。
 
 ---
 
@@ -83,9 +83,9 @@ defineProps({
   rankings: Array,   // 排名数据（必传）
   season: Object,    // 当前赛季对象
   rounds: Array,     // 轮次列表
-  matches: Array,    // 比赛列表（S4 专用）
-  comboRankings: Array,  // 组合排名（S4 专用）
-  topWinner: Object      // 最强王者（S4 专用）
+  matches: Array,    // 比赛列表（S4/S6 专用）
+  comboRankings: Array,  // 组合排名（S4/S6 专用）
+  topWinner: Object      // 最强王者（S4/S6 专用）
 })
 ```
 

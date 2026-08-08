@@ -99,7 +99,9 @@ export const useSeasonsStore = defineStore('seasons', () => {
 
   async function recordAction(seasonId, actionId, payload = {}) {
     const res = await api.post(`/seasons/${seasonId}/actions/${actionId}`, payload)
-    if (res.success) await init({ force: true })
+    // 直接用动作响应 upsert 赛季：/api/seasons 走 SW StaleWhileRevalidate，
+    // 强制 init 可能拿到动作前的缓存而覆盖新状态（灵魂契合/王选即时回显依赖此处）
+    if (res.success && res.data) upsertSeason(res.data)
     return res
   }
 

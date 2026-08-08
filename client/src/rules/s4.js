@@ -5,6 +5,13 @@
  */
 
 import { STATUS } from '@/constants'
+import {
+  getMatchesForRound,
+  getMatchGameWins,
+  calcComboRoundStats,
+  buildComboRankings,
+  resolveComboTie
+} from './comboStardust'
 
 const TOP_PHASE_LAST_ROUND = 4
 const TOP_DICE_EFFECTS = {
@@ -28,27 +35,6 @@ const COMBO_CONFIGS = [
 
 function getS4Data(context = {}) {
   return context?.season?.comebackData?.s4 || {}
-}
-
-function getMatchesForRound(roundId, matches) {
-  return matches.filter(match => match.roundId === roundId)
-}
-
-function getCompletedGames(match, getGamesByMatch) {
-  return getGamesByMatch(match.id).filter(game => game.status === STATUS.COMPLETED)
-}
-
-function getMatchGameWins(match, getGamesByMatch) {
-  const games = getCompletedGames(match, getGamesByMatch)
-  let scoreA = 0
-  let scoreB = 0
-
-  games.forEach(game => {
-    if (game.winner === 'a') scoreA++
-    if (game.winner === 'b') scoreB++
-  })
-
-  return { scoreA, scoreB, games }
 }
 
 function getTopDice(roundNo, s4Data) {
@@ -260,130 +246,6 @@ function getComboLabelByRound(roundNo) {
   return COMBO_CONFIGS.find(config => config.roundNo === roundNo)?.label || null
 }
 
-/**
- * 获取组合比赛的逐局净胜分链（从第7局到第1局，用于同分决胜）
- * 返回数组 [{ gameNo, pointDiff }]，按 gameNo 降序排列（第7局在前）
- */
-function getComboGamePointDiffChain(match, getGamesByMatch, perspective = 'a') {
-  if (!match) return []
-  const games = getCompletedGames(match, getGamesByMatch)
-  const ourSide = perspective
-
-  return games
-    .map(game => {
-      const myScore = ourSide === 'a' ? (game.scoreA || 0) : (game.scoreB || 0)
-      const oppScore = ourSide === 'a' ? (game.scoreB || 0) : (game.scoreA || 0)
-      return {
-        gameNo: game.gameNo,
-        pointDiff: myScore - oppScore
-      }
-    })
-    .sort((a, b) => b.gameNo - a.gameNo)
-}
-
-/**
- * 比较两个组合的逐局净胜分链，返回正数表示 a 更优（分差更大）
- */
-function comparePointDiffChains(chainA, chainB) {
-  const maxLen = Math.max(chainA.length, chainB.length)
-  for (let i = 0; i < maxLen; i++) {
-    const diffA = chainA[i]?.pointDiff ?? 0
-    const diffB = chainB[i]?.pointDiff ?? 0
-    if (diffA !== diffB) return diffA - diffB
-  }
-  return 0
-}
-
-function calcComboRoundStats(match, getGamesByMatch, perspective = 'a') {
-  if (!match || match.status !== STATUS.COMPLETED) {
-    return {
-      stars: 0,
-      baseStars: 0,
-      streakBonus: 0,
-      breakerBonus: 0,
-      matchWon: false,
-      scoreA: 0,
-      scoreB: 0,
-      totalPoints: 0,
-      opponentPoints: 0,
-      completedGames: 0,
-      pointDiffChain: []
-    }
-  }
-
-  const games = getCompletedGames(match, getGamesByMatch)
-  const winners = games.map(game => game.winner)
-  const ourSide = perspective
-  const theirSide = perspective === 'a' ? 'b' : 'a'
-
-  const winsOurs = winners.filter(winner => winner === ourSide).length
-  const winsTheirs = winners.filter(winner => winner === theirSide).length
-
-  let streakBonus = 0
-  let breakerBonus = 0
-  let currentWinner = null
-  let currentLength = 0
-
-  const closeStreak = () => {
-    if (currentWinner !== ourSide) return
-    // 硬编码连胜规则：只结算到7局
-    // 1:+0, 2:+1, 3:+2, 4:+4, 5:+5, 6:+6, 7:+6
-    const BONUS = [0, 0, 1, 2, 4, 5, 6, 6]
-    if (currentLength >= 2) {
-      streakBonus += BONUS[currentLength]
-    }
-  }
-
-  winners.forEach(winner => {
-    if (winner === currentWinner) {
-      currentLength++
-      return
-    }
-
-    if (winner === ourSide && currentWinner === theirSide && currentLength >= 2) {
-      breakerBonus += 3
-    }
-
-    closeStreak()
-    currentWinner = winner
-    currentLength = 1
-  })
-
-  closeStreak()
-
-  const totalPoints = games.reduce((sum, game) => sum + (ourSide === 'a' ? (game.scoreA || 0) : (game.scoreB || 0)), 0)
-  const opponentPoints = games.reduce((sum, game) => sum + (ourSide === 'a' ? (game.scoreB || 0) : (game.scoreA || 0)), 0)
-  const baseStars = winsOurs * 2
-  const pointDiffChain = getComboGamePointDiffChain(match, getGamesByMatch, perspective)
-
-  return {
-    stars: baseStars + streakBonus + breakerBonus,
-    baseStars,
-    streakBonus,
-    breakerBonus,
-    matchWon: winsOurs > winsTheirs,
-    scoreA: winsOurs,
-    scoreB: winsTheirs,
-    totalPoints,
-    opponentPoints,
-    completedGames: games.length,
-    pointDiffChain
-  }
-}
-
-function sortComboRankings(rankings) {
-  return [...rankings].sort((a, b) => {
-    if (b.stars !== a.stars) return b.stars - a.stars
-    if (b.matchWon !== a.matchWon) return Number(b.matchWon) - Number(a.matchWon)
-    if ((b.scoreA - b.scoreB) !== (a.scoreA - a.scoreB)) return (b.scoreA - b.scoreB) - (a.scoreA - a.scoreB)
-    if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints
-    // 逐局净胜分比较（从第7局开始，分差大者优先）
-    const diffResult = comparePointDiffChains(a.pointDiffChain || [], b.pointDiffChain || [])
-    if (diffResult !== 0) return diffResult
-    return a.label.localeCompare(b.label)
-  })
-}
-
 function getTieBreakMeta(context) {
   const s4Data = getS4Data(context)
   return s4Data?.tieBreaks || {}
@@ -419,14 +281,6 @@ function calcTieBreakRankings(context) {
   })
 
   return results
-}
-
-/**
- * 格式化净胜分链为可读字符串
- */
-function formatPointDiffChain(chain) {
-  if (!chain || chain.length === 0) return '无数据'
-  return chain.map(g => `G${g.gameNo}:${g.pointDiff >= 0 ? '+' : ''}${g.pointDiff}`).join(' → ')
 }
 
 export default {
@@ -475,28 +329,7 @@ export default {
       getGamesByMatch
     })
 
-    const rankings = definitions.map(definition => {
-      const round = rounds.find(item => item.roundNo === definition.roundNo)
-      const match = round ? getMatchesForRound(round.id, matches)[0] : null
-      const stats = calcComboRoundStats(match, getGamesByMatch, definition.perspective)
-
-      return {
-        label: definition.label,
-        opponentLabel: definition.opponentLabel,
-        roundNo: definition.roundNo,
-        name: definition.comboName,
-        description: `${definition.comboName} vs ${definition.opponentName}`,
-        teamA: definition.teamA,
-        teamB: definition.teamB,
-        roundId: round?.id || null,
-        matchId: match?.id || null,
-        roundStatus: round?.status || STATUS.PENDING,
-        perspective: definition.perspective,
-        ...stats
-      }
-    })
-
-    return sortComboRankings(rankings)
+    return buildComboRankings(definitions, matches, getGamesByMatch, rounds)
   },
 
   getComboTieStatus(matches, getGamesByMatch, rounds, context) {
@@ -511,68 +344,7 @@ export default {
       return { tied: false, leaders: [], rankings }
     }
 
-    // 取第一名（rankings 已经按 sortComboRankings 排好序，包含逐局净胜分比较）
-    const winner = rankings[0]
-
-    // 检查是否有多人并列第一（同星尘 = 同分）
-    const topScore = winner.stars
-    const tiedForTop = rankings.filter(item => item.stars === topScore)
-
-    if (tiedForTop.length <= 1) {
-      return {
-        tied: false,
-        leaders: [winner],
-        rankings,
-        tieResolved: false,
-        tieResolution: null
-      }
-    }
-
-    // 同分 → 用逐局净胜分自动决胜
-    // tiedForTop 已经按 sortComboRankings 排好序，包含了逐局净胜分比较
-    const resolvedWinner = tiedForTop[0]
-
-    // 找出胜负关键的局（第一个分差不同的局）
-    let decisiveGame = null
-    const chainWinner = resolvedWinner.pointDiffChain || []
-
-    for (let i = 1; i < tiedForTop.length; i++) {
-      const chainOther = tiedForTop[i].pointDiffChain || []
-      const maxLen = Math.max(chainWinner.length, chainOther.length)
-      for (let j = 0; j < maxLen; j++) {
-        const diffW = chainWinner[j]?.pointDiff ?? 0
-        const diffO = chainOther[j]?.pointDiff ?? 0
-        if (diffW !== diffO) {
-          decisiveGame = {
-            gameNo: chainWinner[j]?.gameNo || chainOther[j]?.gameNo,
-            winnerDiff: diffW,
-            otherDiff: diffO,
-            winnerLabel: resolvedWinner.label,
-            otherLabel: tiedForTop[i].label
-          }
-          break
-        }
-      }
-      if (decisiveGame) break
-    }
-
-    return {
-      tied: false, // 自动决胜后不再需要手动决胜轮
-      leaders: [resolvedWinner],
-      rankings,
-      tieResolved: true,
-      tieResolution: {
-        method: '逐局净胜分',
-        description: '同分组合按第7局→第6局→…→第1局的净胜分（得分−失分）比较，分差大者胜出',
-        decisiveGame,
-        tiedCombos: tiedForTop.map(item => ({
-          label: item.label,
-          stars: item.stars,
-          pointDiffChain: item.pointDiffChain || [],
-          pointDiffSummary: formatPointDiffChain(item.pointDiffChain || [])
-        }))
-      }
-    }
+    return resolveComboTie(rankings)
   },
 
   calcTieBreakRankings(context) {

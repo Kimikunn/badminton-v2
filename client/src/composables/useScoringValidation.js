@@ -6,7 +6,7 @@ import { ref, computed } from 'vue'
  * 规则与后端 scoringService.canEndGame 完全一致：
  * - 先达到目标分且领先2分者胜
  * - 平分后需领先2分
- * - 标准局 21/30；S5 异变局 15/21
+ * - 标准局 21/30；S5 异变局 15/21；S6 爆破局 11/12（每球 2 分无加分，noDeuce 选项）
  * - 防止"应提前结束"的非法比分（如 23:20）
  *
  * Usage:
@@ -62,7 +62,7 @@ export function useScoringValidation() {
  */
 function canEndGame(scoreA, scoreB, options = {}) {
   const targetScore = Number(options.targetScore || 21)
-  const maxScore = targetScore === 15 ? 21 : 30
+  const maxScore = Number(options.maxScore) || (targetScore === 15 ? 21 : 30)
 
   if (options.scoringMode === 'resistance') {
     return canEndResistanceGame(scoreA, scoreB, {
@@ -70,6 +70,11 @@ function canEndGame(scoreA, scoreB, options = {}) {
       maxScore,
       winnerOverride: options.winnerOverride
     })
+  }
+
+  // S6 爆破局：每球 2 分、无加分，胜方先到目标分结束（偶数分可越过 11 到 12）
+  if (options.noDeuce) {
+    return canEndBlastGame(scoreA, scoreB, { targetScore, maxScore })
   }
 
   // 基础范围检查
@@ -127,6 +132,30 @@ function canEndGame(scoreA, scoreB, options = {}) {
 
   // 双方都未达到目标分
   return { canEnd: false, winner: null, reason: `需达到${targetScore}分且领先2分（当前最高${wScore}分）` }
+}
+
+// S6 爆破局校验（与服务端 validateBlastGame 一致）：每球 2 分、无加分，
+// 胜方先到 targetScore 结束，封顶 maxScore（从偶数分可能越过 11 到 12）
+function canEndBlastGame(scoreA, scoreB, options = {}) {
+  const targetScore = Number(options.targetScore || 11)
+  const maxScore = Number(options.maxScore || 12)
+
+  if (scoreA < 0 || scoreB < 0) {
+    return { canEnd: false, winner: null, reason: '比分不能为负数' }
+  }
+  if (scoreA === scoreB) {
+    return { canEnd: false, winner: null, reason: '比分不能相等' }
+  }
+
+  const winner = scoreA > scoreB ? 'a' : 'b'
+  const winnerScore = Math.max(scoreA, scoreB)
+  if (winnerScore < targetScore) {
+    return { canEnd: false, winner: null, reason: `爆破局需先达到${targetScore}分` }
+  }
+  if (winnerScore > maxScore) {
+    return { canEnd: false, winner: null, reason: `爆破局最高${maxScore}分封顶` }
+  }
+  return { canEnd: true, winner, reason: '' }
 }
 
 function canEndResistanceGame(scoreA, scoreB, options = {}) {

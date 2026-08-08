@@ -41,9 +41,9 @@ export default defineConfig(({ mode }) => {
           // SPA NavigationRoute 已自动处理离线导航（index.html 在 precache 中），
           // offline.html 仅作为 includeAssets 兜底预缓存，不额外注册 navigateFallback 避免冲突
           runtimeCaching: [
-            // 赛季/俱乐部/球员/场地/称号 — 变化慢，Stale While Revalidate
+            // 俱乐部/球员/场地/称号 — 变化慢，Stale While Revalidate
             {
-              urlPattern: /\/api\/(club|players|seasons|titles|venues|bookings)/,
+              urlPattern: /\/api\/(club|players|titles|venues|bookings)/,
               handler: 'StaleWhileRevalidate',
               options: {
                 cacheName: 'api-reference',
@@ -51,9 +51,10 @@ export default defineConfig(({ mode }) => {
                 cacheableResponse: { statuses: [0, 200] }
               }
             },
-            // 比赛/轮次/对局 — 变化快，Network First 短缓存
+            // 比赛/轮次/对局/赛季 — 变化快，Network First 短缓存
+            // （赛季含 comebackData 规则状态，SWR 会在规则动作后回退到旧数据）
             {
-              urlPattern: /\/api\/(matches|rounds|games|match-games)/,
+              urlPattern: /\/api\/(matches|rounds|games|match-games|seasons)/,
               handler: 'NetworkFirst',
               options: {
                 cacheName: 'api-matchdata',

@@ -11,6 +11,7 @@ import { useRouter } from 'vue-router'
 import { useSeasonsStore, useMatchesStore, usePlayersStore } from '@/stores'
 import { STATUS } from '@/constants'
 import { getRule } from '@/rules'
+import { KING_FORMS, TREASURY_CARDS, getComboLabelsByRound, getSoulSeedMap, getSoulTierLabel, getTierCap, getAllowedPicks, getPlayerPickCount, isComboBondComplete } from '@/rules/s6'
 import { useSeasonTheme } from '@/composables/useSeasonTheme'
 import { useSeasonSelector } from '@/composables/useSeasonSelector'
 import { useViewAccent } from '@/composables/useViewAccent'
@@ -25,7 +26,7 @@ import EmptyState from '@/components/ui/EmptyState.vue'
 import SeasonTabs from '@/components/season/SeasonTabs.vue'
 import SeasonPresetManager from '@/components/season/SeasonPresetManager.vue'
 import { SEASON_PRESETS } from '@/constants/seasonPresets'
-import { BarChart3, Dumbbell, Trash2, RefreshCw, Dice5 } from 'lucide-vue-next'
+import { BarChart3, Dumbbell, Trash2, RefreshCw, Dice5, Crown } from 'lucide-vue-next'
 import { useToast } from '@/composables/useToast'
 import { useMatchTab } from '@/composables/useMatchTab'
 import { useConfirm } from '@/composables/useConfirm'
@@ -88,7 +89,16 @@ const currentRule = computed(() => getRule(currentSeason.value?.ruleId))
 const beforeRoundLifecycle = computed(() => currentRule.value?.lifecycle?.beforeRound || null)
 const requiresBeforeRoundDice = computed(() => beforeRoundLifecycle.value?.required && beforeRoundLifecycle.value?.type === 'dice')
 const nextRoundNo = computed(() => Math.max(0, ...rounds.value.map(r => r.roundNo)) + 1)
-const supportsRandomPairings = computed(() => !(currentSeason.value?.ruleId === 's4' && nextRoundNo.value >= 5))
+// 创建下一轮前的强制流程（S6：上篇王选 / 下篇灵魂契合；其余规则回退到 lifecycle 静态声明）
+const beforeRoundRequirement = computed(() =>
+  typeof currentRule.value?.getBeforeRoundRequirement === 'function'
+    ? currentRule.value.getBeforeRoundRequirement(nextRoundNo.value)
+    : beforeRoundLifecycle.value
+)
+const isFixedComboRound = computed(() =>
+  (currentSeason.value?.ruleId === 's4' || currentSeason.value?.ruleId === 's6') && nextRoundNo.value >= 5
+)
+const supportsRandomPairings = computed(() => !isFixedComboRound.value)
 const pairingPreviewNote = computed(() => supportsRandomPairings.value
   ? '随机生成对阵，可重新随机；确认后将按当前预览创建。'
   : '按赛季规则固定生成，确认后将与下列对阵一致。'
@@ -193,16 +203,315 @@ function rollRoundDice() {
   }
 }
 
+// === S6 王选（上篇 1-4 轮，创建轮次前强制） ===
+const KING_DICE_FACES = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅']
+const showKingSelect = ref(false)
+const kingRolls = ref({})
+const kingForm = ref('')
+const kingSubmitting = ref(false)
+
+const requiresKingSelection = computed(() =>
+  beforeRoundRequirement.value?.required &&
+  beforeRoundRequirement.value?.type === 'king_selection'
+)
+const kingRollEntries = computed(() =>
+  (currentSeason.value?.participants || []).map(pid => ({ playerId: pid, dice: kingRolls.value[pid] || null }))
+)
+const allKingRolled = computed(() =>
+  kingRollEntries.value.length === 4 && kingRollEntries.value.every(e => e.dice)
+)
+const tiedKingIds = computed(() => {
+  if (!allKingRolled.value) return []
+  const max = Math.max(...kingRollEntries.value.map(e => e.dice))
+  const winners = kingRollEntries.value.filter(e => e.dice === max)
+  return winners.length > 1 ? winners.map(e => e.playerId) : []
+})
+const electedKingId = computed(() => {
+  if (!allKingRolled.value || tiedKingIds.value.length) return null
+  const max = Math.max(...kingRollEntries.value.map(e => e.dice))
+  return kingRollEntries.value.find(e => e.dice === max)?.playerId || null
+})
+
+function rollKingDice(playerId) {
+  if (kingRolls.value[playerId]) return
+  kingRolls.value = { ...kingRolls.value, [playerId]: Math.floor(Math.random() * 6) + 1 }
+}
+
+function rerollTiedKings() {
+  const next = { ...kingRolls.value }
+  tiedKingIds.value.forEach(pid => { delete next[pid] })
+  kingRolls.value = next
+}
+
+async function submitKingSelection() {
+  if (!electedKingId.value) { toast.show('请先完成王选掷骰', 'warning'); return }
+  if (!kingForm.value) { toast.show('请为王选择形态', 'warning'); return }
+  kingSubmitting.value = true
+  try {
+    const roundNo = nextRoundNo.value
+    const rolls = kingRollEntries.value.map(e => ({ playerId: e.playerId, dice: e.dice }))
+    const rollRes = await seasonsStore.recordAction(currentSeason.value.id, 's6_king_roll', { roundNo, rolls })
+    if (!rollRes?.success) throw new Error(rollRes?.error || '王选掷骰提交失败')
+    const formRes = await seasonsStore.recordAction(currentSeason.value.id, 's6_king_form', { roundNo, form: kingForm.value })
+    if (!formRes?.success) throw new Error(formRes?.error || '王形态提交失败')
+    toast.show(`第 ${roundNo} 轮王选完成`, 'success')
+    showKingSelect.value = false
+    openCreateRoundSheet()
+  } catch (e) {
+    toast.show(e.message || '王选提交失败', 'error')
+  } finally {
+    kingSubmitting.value = false
+  }
+}
+
+// === S6 灵魂契合（下篇 5-7 轮，创建轮次前强制） ===
+const showSoulBond = ref(false)
+const soulComboLabel = ref('')
+const soulStaging = ref({}) // { [playerId]: { rollChoice, dice, rerollSource } } 本地投掷暂存（未提交）
+const soulSubmitting = ref(false)
+const reforgeState = ref(null) // { playerId, newDice } 重铸二选一进项
+
+const requiresSoulBond = computed(() =>
+  beforeRoundRequirement.value?.required &&
+  beforeRoundRequirement.value?.type === 'soul_bond'
+)
+const soulComboLabels = computed(() => getComboLabelsByRound(nextRoundNo.value))
+const soulSeeds = computed(() => getSoulSeedMap(currentSeason.value) || {})
+const soulBondData = computed(() =>
+  currentSeason.value?.comebackData?.s6?.soulBond?.[String(nextRoundNo.value)] || {}
+)
+const soulRoundComplete = computed(() =>
+  soulComboLabels.value.length > 0 &&
+  soulComboLabels.value.every(label => isComboBondComplete(soulBondData.value[label]))
+)
+
+function getSoulCombo(label) {
+  return soulBondData.value[label] || null
+}
+const soulActiveCombo = computed(() => getSoulCombo(soulComboLabel.value))
+const soulActivePlayerIds = computed(() => getComboPlayerIds(soulComboLabel.value))
+const soulActiveRolled = computed(() => (soulActiveCombo.value?.rolls || []).length === 2)
+function getComboPlayerIds(label) {
+  return String(label).split('').map(key => soulSeeds.value[key]).filter(Boolean)
+}
+function getSoulRoll(combo, playerId) {
+  return combo?.rolls?.find(roll => roll.playerId === playerId) || null
+}
+
+// 凯旋重投名额：上篇（1-4 轮）标准排名前二各 1 次
+const triumphTop2 = computed(() => {
+  if (currentSeason.value?.ruleId !== 's6') return []
+  const topRounds = rounds.value.filter(r => r.roundNo >= 1 && r.roundNo <= 4 && r.status === STATUS.COMPLETED)
+  if (topRounds.length < 4) return []
+  const topRoundIds = new Set(topRounds.map(r => r.id))
+  const topMatches = seasonMatches.value.filter(m => topRoundIds.has(m.roundId))
+  const rule = getRule('s6')
+  const rankings = rule.calcRankings(
+    currentSeason.value.participants || [],
+    topMatches,
+    mid => matchesStore.getGamesByMatch(mid),
+    id => playersStore.getPlayerById(id),
+    { season: currentSeason.value, rounds: topRounds }
+  )
+  return rankings.slice(0, 2).map(row => row.id)
+})
+
+// S5 贯穿碎片：最近一个 S5 赛季 pierceCounts[playerId] - 3 > 0（与服务端口径一致）
+const s5ShardCounts = computed(() => {
+  const s5 = [...seasonsStore.seasons]
+    .filter(s => s.ruleId === 's5')
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))[0]
+  const counts = s5?.comebackData?.s5?.pierceCounts || {}
+  const shards = {}
+  Object.entries(counts).forEach(([playerId, count]) => {
+    const remaining = Number(count) - 3
+    if (remaining > 0) shards[playerId] = remaining
+  })
+  return shards
+})
+
+// 已消耗的重投次数（跨所有轮次/组合累计）
+function getUsedRerollCount(playerId, source) {
+  const soulBond = currentSeason.value?.comebackData?.s6?.soulBond || {}
+  let used = 0
+  Object.values(soulBond).forEach(roundBond => {
+    Object.values(roundBond || {}).forEach(combo => {
+      used += (combo.rerollsUsed || []).filter(entry => entry.playerId === playerId && entry.source === source).length
+    })
+  })
+  return used
+}
+
+// 选手可用的重投令牌（凯旋 / S5 贯穿碎片）
+function getRerollTokens(playerId) {
+  const tokens = []
+  if (triumphTop2.value.includes(playerId)) {
+    tokens.push({ source: 'triumph', name: '凯旋', total: 1 })
+  }
+  const shards = s5ShardCounts.value[playerId] || 0
+  if (shards > 0) {
+    tokens.push({ source: 's5_shard', name: '贯穿碎片', total: shards })
+  }
+  return tokens
+    .map(token => ({ ...token, remaining: token.total - getUsedRerollCount(playerId, token.source) }))
+    .filter(token => token.remaining > 0)
+}
+
+function rollLocalDice(count) {
+  return Array.from({ length: count }, () => Math.floor(Math.random() * 6) + 1)
+}
+
+// 选择投 1/2 次后立即在本地掷骰（提交前可重掷，不消耗任何服务端状态）
+function startSoulRoll(playerId, rollChoice) {
+  const staging = soulStaging.value[playerId]
+  soulStaging.value = {
+    ...soulStaging.value,
+    [playerId]: {
+      rollChoice,
+      dice: rollLocalDice(rollChoice),
+      rerollSource: staging?.rerollSource || null
+    }
+  }
+}
+
+function shuffleSoulStaging(playerId) {
+  const staging = soulStaging.value[playerId]
+  if (!staging) return
+  soulStaging.value = {
+    ...soulStaging.value,
+    [playerId]: { ...staging, dice: rollLocalDice(staging.rollChoice) }
+  }
+}
+
+function clearSoulStaging(playerId) {
+  const next = { ...soulStaging.value }
+  delete next[playerId]
+  soulStaging.value = next
+}
+
+async function submitSoulRoll(playerId) {
+  const staging = soulStaging.value[playerId]
+  if (!staging?.dice?.length) return
+  soulSubmitting.value = true
+  try {
+    const res = await seasonsStore.recordAction(currentSeason.value.id, 's6_soul_roll', {
+      roundNo: nextRoundNo.value,
+      comboLabel: soulComboLabel.value,
+      playerId,
+      rollChoice: staging.rollChoice,
+      dice: staging.dice,
+      rerollSource: staging.rerollSource || undefined
+    })
+    if (!res?.success) throw new Error(res?.error || '灵魂投掷提交失败')
+    clearSoulStaging(playerId)
+    toast.show(staging.rerollSource ? '重投完成' : '灵魂投掷完成', 'success')
+  } catch (e) {
+    toast.show(e.message || '灵魂投掷提交失败', 'error')
+  } finally {
+    soulSubmitting.value = false
+  }
+}
+
+async function startSoulReroll(playerId, token) {
+  const ok = await confirmAction({
+    title: '重投确认',
+    message: `${playersStore.getPlayerName(playerId)} 将消耗 1 次「${token.name}」重投机会（剩余 ${token.remaining} 次），重投后原点数作废。`,
+    confirmText: '重投'
+  })
+  if (!ok) return
+  // 进入暂存态：重新选择投 1/2 次后提交（带 rerollSource）
+  soulStaging.value = {
+    ...soulStaging.value,
+    [playerId]: { rollChoice: null, dice: [], rerollSource: token.source }
+  }
+}
+
+async function submitSoulPick(playerId, cardId) {
+  soulSubmitting.value = true
+  try {
+    const res = await seasonsStore.recordAction(currentSeason.value.id, 's6_soul_pick', {
+      roundNo: nextRoundNo.value,
+      comboLabel: soulComboLabel.value,
+      playerId,
+      cardId
+    })
+    if (!res?.success) throw new Error(res?.error || '奖励选择提交失败')
+    toast.show(`已选择「${TREASURY_CARDS[cardId]?.name || cardId}」`, 'success')
+  } catch (e) {
+    toast.show(e.message || '奖励选择提交失败', 'error')
+  } finally {
+    soulSubmitting.value = false
+  }
+}
+
+// 重铸：本地重投一次，选手在 原点数/新点数 中二选一后提交
+function startReforge(playerId) {
+  reforgeState.value = { playerId, newDice: rollLocalDice(1)[0] }
+}
+
+async function submitReforge(keptDice) {
+  const state = reforgeState.value
+  if (!state) return
+  soulSubmitting.value = true
+  try {
+    const res = await seasonsStore.recordAction(currentSeason.value.id, 's6_reforge', {
+      roundNo: nextRoundNo.value,
+      comboLabel: soulComboLabel.value,
+      playerId: state.playerId,
+      dice: keptDice
+    })
+    if (!res?.success) throw new Error(res?.error || '重铸提交失败')
+    reforgeState.value = null
+    toast.show('重铸完成', 'success')
+  } catch (e) {
+    toast.show(e.message || '重铸提交失败', 'error')
+  } finally {
+    soulSubmitting.value = false
+  }
+}
+
+// 可选奖励卡片（重铸走专门流程、天选自动触发，均不在选择网格中）
+const PICKABLE_CARD_IDS = Object.values(TREASURY_CARDS)
+  .filter(card => card.tier !== 'chosen' && card.id !== 'reforge')
+  .map(card => card.id)
+
+// 卡片对某选手是否可点：返回 null 表示可选，否则为禁用原因
+function getCardDisabledReason(combo, playerId, card) {
+  if (card.tier > getTierCap(combo?.unlockTier)) {
+    const tier = { 2: '第二阶（7-9）', 3: '第三阶（10-12）' }[card.tier] || ''
+    return `未解锁${tier}`
+  }
+  if ((combo?.picks || []).some(pick => pick.cardId === card.id)) return '已被选择'
+  if (getPlayerPickCount(combo, playerId) >= getAllowedPicks(combo, playerId)) return '次数已用完'
+  return null
+}
+
+function openSoulBond() {
+  soulStaging.value = {}
+  reforgeState.value = null
+  soulComboLabel.value = soulComboLabels.value[0] || ''
+  showSoulBond.value = true
+}
+
+function proceedCreateRound() {
+  showSoulBond.value = false
+  openCreateRoundSheet()
+}
+
 function generatePreview() {
   const parts = currentSeason.value?.participants || []
   if (parts.length < 4) return []
 
-  if (currentSeason.value?.ruleId === 's4' && nextRoundNo.value >= 5) {
-    const sorted = [...parts].sort()
+  if (isFixedComboRound.value) {
+    // S4：按选手 ID 排序；S6：按灵魂契合种子口径（s6.seeds 或服务端同款 ID 排序兜底）
+    const ordered = currentSeason.value?.ruleId === 's6'
+      ? Object.values(getSoulSeedMap(currentSeason.value) || {})
+      : [...parts].sort()
+    if (ordered.length < 4) return []
     const combos = {
-      5: { teamA: [sorted[0], sorted[1]], teamB: [sorted[2], sorted[3]] },
-      6: { teamA: [sorted[0], sorted[2]], teamB: [sorted[1], sorted[3]] },
-      7: { teamA: [sorted[0], sorted[3]], teamB: [sorted[1], sorted[2]] }
+      5: { teamA: [ordered[0], ordered[1]], teamB: [ordered[2], ordered[3]] },
+      6: { teamA: [ordered[0], ordered[2]], teamB: [ordered[1], ordered[3]] },
+      7: { teamA: [ordered[0], ordered[3]], teamB: [ordered[1], ordered[2]] }
     }
     return [combos[nextRoundNo.value] || combos[5]]
   }
@@ -216,6 +525,20 @@ function generatePreview() {
 }
 
 function openCreate() {
+  if (requiresKingSelection.value) {
+    kingRolls.value = {}
+    kingForm.value = ''
+    showKingSelect.value = true
+    return
+  }
+  if (requiresSoulBond.value) {
+    openSoulBond()
+    return
+  }
+  openCreateRoundSheet()
+}
+
+function openCreateRoundSheet() {
   previewPairings.value = generatePreview()
   pendingRoundDice.value = null
   showCreate.value = true
@@ -444,6 +767,212 @@ onMounted(() => {
           <div class="flex gap-3 [&>*]:flex-1">
             <Button variant="secondary" size="md" @click="showCreate=false">取消</Button>
             <Button variant="primary" size="md" :loading="creating" :disabled="requiresBeforeRoundDice && !pendingRoundDice" @click="createNextRound">确认</Button>
+          </div>
+        </div>
+      </Sheet>
+
+      <!-- S6 王选 sheet（上篇 1-4 轮创建前强制） -->
+      <Sheet :show="showKingSelect" :title="`第 ${nextRoundNo} 轮 · 王选`" @close="showKingSelect=false">
+        <div class="flex flex-col gap-4">
+          <p class="text-sm text-fg-secondary">4 名参赛者依次投骰，最高点数唯一者成为本轮的王，再由王选择形态。</p>
+          <div class="flex flex-col gap-2">
+            <div
+              v-for="entry in kingRollEntries" :key="entry.playerId"
+              class="flex items-center gap-3 p-3 rounded-lg border"
+              :class="electedKingId === entry.playerId ? 'border-accent bg-accent-subtle' : 'border-line bg-canvas'"
+            >
+              <Avatar :name="playersStore.getPlayerName(entry.playerId)" size="sm" />
+              <span class="flex-1 min-w-0 text-sm font-medium text-fg truncate">{{ playersStore.getPlayerName(entry.playerId) }}</span>
+              <Crown v-if="electedKingId === entry.playerId" :size="16" class="text-accent shrink-0" />
+              <span v-if="entry.dice" class="text-2xl leading-none text-fg">{{ KING_DICE_FACES[entry.dice - 1] }}</span>
+              <button
+                v-else
+                class="px-3 py-1.5 rounded-lg border border-accent bg-accent-subtle text-accent text-sm font-medium cursor-pointer transition-all duration-fast active:scale-95"
+                @click="rollKingDice(entry.playerId)"
+              >投骰</button>
+            </div>
+          </div>
+          <div v-if="tiedKingIds.length" class="flex items-center justify-between gap-3 p-3 rounded-lg bg-warning-subtle border border-warning/30">
+            <p class="text-xs text-warning">最高点数并列，请重投并列者</p>
+            <button
+              class="px-3 py-1.5 rounded-lg border border-warning text-warning text-xs font-medium cursor-pointer transition-all duration-fast active:scale-95 shrink-0"
+              @click="rerollTiedKings"
+            >重投并列者</button>
+          </div>
+          <template v-if="electedKingId">
+            <div class="flex items-center gap-2 p-3 rounded-lg bg-accent-subtle border border-accent/30">
+              <Crown :size="16" class="text-accent shrink-0" />
+              <span class="text-sm font-semibold text-fg">本轮的王：{{ playersStore.getPlayerName(electedKingId) }}</span>
+            </div>
+            <div class="flex flex-col gap-2">
+              <h4 class="text-xs font-semibold uppercase tracking-wider text-fg-secondary">王选择形态</h4>
+              <button
+                v-for="form in Object.values(KING_FORMS)" :key="form.id"
+                class="flex flex-col gap-1 p-3 rounded-lg border text-left cursor-pointer transition-all duration-fast active:scale-95"
+                :class="kingForm === form.id ? 'border-accent bg-accent-subtle' : 'border-line bg-canvas'"
+                @click="kingForm = form.id"
+              >
+                <span class="text-sm font-semibold" :class="kingForm === form.id ? 'text-accent' : 'text-fg'">{{ form.name }}</span>
+                <span class="text-xs text-fg-muted">{{ form.effect }}</span>
+              </button>
+            </div>
+          </template>
+          <div class="flex gap-3 [&>*]:flex-1">
+            <Button variant="secondary" size="md" @click="showKingSelect=false">取消</Button>
+            <Button variant="primary" size="md" :loading="kingSubmitting" :disabled="!electedKingId || !kingForm" @click="submitKingSelection">确认王选</Button>
+          </div>
+        </div>
+      </Sheet>
+
+      <!-- S6 灵魂契合 sheet（下篇 5-7 轮创建前强制） -->
+      <Sheet :show="showSoulBond" :title="`第 ${nextRoundNo} 轮 · 灵魂契合`" @close="showSoulBond=false">
+        <div class="flex flex-col gap-4">
+          <p class="text-sm text-fg-secondary">组合双方各选投 1 次或 2 次（2 次以第二次为准），点数求和（同点 +1）解锁王之宝库阶层并选择奖励。两个组合均完成后才能创建本轮。</p>
+
+          <!-- 组合切换 -->
+          <SegmentedControl
+            v-model="soulComboLabel"
+            :options="soulComboLabels.map(l => ({ key: l, label: `${l}组合${isComboBondComplete(getSoulCombo(l)) ? ' ✓' : ''}` }))"
+            size="sm"
+          />
+
+          <div class="flex flex-col gap-3">
+            <!-- 双方掷骰 -->
+            <div
+              v-for="pid in soulActivePlayerIds" :key="pid"
+              class="flex flex-col gap-2 p-3 rounded-lg border border-line bg-canvas"
+            >
+              <div class="flex items-center gap-2">
+                <Avatar :name="playersStore.getPlayerName(pid)" size="sm" />
+                <span class="flex-1 min-w-0 text-sm font-medium text-fg truncate">{{ playersStore.getPlayerName(pid) }}</span>
+                <Badge v-if="getSoulRoll(soulActiveCombo, pid)" variant="success" size="sm">已投掷</Badge>
+                <Badge v-else variant="muted" size="sm">待投掷</Badge>
+              </div>
+
+              <!-- 已提交的点数 -->
+              <div v-if="getSoulRoll(soulActiveCombo, pid)" class="flex items-center gap-2 flex-wrap">
+                <span class="text-2xl leading-none text-fg">{{ getSoulRoll(soulActiveCombo, pid).dice.map(d => KING_DICE_FACES[d - 1]).join(' ') }}</span>
+                <span class="text-xs text-fg-muted">判定 <span class="text-sm font-bold text-fg">{{ getSoulRoll(soulActiveCombo, pid).used }}</span></span>
+                <Badge v-if="getSoulRoll(soulActiveCombo, pid).rollChoice === 2" variant="muted" size="sm">第二次为准</Badge>
+                <Badge v-if="getSoulRoll(soulActiveCombo, pid).reforged" variant="accent" size="sm">已重铸</Badge>
+              </div>
+
+              <!-- 本地暂存：选次数 → 掷骰 → 提交 -->
+              <template v-else-if="soulStaging[pid]">
+                <div v-if="soulStaging[pid].dice.length" class="flex items-center gap-3 flex-wrap">
+                  <span
+                    v-for="(d, i) in soulStaging[pid].dice" :key="i"
+                    class="text-2xl leading-none"
+                    :class="soulStaging[pid].rollChoice === 2 && i === 0 ? 'text-fg-muted' : 'text-fg'"
+                  >{{ KING_DICE_FACES[d - 1] }}</span>
+                  <Badge v-if="soulStaging[pid].rollChoice === 2" variant="muted" size="sm">第二次为准</Badge>
+                  <Badge v-if="soulStaging[pid].rerollSource" variant="warning" size="sm">重投</Badge>
+                </div>
+                <div class="flex gap-2 flex-wrap">
+                  <template v-if="!soulStaging[pid].dice.length">
+                    <button class="flex-1 px-3 py-2 rounded-lg border border-accent bg-accent-subtle text-accent text-sm font-medium cursor-pointer transition-all duration-fast active:scale-95" @click="startSoulRoll(pid, 1)">投 1 次</button>
+                    <button class="flex-1 px-3 py-2 rounded-lg border border-accent bg-accent-subtle text-accent text-sm font-medium cursor-pointer transition-all duration-fast active:scale-95" @click="startSoulRoll(pid, 2)">投 2 次</button>
+                    <button class="px-3 py-2 rounded-lg border border-line text-fg-muted text-sm cursor-pointer transition-all duration-fast active:scale-95" @click="clearSoulStaging(pid)">取消</button>
+                  </template>
+                  <template v-else>
+                    <button class="px-3 py-2 rounded-lg border border-line text-fg-secondary text-sm cursor-pointer transition-all duration-fast active:scale-95" :disabled="soulSubmitting" @click="shuffleSoulStaging(pid)">重掷</button>
+                    <button class="px-3 py-2 rounded-lg border border-line text-fg-muted text-sm cursor-pointer transition-all duration-fast active:scale-95" :disabled="soulSubmitting" @click="clearSoulStaging(pid)">撤销</button>
+                    <Button variant="primary" size="sm" class="flex-1" :loading="soulSubmitting" @click="submitSoulRoll(pid)">提交投掷</Button>
+                  </template>
+                </div>
+              </template>
+
+              <!-- 未开始：选择投 1 / 2 次 -->
+              <div v-else class="flex gap-2">
+                <button class="flex-1 px-3 py-2 rounded-lg border border-accent bg-accent-subtle text-accent text-sm font-medium cursor-pointer transition-all duration-fast active:scale-95" @click="startSoulRoll(pid, 1)">投 1 次</button>
+                <button class="flex-1 px-3 py-2 rounded-lg border border-accent bg-accent-subtle text-accent text-sm font-medium cursor-pointer transition-all duration-fast active:scale-95" @click="startSoulRoll(pid, 2)">投 2 次</button>
+              </div>
+            </div>
+
+            <!-- 判定结果 -->
+            <div v-if="soulActiveRolled" class="flex items-center gap-2 flex-wrap p-3 rounded-lg bg-accent-subtle border border-accent/30">
+              <span class="text-sm font-semibold text-fg">总点数 <span class="text-lg font-bold text-accent">{{ soulActiveCombo.total }}</span></span>
+              <Badge v-if="soulActiveCombo.rolls[0].used === soulActiveCombo.rolls[1].used" variant="accent" size="sm">同点 +1</Badge>
+              <Badge variant="accent" size="sm">{{ getSoulTierLabel(soulActiveCombo.unlockTier) }}</Badge>
+              <span v-if="!soulActiveCombo.unlockTier" class="text-xs text-fg-muted">未解锁宝库奖励，无需选奖</span>
+            </div>
+
+            <!-- 天选 -->
+            <div v-if="soulActiveRolled && soulActiveCombo.unlockTier === 'chosen'" class="p-3 rounded-lg bg-warning-subtle border border-warning/30">
+              <p class="text-sm font-semibold text-warning">天选达成！该组合本轮 7 局每局 2:0 开局（自动触发，不占选择次数）</p>
+            </div>
+
+            <!-- 重投入口（选奖前可用） -->
+            <div v-if="soulActiveRolled && !(soulActiveCombo.picks || []).length" class="flex flex-col gap-2">
+              <template v-for="pid in soulActivePlayerIds" :key="'reroll-' + pid">
+                <div v-if="getRerollTokens(pid).length" class="flex items-center gap-2 flex-wrap">
+                  <span class="text-xs text-fg-muted">{{ playersStore.getPlayerName(pid) }} 可重投：</span>
+                  <button
+                    v-for="token in getRerollTokens(pid)" :key="token.source"
+                    class="px-3 py-1.5 rounded-lg border border-warning text-warning text-xs font-medium cursor-pointer transition-all duration-fast active:scale-95"
+                    :disabled="soulSubmitting || !!soulStaging[pid]"
+                    @click="startSoulReroll(pid, token)"
+                  >{{ token.name }}重投（剩 {{ token.remaining }} 次）</button>
+                </div>
+              </template>
+            </div>
+
+            <!-- 奖励选择 -->
+            <template v-if="soulActiveRolled && soulActiveCombo.unlockTier">
+              <div v-for="pid in soulActivePlayerIds" :key="'pick-' + pid" class="flex flex-col gap-2 p-3 rounded-lg border border-line bg-canvas">
+                <div class="flex items-center gap-2">
+                  <span class="flex-1 min-w-0 text-sm font-medium text-fg truncate">{{ playersStore.getPlayerName(pid) }} 选奖</span>
+                  <span class="text-xs text-fg-muted">{{ getPlayerPickCount(soulActiveCombo, pid) }}/{{ getAllowedPicks(soulActiveCombo, pid) }} 次</span>
+                </div>
+
+                <!-- 已选 -->
+                <div v-if="getPlayerPickCount(soulActiveCombo, pid)" class="flex flex-wrap gap-2">
+                  <Badge v-for="pick in (soulActiveCombo.picks || []).filter(p => p.playerId === pid)" :key="pick.cardId + pick.playerId" variant="success" size="sm">
+                    已选「{{ TREASURY_CARDS[pick.cardId]?.name || pick.cardId }}」
+                  </Badge>
+                </div>
+
+                <!-- 卡片网格 -->
+                <div class="grid grid-cols-2 gap-2">
+                  <button
+                    v-for="cardId in PICKABLE_CARD_IDS" :key="cardId"
+                    class="flex flex-col items-start gap-0.5 p-2.5 rounded-lg border text-left cursor-pointer transition-all duration-fast active:scale-95 disabled:cursor-not-allowed"
+                    :class="getCardDisabledReason(soulActiveCombo, pid, TREASURY_CARDS[cardId]) ? 'border-line-light bg-surface opacity-50' : 'border-accent bg-accent-subtle'"
+                    :disabled="soulSubmitting || !!getCardDisabledReason(soulActiveCombo, pid, TREASURY_CARDS[cardId])"
+                    @click="submitSoulPick(pid, cardId)"
+                  >
+                    <span class="text-sm font-semibold" :class="getCardDisabledReason(soulActiveCombo, pid, TREASURY_CARDS[cardId]) ? 'text-fg-muted' : 'text-accent'">
+                      {{ TREASURY_CARDS[cardId].name }}<template v-if="TREASURY_CARDS[cardId].uses"> ×{{ TREASURY_CARDS[cardId].uses }}</template>
+                    </span>
+                    <span class="text-2xs text-fg-muted">{{ getCardDisabledReason(soulActiveCombo, pid, TREASURY_CARDS[cardId]) || `${TREASURY_CARDS[cardId].condition} · ${TREASURY_CARDS[cardId].effect}` }}</span>
+                  </button>
+                </div>
+
+                <!-- 重铸（第二阶解锁，立刻重投二选一，占一次选择） -->
+                <template v-if="getTierCap(soulActiveCombo.unlockTier) >= 2 && getPlayerPickCount(soulActiveCombo, pid) < getAllowedPicks(soulActiveCombo, pid)">
+                  <div v-if="reforgeState?.playerId === pid" class="flex flex-col gap-2 p-2.5 rounded-lg bg-surface-hover border border-line-light">
+                    <p class="text-xs text-fg-secondary">重铸：原点数 <span class="font-bold text-fg">{{ getSoulRoll(soulActiveCombo, pid)?.used }}</span>，新点数 <span class="font-bold text-accent">{{ KING_DICE_FACES[reforgeState.newDice - 1] }} {{ reforgeState.newDice }}</span></p>
+                    <div class="flex gap-2">
+                      <button class="flex-1 px-3 py-2 rounded-lg border border-line bg-surface text-fg text-sm cursor-pointer transition-all duration-fast active:scale-95" :disabled="soulSubmitting" @click="submitReforge(getSoulRoll(soulActiveCombo, pid)?.used)">保留原点数</button>
+                      <button class="flex-1 px-3 py-2 rounded-lg border border-accent bg-accent-subtle text-accent text-sm font-medium cursor-pointer transition-all duration-fast active:scale-95" :disabled="soulSubmitting" @click="submitReforge(reforgeState.newDice)">使用新点数</button>
+                      <button class="px-3 py-2 rounded-lg border border-line text-fg-muted text-sm cursor-pointer transition-all duration-fast active:scale-95" :disabled="soulSubmitting" @click="reforgeState = null">取消</button>
+                    </div>
+                  </div>
+                  <button
+                    v-else
+                    class="px-3 py-2 rounded-lg border border-line bg-surface text-fg-secondary text-sm cursor-pointer transition-all duration-fast active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                    :disabled="soulSubmitting || !!reforgeState"
+                    @click="startReforge(pid)"
+                  >重铸（重投一次骰子二选一，占 1 次选择）</button>
+                </template>
+              </div>
+            </template>
+          </div>
+
+          <p v-if="!soulRoundComplete" class="text-xs text-fg-muted text-center">两个组合均完成灵魂判定与奖励选择后才能创建轮次</p>
+          <div class="flex gap-3 [&>*]:flex-1">
+            <Button variant="secondary" size="md" @click="showSoulBond=false">关闭</Button>
+            <Button variant="primary" size="md" :disabled="!soulRoundComplete" @click="proceedCreateRound">创建第 {{ nextRoundNo }} 轮</Button>
           </div>
         </div>
       </Sheet>
