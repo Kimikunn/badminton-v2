@@ -147,3 +147,37 @@ docker-compose.yml 和 docker-compose.test.yml 同 service 名 app + 同默认 p
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: S6 王选改一次性王序 + 生产数据修复
+
+**Date**: 2026-08-08
+**Task**: S6 王选改一次性王序 + 生产数据修复
+**Branch**: `master`
+
+### Summary
+
+规则修正：王选只在第 1 轮前投一次，从大到小定第 1-4 轮的王；同分组内重投不全局重排。s6_king_roll 改 {order:[...]} 一次性契约，王由 kingOrder 派生并兼容旧 topKings；2-4 轮仅形态选择。生产修复：kingOrder=p3(6)/p4(重投4)/p2(重投1)/p1(4)，round1 数据未动。服务端 110/110，e2e 全绿，已部署 :8088。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a742008` | (see git log) |
+| `4a06f76` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
