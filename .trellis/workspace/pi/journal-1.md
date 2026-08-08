@@ -113,3 +113,37 @@ docker-compose.yml 和 docker-compose.test.yml 同 service 名 app + 同默认 p
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: S6 规则修正：月白抵抗局与逐人暗选
+
+**Date**: 2026-08-08
+**Task**: S6 规则修正：月白抵抗局与逐人暗选
+**Branch**: `master`
+
+### Summary
+
+两处规则修正：①月白按 S5 秩序抵抗局处理（显式胜方/胜方≥21/30 封顶/分低者可获胜），抵抗校验提取共享 rules/resistance.js；②暗选改为 4 名选手各自提交本人已选卡片，归属校验+全员齐交同时亮出，存储器 carry 多条求和。服务端 107/107，e2e 全规格×4 视口全绿。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `00864c9` | (see git log) |
+| `feb60c0` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
