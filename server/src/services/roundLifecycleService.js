@@ -40,10 +40,11 @@ function recalculateRound(roundId) {
 
     if (allRoundsDone && season.status !== SEASON_STATUS.COMPLETED) {
       const { champion, comboChampion } = calcSeasonChampion(season, allRounds);
-      if (comboChampion && season.rule_id === RULE_ID.S4) {
+      if (comboChampion && (season.rule_id === RULE_ID.S4 || season.rule_id === RULE_ID.S6)) {
         const comeback = parseJson(season.comeback_data, {});
-        comeback.s4 = comeback.s4 || {};
-        comeback.s4.comboChampion = comboChampion;
+        const ruleKey = season.rule_id;
+        comeback[ruleKey] = comeback[ruleKey] || {};
+        comeback[ruleKey].comboChampion = comboChampion;
         prepare('UPDATE seasons SET status = ?, champion_player_id = ?, comeback_data = ? WHERE id = ?')
           .run(SEASON_STATUS.COMPLETED, champion, stringifyJson(comeback), season.id);
       } else {
@@ -68,9 +69,12 @@ function calcSeasonChampion(season, allRounds) {
   const participants = parseJson(season.participants, []);
   if (!participants.length) return { champion: null, comboChampion: null };
 
-  const isS4 = season.rule_id === RULE_ID.S4;
+  // S4/S6：个人冠军只看上篇（1-4 轮）胜场；最强组合看下篇（5-7 轮）。
+  // 注意：S6 官方最强组合按星尘排名，由客户端计算（复用 S4 星尘口径）；
+  // 服务端此处镜像 S4 的“下篇胜场最多组合”写法，仅用于 Hall of Fame 展示。
+  const hasComboPhase = season.rule_id === RULE_ID.S4 || season.rule_id === RULE_ID.S6;
   let matches;
-  if (isS4) {
+  if (hasComboPhase) {
     const topRoundIds = (allRounds || []).filter(r => r.round_no <= 4).map(r => r.id);
     if (!topRoundIds.length) {
       matches = prepare('SELECT team_a, team_b, winner FROM matches WHERE season_id = ? AND status = ?')
@@ -99,7 +103,7 @@ function calcSeasonChampion(season, allRounds) {
   }
 
   let comboChampion = null;
-  if (isS4) {
+  if (hasComboPhase) {
     const comboRoundIds = (allRounds || []).filter(r => r.round_no >= 5).map(r => r.id);
     if (comboRoundIds.length) {
       const cph = comboRoundIds.map(() => '?').join(',');

@@ -1,4 +1,7 @@
 function noop() {}
+function noGameStartEffect() {
+  return null;
+}
 function unsupportedAction() {
   return { validationError: '当前赛季不支持该操作' };
 }
@@ -12,6 +15,7 @@ function normalizeRule(rule, fallbackRule) {
     validateGameEnd: source.validateGameEnd || fallbackRule.validateGameEnd,
     afterGameCompleted: source.afterGameCompleted || noop,
     onGameReverted: source.onGameReverted || noop,
+    onGameStarted: source.onGameStarted || noGameStartEffect,
     afterRoundRecalculated: source.afterRoundRecalculated || noop,
     recordSeasonAction: source.recordSeasonAction || unsupportedAction
   };

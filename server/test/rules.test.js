@@ -15,6 +15,8 @@ test('normalizeRule fills missing hooks with safe defaults', () => {
   assert.equal(typeof rule.onGameReverted, 'function');
   assert.equal(typeof rule.afterRoundRecalculated, 'function');
   assert.equal(typeof rule.recordSeasonAction, 'function');
+  assert.equal(typeof rule.onGameStarted, 'function');
+  assert.equal(rule.onGameStarted({}), null);
   assert.doesNotThrow(() => rule.afterGameCompleted({}, {}, {}));
   assert.doesNotThrow(() => rule.onGameReverted({}));
   assert.doesNotThrow(() => rule.afterRoundRecalculated({}));

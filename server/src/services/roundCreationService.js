@@ -81,9 +81,8 @@ function createRoundWithMatches({ id, season, roundNo, beforeRoundSetup, pairing
 }
 
 function createMatchesForRound({ season, roundId, roundNo, participants, pairings = null }) {
-  const isS4Combo = season.rule_id === RULE_ID.S4 && roundNo >= 5;
-  if (isS4Combo) {
-    const pairs = getS4ComboPairing(roundNo, participants);
+  if (isComboRound(season, roundNo)) {
+    const pairs = getComboPairing(season, roundNo, participants);
     if (!pairs) return;
     insertRoundMatch({
       id: `${roundId}-M1`,
@@ -132,23 +131,44 @@ function generatePairings(participants) {
 }
 
 function getS4ComboPairing(roundNo, participants) {
-  const sorted = [...participants].sort();
+  return getComboPairingFromOrder(roundNo, [...participants].sort());
+}
+
+function getComboPairingFromOrder(roundNo, ordered) {
   const combos = {
-    5: { teamA: [sorted[0], sorted[1]], teamB: [sorted[2], sorted[3]] },
-    6: { teamA: [sorted[0], sorted[2]], teamB: [sorted[1], sorted[3]] },
-    7: { teamA: [sorted[0], sorted[3]], teamB: [sorted[1], sorted[2]] }
+    5: { teamA: [ordered[0], ordered[1]], teamB: [ordered[2], ordered[3]] },
+    6: { teamA: [ordered[0], ordered[2]], teamB: [ordered[1], ordered[3]] },
+    7: { teamA: [ordered[0], ordered[3]], teamB: [ordered[1], ordered[2]] }
   };
   return combos[roundNo] || combos[5];
 }
 
-function isS4ComboRound(season, roundNo) {
-  return season.rule_id === RULE_ID.S4 && Number(roundNo) >= 5;
+// 组合种子顺序：S6 优先读 comeback_data.s6.seeds（上篇前 4，
+// 灵魂契合首次投掷时持久化），缺省退化为选手 ID 排序（同 S4 口径）。
+function getComboSeedOrder(season, participants) {
+  if (season.rule_id === RULE_ID.S6) {
+    const seeds = parseJson(season.comeback_data, {}).s6?.seeds;
+    if (seeds?.A && seeds?.B && seeds?.C && seeds?.D) {
+      return [seeds.A, seeds.B, seeds.C, seeds.D];
+    }
+  }
+  return [...participants].sort();
+}
+
+function getComboPairing(season, roundNo, participants) {
+  return getComboPairingFromOrder(roundNo, getComboSeedOrder(season, participants));
+}
+
+function isComboRound(season, roundNo) {
+  return (season.rule_id === RULE_ID.S4 || season.rule_id === RULE_ID.S6) && Number(roundNo) >= 5;
 }
 
 function validateRoundPairings(season, roundNo, pairings) {
   if (pairings === undefined || pairings === null) return null;
   if (!Array.isArray(pairings)) return '对阵必须是数组';
-  if (isS4ComboRound(season, roundNo)) return 'S4组合赛轮次不支持随机对阵';
+  if (isComboRound(season, roundNo)) {
+    return season.rule_id === RULE_ID.S6 ? 'S6组合赛轮次不支持随机对阵' : 'S4组合赛轮次不支持随机对阵';
+  }
   if (pairings.length !== 3) return '标准轮次必须包含 3 场对阵';
 
   const participants = parseJson(season.participants, []);

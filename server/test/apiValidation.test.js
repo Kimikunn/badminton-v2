@@ -155,6 +155,13 @@ test('POST /api/seasons validates rule IDs and participant references', async ()
     .expect(422);
   assertValidation(badRule, /规则ID/);
 
+  const s6Season = await request(app)
+    .post('/api/seasons')
+    .send({ name: 'S6 Season', ruleId: 's6' })
+    .expect(201);
+  assert.equal(s6Season.body.data.ruleId, 's6');
+  assert.equal(s6Season.body.data.totalRounds, 7);
+
   const missingPlayer = await request(app)
     .post('/api/seasons')
     .send({ name: 'Missing Player', participants: ['p1', 'p404'] })

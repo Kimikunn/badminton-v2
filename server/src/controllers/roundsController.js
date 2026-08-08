@@ -36,7 +36,7 @@ function create(req, res) {
   if (existing) return validationError(res, `第 ${roundNo} 轮已存在`);
 
   const setup = beforeRoundSetup || (roundDice !== undefined ? { roundDice } : undefined);
-  const setupError = validateBeforeRoundSetup(season, setup);
+  const setupError = validateBeforeRoundSetup(season, setup, roundNo);
   if (setupError) return validationError(res, setupError);
 
   const pairingsError = roundService.validateRoundPairings(season, roundNo, pairings);

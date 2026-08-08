@@ -179,3 +179,107 @@ test('creating an S4 combo round generates one PA7 match', async () => {
   assert.deepEqual(JSON.parse(matches[0].team_a), ['p1', 'p2']);
   assert.deepEqual(JSON.parse(matches[0].team_b), ['p3', 'p4']);
 });
+
+// S6 下篇：种子的完整灵魂契合数据（双方投掷 + 各选 1 奖，总点数 7 → 第二阶）
+function s6CompletedSoulBond(roundNo) {
+  const labelsByRound = { 5: ['AB', 'CD'], 6: ['AC', 'BD'], 7: ['AD', 'BC'] };
+  const seedOf = { A: 'p1', B: 'p2', C: 'p3', D: 'p4' };
+  const bond = {};
+  for (const label of labelsByRound[roundNo]) {
+    const [first, second] = label.split('').map(key => seedOf[key]);
+    bond[label] = {
+      rolls: [
+        { playerId: first, rollChoice: 1, dice: [3], used: 3 },
+        { playerId: second, rollChoice: 1, dice: [4], used: 4 }
+      ],
+      total: 7,
+      unlockTier: 2,
+      picks: [
+        { playerId: first, cardId: 'pause' },
+        { playerId: second, cardId: 'blade' }
+      ],
+      rerollsUsed: []
+    };
+  }
+  return { [String(roundNo)]: bond };
+}
+
+test('creating S6 combo rounds generates one PA7 match with fixed pairings', async () => {
+  insertSeason({ id: 'S-ROUND-S6', ruleId: 's6' });
+
+  const expected = {
+    5: { teamA: ['p1', 'p2'], teamB: ['p3', 'p4'] },
+    6: { teamA: ['p1', 'p3'], teamB: ['p2', 'p4'] },
+    7: { teamA: ['p1', 'p4'], teamB: ['p2', 'p3'] }
+  };
+
+  for (const roundNo of [5, 6, 7]) {
+    prepare('UPDATE seasons SET comeback_data = ? WHERE id = ?')
+      .run(JSON.stringify({ s6: { soulBond: s6CompletedSoulBond(roundNo) } }), 'S-ROUND-S6');
+
+    const res = await api
+      .post('/api/rounds')
+      .send({ id: `R-ROUND-S6-${roundNo}`, seasonId: 'S-ROUND-S6', roundNo })
+      .expect(201);
+
+    const matches = getDbMatchesByRound(`R-ROUND-S6-${roundNo}`);
+
+    assert.equal(res.body.data.matchCount, 1);
+    assert.equal(res.body.data.beforeRoundSetup.type, 'soul_bond');
+    assert.equal(matches[0].best_of, 7);
+    assert.equal(matches[0].match_format, 'pa7');
+    assert.deepEqual(JSON.parse(matches[0].team_a), expected[roundNo].teamA);
+    assert.deepEqual(JSON.parse(matches[0].team_b), expected[roundNo].teamB);
+
+    prepare("UPDATE matches SET status = 'completed', winner = 'a' WHERE round_id = ?").run(`R-ROUND-S6-${roundNo}`);
+    prepare("UPDATE rounds SET status = 'completed' WHERE id = ?").run(`R-ROUND-S6-${roundNo}`);
+  }
+});
+
+test('S6 combo round uses persisted seeds when present', async () => {
+  insertSeason({
+    id: 'S-ROUND-S6-SEEDS',
+    ruleId: 's6',
+    comebackData: {
+      s6: {
+        seeds: { A: 'p3', B: 'p1', C: 'p4', D: 'p2' },
+        soulBond: s6CompletedSoulBond(5)
+      }
+    }
+  });
+
+  const res = await api
+    .post('/api/rounds')
+    .send({ id: 'R-ROUND-S6-SEEDS-5', seasonId: 'S-ROUND-S6-SEEDS', roundNo: 5 })
+    .expect(201);
+
+  const matches = getDbMatchesByRound('R-ROUND-S6-SEEDS-5');
+  assert.equal(res.body.data.matchCount, 1);
+  assert.deepEqual(JSON.parse(matches[0].team_a), ['p3', 'p1']);
+  assert.deepEqual(JSON.parse(matches[0].team_b), ['p4', 'p2']);
+});
+
+test('creating an S6 combo round rejects random pairings', async () => {
+  insertSeason({
+    id: 'S-ROUND-S6-NORANDOM',
+    ruleId: 's6',
+    comebackData: { s6: { soulBond: s6CompletedSoulBond(5) } }
+  });
+
+  const blocked = await api
+    .post('/api/rounds')
+    .send({
+      id: 'R-ROUND-S6-NORANDOM-5',
+      seasonId: 'S-ROUND-S6-NORANDOM',
+      roundNo: 5,
+      pairings: [
+        { teamA: ['p1', 'p2'], teamB: ['p3', 'p4'] },
+        { teamA: ['p1', 'p3'], teamB: ['p2', 'p4'] },
+        { teamA: ['p1', 'p4'], teamB: ['p2', 'p3'] }
+      ]
+    })
+    .expect(422);
+
+  assert.match(blocked.body.error.message, /S6组合赛轮次不支持随机对阵/);
+  assert.equal(getDbMatchesByRound('R-ROUND-S6-NORANDOM-5').length, 0);
+});

@@ -1,6 +1,7 @@
 const { prepare } = require('../config/db');
 const { parseJson, stringifyJson } = require('../utils/json');
 const { RULE_ID } = require('../constants');
+const s6Rule = require('../rules/s6');
 
 function getS5RoundMode(dice) {
   return dice === 1 || dice === 6 ? 'mutation' : 'order';
@@ -11,19 +12,74 @@ function normalizeRoundDice(setup) {
   return Number(value);
 }
 
-function getBeforeRoundRequirement(season) {
-  if (season.rule_id !== RULE_ID.S5) return null;
-  return {
-    timing: 'beforeRound',
-    type: 'dice',
-    required: true,
-    label: '赛前投骰'
-  };
+const S6_TOP_ROUND_MAX = 4;
+
+function isS6TopRound(season, roundNo) {
+  return season.rule_id === RULE_ID.S6 && Number(roundNo) >= 1 && Number(roundNo) <= S6_TOP_ROUND_MAX;
 }
 
-function validateBeforeRoundSetup(season, setup) {
-  const requirement = getBeforeRoundRequirement(season);
+function isS6ComboRound(season, roundNo) {
+  return season.rule_id === RULE_ID.S6 && Number(roundNo) > S6_TOP_ROUND_MAX;
+}
+
+// 返回创建指定轮次前必须完成的赛前准备；无要求时返回 null。
+// S5：赛前投骰；S6 上篇（1-4 轮）：王选掷骰 + 王形态；
+// S6 下篇（5-7 轮）：两个组合的灵魂契合（掷骰 + 选奖）全部完成。
+function getBeforeRoundRequirement(season, roundNo) {
+  if (season.rule_id === RULE_ID.S5) {
+    return {
+      timing: 'beforeRound',
+      type: 'dice',
+      required: true,
+      label: '赛前投骰'
+    };
+  }
+  if (isS6TopRound(season, roundNo)) {
+    return {
+      timing: 'beforeRound',
+      type: 'king_selection',
+      required: true,
+      label: '王选'
+    };
+  }
+  if (isS6ComboRound(season, roundNo)) {
+    return {
+      timing: 'beforeRound',
+      type: 'soul_bond',
+      required: true,
+      label: '灵魂契合'
+    };
+  }
+  return null;
+}
+
+function getS6TopKing(season, roundNo) {
+  const data = parseJson(season.comeback_data, {});
+  return data.s6?.topKings?.[String(roundNo)] || null;
+}
+
+function getS6SoulBond(season, roundNo) {
+  const data = parseJson(season.comeback_data, {});
+  return data.s6?.soulBond?.[String(roundNo)] || null;
+}
+
+function validateBeforeRoundSetup(season, setup, roundNo) {
+  const requirement = getBeforeRoundRequirement(season, roundNo);
   if (!requirement) return null;
+
+  if (requirement.type === 'king_selection') {
+    const king = getS6TopKing(season, roundNo);
+    if (!king?.kingId) return '第六赛季创建上篇轮次前必须先完成王选掷骰';
+    if (!king.form) return '请先为本轮的王选择形态';
+    return null;
+  }
+
+  if (requirement.type === 'soul_bond') {
+    if (!s6Rule.isSoulBondCompleteForRound(season, roundNo)) {
+      return '第六赛季创建下篇轮次前必须先完成两个组合的灵魂契合';
+    }
+    return null;
+  }
 
   const dice = normalizeRoundDice(setup);
   if (!Number.isInteger(dice) || dice < 1 || dice > 6) {
@@ -34,8 +90,25 @@ function validateBeforeRoundSetup(season, setup) {
 }
 
 function applyBeforeRoundSetup(season, roundNo, setup) {
-  const requirement = getBeforeRoundRequirement(season);
+  const requirement = getBeforeRoundRequirement(season, roundNo);
   if (!requirement) return null;
+
+  // S6 王选/灵魂契合状态已通过赛季动作持久化，这里只做回显
+  if (requirement.type === 'king_selection') {
+    return {
+      timing: requirement.timing,
+      type: requirement.type,
+      topKing: getS6TopKing(season, roundNo)
+    };
+  }
+
+  if (requirement.type === 'soul_bond') {
+    return {
+      timing: requirement.timing,
+      type: requirement.type,
+      soulBond: getS6SoulBond(season, roundNo)
+    };
+  }
 
   const dice = normalizeRoundDice(setup);
   const data = parseJson(season.comeback_data, {});
