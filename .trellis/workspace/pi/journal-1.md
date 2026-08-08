@@ -78,3 +78,38 @@ docker-compose.yml 和 docker-compose.test.yml 同 service 名 app + 同默认 p
 
 - 真机验证 standalone 模式下 TabBar/Sheet 底部间距（e2e 无法模拟 display-mode: standalone，仅验证了管道）
 - R4 顶部 header 在真机安卓 standalone 下的状态栏遮挡情况待真机确认（本次保持 env() 原样）
+
+
+## Session 2: S6 赛季界面与规则系统（王选/灵魂契合/王之宝库）
+
+**Date**: 2026-08-08
+**Task**: S6 赛季界面与规则系统（王选/灵魂契合/王之宝库）
+**Branch**: `master`
+
+### Summary
+
+按三切片交付 S6：①赛季建档+上篇王选/形态（黛青开局分服务端自动化）②下篇组合 PA7+灵魂契合（掷骰/阶层/选奖/重铸/重投）③王之宝库 11 卡执行（暗选同亮/爆破 11 分/存储器带入/时空裂隙回溯/结算修正）。S4 星尘逻辑抽取共享模块 comboStardust.js；修复 PWA SW 缓存导致规则动作后 UI 回退（seasons 改 NetworkFirst + recordAction upsert）。服务端 103/103，e2e 5 规格×4 视口全绿。遗留：创建赛季后视图不切换（MatchHubView 本地 ref）、matches?roundId 不过滤、写密集 e2e 连跑触发限流。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e3e5e88` | (see git log) |
+| `34496b1` | (see git log) |
+| `e992451` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

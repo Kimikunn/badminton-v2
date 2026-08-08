@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 1
-- **Last Active**: 2026-07-17
+- **Total Sessions**: 2
+- **Last Active**: 2026-08-08
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~38 | Active |
+| `journal-1.md` | ~115 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 2 | 2026-08-08 | S6 赛季界面与规则系统（王选/灵魂契合/王之宝库） | `e3e5e88`, `34496b1`, `e992451` | `master` |
 | 1 | 2026-07-17 | Bootstrap spec 填充：backend+frontend 模式文档化 | - | `master` |
 <!-- @@@/auto:session-history -->
 
