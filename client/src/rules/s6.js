@@ -3,9 +3,13 @@
  *
  * 上篇规则：
  * - 标准 21 分制 BO3，排名复用 standard 大分/小分结算。
- * - 每轮赛前王选：4 名参赛者各投一次骰子（客户端随机，同分重投），最高点数
- *   唯一者为本轮"王"，经服务端动作持久化到
- *   comebackData.s6.topKings[roundNo] = { rolls, kingId, form }。
+ * - 王选只在第 1 轮开始前进行一次：4 名参赛者各投一次骰子，按点数从大到小
+ *   决定第 1-4 轮的王；同点者组内重投，仅决定组内顺序（不做全局重排）。
+ *   客户端裁决后提交最终王序，服务端持久化
+ *   comebackData.s6.kingOrder = [{ playerId, dice, rolls? }]（顺序即王序，
+ *   dice 为决定名次的点数，rolls 为含首投的完整投掷序列，仅重投过时携带）。
+ *   各轮形态经 s6_king_form 写入 topKings[roundNo] = { kingId, form }；
+ *   旧数据（prod 第 1 轮，无 kingOrder）回退 topKings[roundNo].kingId。
  * - 王在赛前选择形态：daiqing（黛青）/feihong（绯红）/yuebai（月白）。
  * - 黛青：王所在方每局自动 2:0 开局（服务端在局进入进行中时写入开局分）。
  * - 绯红：局内人工记分，记分页按 kingForm 展示规则提示。
@@ -85,7 +89,7 @@ export const KING_FORMS = {
 
 // 上篇规则文案（规则 Sheet 展示用，与组件展示文字保持一致）
 export const KING_RULES = [
-  { id: 'roll', title: '王选', text: '每轮比赛前 4 名参赛者各投一次骰子，同分则并列者重投，最高点数唯一者为本轮的"王"。' },
+  { id: 'roll', title: '王选', text: '上篇开始前进行一次王选：4 名参赛者各投一次骰子，按点数从大到小依次决定第 1-4 轮的"王"；同点者组内重投，仅决定并列者之间的顺序。' },
   { id: 'privilege', title: '王权', text: '每轮第四名要给"王"提供一瓶运动饮料，若"王"为第四名则由第三名提供。' },
   { id: 'triumph', title: '凯旋', text: '上篇最终前两名在组合赛中各获得 1 次重新投掷骰子的机会。' }
 ]
@@ -202,10 +206,21 @@ function getS6Data(context = {}) {
   return context?.season?.comebackData?.s6 || {}
 }
 
+// 一次性王序（第 1-4 轮的王依次为王序第 1-4 位）；未设置时返回 null
+export function getKingOrder(context = {}) {
+  const order = getS6Data(context)?.kingOrder
+  return Array.isArray(order) && order.length === 4 ? order : null
+}
+
+// 某轮的王：优先取自王序 kingOrder[roundNo-1]，旧数据（prod 第 1 轮，
+// 无 kingOrder）回退 topKings[roundNo].kingId；形态始终读 topKings[roundNo].form
 function getTopKing(roundNo, context = {}) {
   if (!isTopRound(roundNo)) return null
-  const king = getS6Data(context)?.topKings?.[String(roundNo)]
-  return king && king.kingId ? king : null
+  const s6 = getS6Data(context)
+  const legacy = s6?.topKings?.[String(roundNo)]
+  const kingId = s6?.kingOrder?.[Number(roundNo) - 1]?.playerId || legacy?.kingId
+  if (!kingId) return null
+  return { kingId, form: legacy?.form || null, rolls: legacy?.rolls }
 }
 
 // 灵魂契合种子口径（与服务端 deriveSeeds 一致）：优先读已持久化的
@@ -466,6 +481,10 @@ export default {
 
   getTopKing(roundNo, context) {
     return getTopKing(roundNo, context)
+  },
+
+  getKingOrder(context) {
+    return getKingOrder(context)
   },
 
   getComboLabelsByRound(roundNo) {

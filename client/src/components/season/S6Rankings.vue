@@ -1,7 +1,7 @@
 <script setup>
 /**
  * S6Rankings — S6 积分榜
- * 上篇因果链：① 王选（每轮骰子 → 王与形态）→ ② 形态说明 → 排名
+ * 上篇因果链：① 王选（一次性投掷定第 1-4 轮王序 → 每轮形态；旧数据回退逐轮展示）→ ② 形态说明 → 排名
  * 下篇因果链（切片二/三）：阶段进度 → 上篇优胜 → ① 灵魂契合（掷骰/总点数/解锁阶层）
  *   → ② 王之宝库（库存剩余 + 卡片激活状态）→ ③ 组合星尘榜（结算卡修正后的星尘
  *   + VS 对阵 + 排名 + 最强组合）
@@ -50,6 +50,22 @@ const comboRounds = computed(() =>
     .sort((a, b) => Number(a.roundNo) - Number(b.roundNo))
 )
 const started = computed(() => topRounds.value.length > 0)
+
+// 一次性王序（[{ playerId, dice, rolls? }]，第 i 位即第 i+1 轮的王）；
+// 旧数据（prod 第 1 轮，无 kingOrder）为 null，王选面板回退逐轮展示
+const kingOrder = computed(() => {
+  const order = s6Data.value.kingOrder
+  return Array.isArray(order) && order.length === 4 ? order : null
+})
+
+function kingFormOf(roundNo) {
+  return topKings.value[String(roundNo)]?.form || null
+}
+
+// 王序条目展示：首投骰面；重投过的由模板补注重投序列
+function kingOrderDice(entry) {
+  return entry.rolls?.[0] || entry.dice
+}
 
 const kingRows = computed(() =>
   topRounds.value.map(round => {
@@ -192,13 +208,33 @@ const sheetRules = computed(() => {
 
 <template>
   <div class="flex flex-col gap-4">
-    <!-- ① 王选 —— 每轮开始前的掷骰与王 -->
-    <Card v-if="started" padding="md">
+    <!-- ① 王选 —— 一次性投掷定第 1-4 轮王序 + 每轮形态 -->
+    <Card v-if="started || kingOrder" padding="md">
       <div class="flex items-center gap-2 mb-3">
         <Dice5 :size="16" class="text-fg-secondary" />
         <h3 class="text-xs font-semibold text-fg-secondary uppercase tracking-wide">王选</h3>
       </div>
-      <div class="flex flex-col gap-2">
+      <!-- 新口径：一次投掷的王序，第 i 位即第 i+1 轮的王 -->
+      <div v-if="kingOrder" class="flex flex-col gap-2">
+        <div
+          v-for="(entry, i) in kingOrder" :key="entry.playerId"
+          class="flex items-center gap-2 flex-wrap p-3 rounded-lg bg-canvas border border-line-light cursor-pointer transition-transform duration-fast active:scale-95"
+          @click="ruleSheet = 'king'"
+        >
+          <span class="text-sm font-bold text-fg">{{ CIRCLED[i] }}</span>
+          <span class="text-xs font-semibold font-mono text-fg-muted">R{{ i + 1 }} 王</span>
+          <Crown :size="12" class="text-accent shrink-0" />
+          <span class="text-sm font-semibold text-fg">{{ playerName(entry.playerId) }}</span>
+          <span class="text-lg leading-none text-fg">{{ DICE[kingOrderDice(entry)] || kingOrderDice(entry) }}</span>
+          <span v-if="entry.rolls?.length > 1" class="text-2xs text-fg-muted">
+            重投 {{ entry.rolls.slice(1).map(v => DICE[v] || v).join(' ') }}
+          </span>
+          <Badge v-if="kingFormOf(i + 1)" variant="purple" size="sm">{{ KING_FORMS[kingFormOf(i + 1)]?.name }}</Badge>
+          <Badge v-else variant="muted" size="sm">待选形态</Badge>
+        </div>
+      </div>
+      <!-- 旧口径：逐轮王选（无王序的历史数据，如 prod 第 1 轮） -->
+      <div v-else class="flex flex-col gap-2">
         <div
           v-for="row in kingRows" :key="row.roundNo"
           class="p-3 rounded-lg bg-canvas border border-line-light cursor-pointer transition-transform duration-fast active:scale-95"

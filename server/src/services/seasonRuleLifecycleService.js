@@ -23,7 +23,7 @@ function isS6ComboRound(season, roundNo) {
 }
 
 // 返回创建指定轮次前必须完成的赛前准备；无要求时返回 null。
-// S5：赛前投骰；S6 上篇（1-4 轮）：王选掷骰 + 王形态；
+// S5：赛前投骰；S6 上篇（1-4 轮）：一次性王选王序 + 该轮王形态；
 // S6 下篇（5-7 轮）：两个组合的灵魂契合（掷骰 + 选奖）全部完成。
 function getBeforeRoundRequirement(season, roundNo) {
   if (season.rule_id === RULE_ID.S5) {
@@ -55,7 +55,13 @@ function getBeforeRoundRequirement(season, roundNo) {
 
 function getS6TopKing(season, roundNo) {
   const data = parseJson(season.comeback_data, {});
-  return data.s6?.topKings?.[String(roundNo)] || null;
+  const s6 = data.s6 || {};
+  const topKing = s6.topKings?.[String(roundNo)] || null;
+  // 各轮王取自一次性王序（kingOrder[roundNo-1]）；旧数据（prod 第 1 轮，
+  // 王选调整前写入）无王序时回退 topKings[roundNo].kingId
+  const kingId = s6.kingOrder?.[Number(roundNo) - 1]?.playerId || topKing?.kingId;
+  if (!kingId) return null;
+  return { ...(topKing || {}), kingId, form: topKing?.form || null };
 }
 
 function getS6SoulBond(season, roundNo) {

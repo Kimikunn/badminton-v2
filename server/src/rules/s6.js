@@ -4,10 +4,16 @@
  * 上篇规则：
  * - 标准 21 分制 BO3，局终校验与 standard 一致（含黛青 2:0 开局：终局校验
  *   只看最终比分是否满足目标分/领先 2 分/封顶，与开局分无关，故无需特判）。
- * - 每轮赛前王选：4 名参赛者各投一次骰子（客户端随机，同分由客户端重投后
- *   再提交），最高点数唯一者为本轮"王"，经 s6_king_roll 持久化到
- *   comeback_data.s6.topKings[roundNo] = { rolls, kingId, form }。
- * - 王在赛前经 s6_king_form 选择形态：daiqing（黛青）/feihong（绯红）/yuebai（月白）。
+ * - 王选一次性完成（上篇开始前、第 1 轮创建前仅允许提交一次）：4 名参赛者
+ *   各投一次骰子，按点数从大到小排序决定第 1-4 轮的王；同分者组内重投，
+ *   只决定组内顺序、不做全局重排，由客户端裁决后提交最终顺序。经
+ *   s6_king_roll 持久化 comeback_data.s6.kingOrder = [{ playerId, dice, rolls? }]
+ *   （数组顺序即王序，服务端校验为参赛者排列后按提交顺序存储，不按骰子
+ *   重排），并同步写入 topKings['1'] = { rolls, kingId, form: null } 兼容
+ *   旧读取方。各轮王 = kingOrder[roundNo-1].playerId；旧数据（prod 第 1 轮，
+ *   无 kingOrder）回退 topKings[roundNo].kingId。
+ * - 每轮赛前该轮的王经 s6_king_form 选择形态：daiqing（黛青）/feihong（绯红）/
+ *   yuebai（月白），写入 topKings[roundNo] = { kingId, form }。
  * - 黛青：王所在方每局自动 2:0 开局，在局从 pending → in_progress 时由
  *   matchLifecycleService 调用 onGameStarted 应用一次。
  * - 绯红：仅通过 getGameConfig 的 kingForm 暴露给客户端做提示，局内人工记分。
@@ -127,8 +133,13 @@ function getS6Data(ctx) {
 function getTopKing(ctx) {
   const roundNo = Number(ctx.round?.round_no);
   if (!Number.isInteger(roundNo) || roundNo < 1 || roundNo > TOP_ROUND_MAX) return null;
-  const king = getS6Data(ctx).topKings?.[String(roundNo)];
-  return king && king.kingId ? king : null;
+  const s6 = getS6Data(ctx);
+  const legacy = s6.topKings?.[String(roundNo)];
+  // 各轮王取自一次性王序（kingOrder[roundNo-1]）；旧数据（prod 第 1 轮，
+  // 王选调整前写入）无王序时回退 topKings[roundNo].kingId
+  const kingId = s6.kingOrder?.[roundNo - 1]?.playerId || legacy?.kingId;
+  if (!kingId) return null;
+  return { ...(legacy || {}), kingId, form: legacy?.form || null };
 }
 
 // 月白：王参与的场次的局按抵抗局处理（简化口径见文件头注释）
@@ -300,41 +311,38 @@ function validateTopRoundNo(ctx, roundNo) {
   return null;
 }
 
+// s6_king_roll：一次性王选。客户端投掷并裁决同分组内顺序后提交最终王序
+// （order[0] 为第 1 轮的王，依此类推），服务端只校验为参赛者排列且骰子
+// 为 1-6 整数，按提交顺序持久化，不按骰子重排。
 function recordKingRoll(ctx, input = {}) {
-  const roundNo = Number(input.roundNo);
-  const roundError = validateTopRoundNo(ctx, roundNo);
-  if (roundError) return { validationError: roundError };
+  if (findRound(ctx.season?.id, 1)) return { validationError: '该轮已创建，无法再进行王选' };
 
   const participants = parseJson(ctx.season?.participants, []);
   if (participants.length !== 4) return { validationError: '第六赛季王选需要 4 名参赛选手' };
 
   const data = ctx.data || {};
   const s6 = normalizeS6State(data.s6 || {});
-  if (s6.topKings[String(roundNo)]) return { validationError: '该轮已完成王选，不能重复提交' };
+  if (s6.kingOrder) return { validationError: '王选已完成，不能重复提交' };
 
-  const rolls = Array.isArray(input.rolls) ? input.rolls : null;
-  if (!rolls || rolls.length !== participants.length) {
-    return { validationError: '王选掷骰必须包含全部 4 名参赛选手' };
+  const order = Array.isArray(input.order) ? input.order : null;
+  if (!order || order.length !== participants.length) {
+    return { validationError: '王选顺序必须包含全部 4 名参赛选手' };
   }
 
   const seen = new Set();
-  const normalized = [];
-  for (const roll of rolls) {
-    const playerId = String(roll?.playerId || '').trim();
-    const dice = Number(roll?.dice);
-    if (!participants.includes(playerId)) return { validationError: '王选掷骰包含非本赛季选手' };
-    if (seen.has(playerId)) return { validationError: '王选掷骰中同一选手只能提交一次' };
+  const kingOrder = [];
+  for (const entry of order) {
+    const playerId = String(entry?.playerId || '').trim();
+    const dice = Number(entry?.dice);
+    if (!participants.includes(playerId)) return { validationError: '王选顺序包含非本赛季选手' };
+    if (seen.has(playerId)) return { validationError: '王选顺序中同一选手只能出现一次' };
     if (!Number.isInteger(dice) || dice < 1 || dice > 6) {
       return { validationError: '骰子点数必须是 1-6 的整数' };
     }
     seen.add(playerId);
-    normalized.push({ playerId, dice });
-  }
-
-  const maxDice = Math.max(...normalized.map(roll => roll.dice));
-  const winners = normalized.filter(roll => roll.dice === maxDice);
-  if (winners.length !== 1) {
-    return { validationError: '最高点数存在并列，请重投后再提交' };
+    const item = { playerId, dice };
+    if (Array.isArray(entry?.rolls)) item.rolls = entry.rolls;
+    kingOrder.push(item);
   }
 
   return {
@@ -342,13 +350,11 @@ function recordKingRoll(ctx, input = {}) {
       ...data,
       s6: {
         ...s6,
+        kingOrder,
+        // 兼容旧读取方：第 1 轮的 topKings 同步写入（form 由 s6_king_form 补充）
         topKings: {
           ...s6.topKings,
-          [String(roundNo)]: {
-            rolls: normalized,
-            kingId: winners[0].playerId,
-            form: null
-          }
+          '1': { rolls: kingOrder, kingId: kingOrder[0].playerId, form: null }
         }
       }
     }
@@ -365,8 +371,9 @@ function recordKingForm(ctx, input = {}) {
 
   const data = ctx.data || {};
   const s6 = normalizeS6State(data.s6 || {});
-  const king = s6.topKings[String(roundNo)];
-  if (!king) return { validationError: '请先完成该轮的王选掷骰' };
+  // 各轮王取自王序（kingOrder[roundNo-1]）；旧数据无王序时回退 topKings[roundNo].kingId
+  const kingId = s6.kingOrder?.[roundNo - 1]?.playerId || s6.topKings[String(roundNo)]?.kingId;
+  if (!kingId) return { validationError: '请先完成王选掷骰' };
 
   return {
     nextData: {
@@ -375,7 +382,7 @@ function recordKingForm(ctx, input = {}) {
         ...s6,
         topKings: {
           ...s6.topKings,
-          [String(roundNo)]: { ...king, form }
+          [String(roundNo)]: { ...(s6.topKings[String(roundNo)] || {}), kingId, form }
         }
       }
     }

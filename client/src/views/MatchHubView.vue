@@ -204,9 +204,13 @@ function rollRoundDice() {
 }
 
 // === S6 王选（上篇 1-4 轮，创建轮次前强制） ===
+// 王选只在第 1 轮创建前进行一次：4 名参赛者各投一次骰子，按点数从大到小定
+// 第 1-4 轮的王；同点者组内重投，仅决定组内顺序（不做全局重排）。第 2-4 轮
+// 创建前只弹形态选择（该轮的王取自王序）。
 const KING_DICE_FACES = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅']
 const showKingSelect = ref(false)
-const kingRolls = ref({})
+const showKingForm = ref(false)
+const kingRolls = ref({}) // { [playerId]: number[] } 完整投掷序列（首投 + 组内重投）
 const kingForm = ref('')
 const kingSubmitting = ref(false)
 
@@ -214,51 +218,135 @@ const requiresKingSelection = computed(() =>
   beforeRoundRequirement.value?.required &&
   beforeRoundRequirement.value?.type === 'king_selection'
 )
-const kingRollEntries = computed(() =>
-  (currentSeason.value?.participants || []).map(pid => ({ playerId: pid, dice: kingRolls.value[pid] || null }))
+// 已持久化的一次性王序（[{ playerId, dice, rolls? }]，顺序即第 1-4 轮的王）
+const s6KingOrder = computed(() => {
+  const order = currentSeason.value?.comebackData?.s6?.kingOrder
+  return Array.isArray(order) && order.length === 4 ? order : null
+})
+const kingEntries = computed(() =>
+  (currentSeason.value?.participants || []).map(pid => ({ playerId: pid, rolls: kingRolls.value[pid] || [] }))
 )
 const allKingRolled = computed(() =>
-  kingRollEntries.value.length === 4 && kingRollEntries.value.every(e => e.dice)
+  kingEntries.value.length === 4 && kingEntries.value.every(e => e.rolls.length > 0)
 )
-const tiedKingIds = computed(() => {
-  if (!allKingRolled.value) return []
-  const max = Math.max(...kingRollEntries.value.map(e => e.dice))
-  const winners = kingRollEntries.value.filter(e => e.dice === max)
-  return winners.length > 1 ? winners.map(e => e.playerId) : []
+
+// 投掷序列比较：逐次比较（首投 → 重投），仅当前面全部同点时才看下一次
+// —— 同分组内重投只决定组内顺序，不做全局重排
+function compareKingRolls(a, b) {
+  const len = Math.max(a.length, b.length)
+  for (let i = 0; i < len; i++) {
+    const diff = (b[i] || 0) - (a[i] || 0)
+    if (diff) return diff
+  }
+  return 0
+}
+
+// 仍需投掷的选手：首投未完成者；或某个同点组内尚未完成本轮重投的成员
+const pendingKingIds = computed(() => {
+  const entries = kingEntries.value
+  if (!entries.length) return []
+  const unrolled = entries.filter(e => e.rolls.length === 0)
+  if (unrolled.length) return unrolled.map(e => e.playerId)
+
+  const groupBy = (list, depth) => {
+    const map = new Map()
+    for (const e of list) {
+      const key = e.rolls[depth]
+      if (!map.has(key)) map.set(key, [])
+      map.get(key).push(e)
+    }
+    return [...map.values()]
+  }
+
+  const pending = []
+  let groups = groupBy(entries, 0)
+  let depth = 1
+  while (groups.length) {
+    const next = []
+    for (const group of groups) {
+      if (group.length < 2) continue
+      const waiting = group.filter(e => e.rolls.length === depth)
+      if (waiting.length) {
+        pending.push(...waiting.map(e => e.playerId))
+        continue
+      }
+      next.push(...groupBy(group, depth))
+    }
+    groups = next
+    depth++
+  }
+  return pending
 })
-const electedKingId = computed(() => {
-  if (!allKingRolled.value || tiedKingIds.value.length) return null
-  const max = Math.max(...kingRollEntries.value.map(e => e.dice))
-  return kingRollEntries.value.find(e => e.dice === max)?.playerId || null
+
+// 同点提示：首投完成后仍有待重投者时，列出并列者名单
+const kingTieHint = computed(() => {
+  if (!allKingRolled.value || !pendingKingIds.value.length) return ''
+  return pendingKingIds.value.map(pid => playersStore.getPlayerName(pid)).join('、')
+})
+
+const kingOrderReady = computed(() => allKingRolled.value && !pendingKingIds.value.length)
+// 最终王序：按投掷序列逐次降序；kingOrderEntries[i] 即第 i+1 轮的王
+const kingOrderEntries = computed(() =>
+  kingOrderReady.value ? [...kingEntries.value].sort((a, b) => compareKingRolls(a.rolls, b.rolls)) : []
+)
+
+// 第 2-4 轮形态 Sheet 的王：取自王序，旧数据（prod 第 1 轮）回退 topKings
+const formRoundKingId = computed(() => {
+  const roundNo = nextRoundNo.value
+  const topKings = currentSeason.value?.comebackData?.s6?.topKings || {}
+  return s6KingOrder.value?.[roundNo - 1]?.playerId || topKings[String(roundNo)]?.kingId || null
 })
 
 function rollKingDice(playerId) {
-  if (kingRolls.value[playerId]) return
-  kingRolls.value = { ...kingRolls.value, [playerId]: Math.floor(Math.random() * 6) + 1 }
+  if (!pendingKingIds.value.includes(playerId)) return
+  const rolls = kingRolls.value[playerId] || []
+  kingRolls.value = { ...kingRolls.value, [playerId]: [...rolls, Math.floor(Math.random() * 6) + 1] }
 }
 
-function rerollTiedKings() {
-  const next = { ...kingRolls.value }
-  tiedKingIds.value.forEach(pid => { delete next[pid] })
-  kingRolls.value = next
+function kingDiceFace(value) {
+  return KING_DICE_FACES[value - 1] || value
 }
 
+// 一次性王选提交：王序（s6_king_roll）→ 第 1 轮形态（s6_king_form）→ 创建轮次
 async function submitKingSelection() {
-  if (!electedKingId.value) { toast.show('请先完成王选掷骰', 'warning'); return }
+  if (!kingOrderReady.value) { toast.show('请先完成王选掷骰', 'warning'); return }
   if (!kingForm.value) { toast.show('请为王选择形态', 'warning'); return }
   kingSubmitting.value = true
   try {
     const roundNo = nextRoundNo.value
-    const rolls = kingRollEntries.value.map(e => ({ playerId: e.playerId, dice: e.dice }))
-    const rollRes = await seasonsStore.recordAction(currentSeason.value.id, 's6_king_roll', { roundNo, rolls })
+    const order = kingOrderEntries.value.map(e => ({
+      playerId: e.playerId,
+      dice: e.rolls[e.rolls.length - 1],
+      ...(e.rolls.length > 1 ? { rolls: e.rolls } : {})
+    }))
+    const rollRes = await seasonsStore.recordAction(currentSeason.value.id, 's6_king_roll', { order })
     if (!rollRes?.success) throw new Error(rollRes?.error || '王选掷骰提交失败')
     const formRes = await seasonsStore.recordAction(currentSeason.value.id, 's6_king_form', { roundNo, form: kingForm.value })
     if (!formRes?.success) throw new Error(formRes?.error || '王形态提交失败')
-    toast.show(`第 ${roundNo} 轮王选完成`, 'success')
+    toast.show('王选完成，第 1-4 轮王序已定', 'success')
     showKingSelect.value = false
     openCreateRoundSheet()
   } catch (e) {
     toast.show(e.message || '王选提交失败', 'error')
+  } finally {
+    kingSubmitting.value = false
+  }
+}
+
+// 第 2-4 轮：王序已定，仅提交本轮王的形态
+async function submitKingForm() {
+  if (!formRoundKingId.value) { toast.show('本轮的王未确定，请先完成王选', 'warning'); return }
+  if (!kingForm.value) { toast.show('请为王选择形态', 'warning'); return }
+  kingSubmitting.value = true
+  try {
+    const roundNo = nextRoundNo.value
+    const formRes = await seasonsStore.recordAction(currentSeason.value.id, 's6_king_form', { roundNo, form: kingForm.value })
+    if (!formRes?.success) throw new Error(formRes?.error || '王形态提交失败')
+    toast.show(`第 ${roundNo} 轮王形态已确认`, 'success')
+    showKingForm.value = false
+    openCreateRoundSheet()
+  } catch (e) {
+    toast.show(e.message || '王形态提交失败', 'error')
   } finally {
     kingSubmitting.value = false
   }
@@ -526,9 +614,15 @@ function generatePreview() {
 
 function openCreate() {
   if (requiresKingSelection.value) {
-    kingRolls.value = {}
+    // 王选只做一次（第 1 轮创建前）；王序已定后，第 2-4 轮创建前只选形态
+    if (!s6KingOrder.value && nextRoundNo.value === 1) {
+      kingRolls.value = {}
+      kingForm.value = ''
+      showKingSelect.value = true
+      return
+    }
     kingForm.value = ''
-    showKingSelect.value = true
+    showKingForm.value = true
     return
   }
   if (requiresSoulBond.value) {
@@ -771,41 +865,48 @@ onMounted(() => {
         </div>
       </Sheet>
 
-      <!-- S6 王选 sheet（上篇 1-4 轮创建前强制） -->
-      <Sheet :show="showKingSelect" :title="`第 ${nextRoundNo} 轮 · 王选`" @close="showKingSelect=false">
+      <!-- S6 王选 sheet（一次性，仅第 1 轮创建前）：定第 1-4 轮王序 + 第 1 轮形态 -->
+      <Sheet :show="showKingSelect" title="王选 · 定第 1-4 轮王序" @close="showKingSelect=false">
         <div class="flex flex-col gap-4">
-          <p class="text-sm text-fg-secondary">4 名参赛者依次投骰，最高点数唯一者成为本轮的王，再由王选择形态。</p>
+          <p class="text-sm text-fg-secondary">4 名参赛者各投一次骰子，按点数从大到小依次决定第 1-4 轮的王；同点者组内重投，仅决定并列者之间的顺序。</p>
           <div class="flex flex-col gap-2">
             <div
-              v-for="entry in kingRollEntries" :key="entry.playerId"
-              class="flex items-center gap-3 p-3 rounded-lg border"
-              :class="electedKingId === entry.playerId ? 'border-accent bg-accent-subtle' : 'border-line bg-canvas'"
+              v-for="entry in kingEntries" :key="entry.playerId"
+              class="flex items-center gap-3 p-3 rounded-lg border border-line bg-canvas"
             >
               <Avatar :name="playersStore.getPlayerName(entry.playerId)" size="sm" />
               <span class="flex-1 min-w-0 text-sm font-medium text-fg truncate">{{ playersStore.getPlayerName(entry.playerId) }}</span>
-              <Crown v-if="electedKingId === entry.playerId" :size="16" class="text-accent shrink-0" />
-              <span v-if="entry.dice" class="text-2xl leading-none text-fg">{{ KING_DICE_FACES[entry.dice - 1] }}</span>
+              <span v-if="entry.rolls.length" class="flex items-center gap-1.5 shrink-0">
+                <span class="text-2xl leading-none text-fg">{{ kingDiceFace(entry.rolls[0]) }}</span>
+                <span v-if="entry.rolls.length > 1" class="text-xs text-fg-muted">
+                  重投 {{ entry.rolls.slice(1).map(kingDiceFace).join(' ') }}
+                </span>
+              </span>
               <button
-                v-else
-                class="px-3 py-1.5 rounded-lg border border-accent bg-accent-subtle text-accent text-sm font-medium cursor-pointer transition-all duration-fast active:scale-95"
+                v-if="pendingKingIds.includes(entry.playerId)"
+                class="px-3 py-1.5 rounded-lg border border-accent bg-accent-subtle text-accent text-sm font-medium cursor-pointer transition-all duration-fast active:scale-95 shrink-0"
                 @click="rollKingDice(entry.playerId)"
-              >投骰</button>
+              >{{ entry.rolls.length ? '重投' : '投骰' }}</button>
             </div>
           </div>
-          <div v-if="tiedKingIds.length" class="flex items-center justify-between gap-3 p-3 rounded-lg bg-warning-subtle border border-warning/30">
-            <p class="text-xs text-warning">最高点数并列，请重投并列者</p>
-            <button
-              class="px-3 py-1.5 rounded-lg border border-warning text-warning text-xs font-medium cursor-pointer transition-all duration-fast active:scale-95 shrink-0"
-              @click="rerollTiedKings"
-            >重投并列者</button>
+          <div v-if="kingTieHint" class="p-3 rounded-lg bg-warning-subtle border border-warning/30">
+            <p class="text-xs text-warning">同点并列：{{ kingTieHint }} 组内重投，仅决定并列者之间的顺序</p>
           </div>
-          <template v-if="electedKingId">
-            <div class="flex items-center gap-2 p-3 rounded-lg bg-accent-subtle border border-accent/30">
-              <Crown :size="16" class="text-accent shrink-0" />
-              <span class="text-sm font-semibold text-fg">本轮的王：{{ playersStore.getPlayerName(electedKingId) }}</span>
+          <template v-if="kingOrderReady">
+            <div class="flex flex-col gap-1.5 p-3 rounded-lg bg-accent-subtle border border-accent/30">
+              <div
+                v-for="(entry, i) in kingOrderEntries" :key="entry.playerId"
+                class="flex items-center gap-2 text-sm"
+              >
+                <Crown :size="14" class="text-accent shrink-0" />
+                <span class="font-semibold text-fg">第 {{ i + 1 }} 轮的王：{{ playersStore.getPlayerName(entry.playerId) }}</span>
+                <span class="text-xs text-fg-muted font-mono">
+                  {{ entry.rolls[0] }}<template v-if="entry.rolls.length > 1">（重投 {{ entry.rolls.slice(1).join(' ') }}）</template>
+                </span>
+              </div>
             </div>
             <div class="flex flex-col gap-2">
-              <h4 class="text-xs font-semibold uppercase tracking-wider text-fg-secondary">王选择形态</h4>
+              <h4 class="text-xs font-semibold uppercase tracking-wider text-fg-secondary">第 1 轮的王选择形态</h4>
               <button
                 v-for="form in Object.values(KING_FORMS)" :key="form.id"
                 class="flex flex-col gap-1 p-3 rounded-lg border text-left cursor-pointer transition-all duration-fast active:scale-95"
@@ -819,7 +920,37 @@ onMounted(() => {
           </template>
           <div class="flex gap-3 [&>*]:flex-1">
             <Button variant="secondary" size="md" @click="showKingSelect=false">取消</Button>
-            <Button variant="primary" size="md" :loading="kingSubmitting" :disabled="!electedKingId || !kingForm" @click="submitKingSelection">确认王选</Button>
+            <Button variant="primary" size="md" :loading="kingSubmitting" :disabled="!kingOrderReady || !kingForm" @click="submitKingSelection">确认王选</Button>
+          </div>
+        </div>
+      </Sheet>
+
+      <!-- S6 王形态 sheet（第 2-4 轮创建前，王序已定仅选形态） -->
+      <Sheet :show="showKingForm" :title="`第 ${nextRoundNo} 轮 · 王形态`" @close="showKingForm=false">
+        <div class="flex flex-col gap-4">
+          <p class="text-sm text-fg-secondary">王序已定，由本轮的王选择形态后即可创建轮次。</p>
+          <div v-if="formRoundKingId" class="flex items-center gap-2 p-3 rounded-lg bg-accent-subtle border border-accent/30">
+            <Crown :size="16" class="text-accent shrink-0" />
+            <span class="text-sm font-semibold text-fg">本轮的王：{{ playersStore.getPlayerName(formRoundKingId) }}</span>
+          </div>
+          <div v-else class="p-3 rounded-lg bg-warning-subtle border border-warning/30">
+            <p class="text-xs text-warning">本轮的王未确定（王序未设置），请先完成王选</p>
+          </div>
+          <div class="flex flex-col gap-2">
+            <h4 class="text-xs font-semibold uppercase tracking-wider text-fg-secondary">王选择形态</h4>
+            <button
+              v-for="form in Object.values(KING_FORMS)" :key="form.id"
+              class="flex flex-col gap-1 p-3 rounded-lg border text-left cursor-pointer transition-all duration-fast active:scale-95"
+              :class="kingForm === form.id ? 'border-accent bg-accent-subtle' : 'border-line bg-canvas'"
+              @click="kingForm = form.id"
+            >
+              <span class="text-sm font-semibold" :class="kingForm === form.id ? 'text-accent' : 'text-fg'">{{ form.name }}</span>
+              <span class="text-xs text-fg-muted">{{ form.effect }}</span>
+            </button>
+          </div>
+          <div class="flex gap-3 [&>*]:flex-1">
+            <Button variant="secondary" size="md" @click="showKingForm=false">取消</Button>
+            <Button variant="primary" size="md" :loading="kingSubmitting" :disabled="!formRoundKingId || !kingForm" @click="submitKingForm">确认形态</Button>
           </div>
         </div>
       </Sheet>

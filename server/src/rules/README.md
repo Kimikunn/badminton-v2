@@ -94,7 +94,7 @@ module.exports = {
 - S1 使用 `standard`。
 - S2/S3/S4 当前后端仍映射到 `standard`，前端规则面板独立展示。
 - S5 使用 `s5`，支持 15 分异变局、21 分抵抗局、异变债务、抵抗和贯穿事件。
-- S6 使用 `s6`，支持上篇王选/王形态（黛青 2:0 开局、绯红提示、月白抵抗局——复用 `rules/resistance.js` 的共享校验，显式胜方、允许分低者获胜）与下篇灵魂契合/王之宝库（`s6_soul_roll`/`s6_soul_pick`/`s6_reforge`，赛前强制灵魂契合；宝库卡 `s6_card_activate`/`s6_card_use`/`s6_storage_record`/`s6_rift`，暗选按选手逐人提交、4 人齐后同时亮出，爆破 11 分制、天选/存储器开局分、时空裂隙回溯）。
+- S6 使用 `s6`，支持上篇一次性王选（`s6_king_roll` 提交最终王序 `kingOrder`，各轮王 = `kingOrder[roundNo-1]`，旧数据回退 `topKings[roundNo].kingId`）与按轮王形态（`s6_king_form`；黛青 2:0 开局、绯红提示、月白抵抗局——复用 `rules/resistance.js` 的共享校验，显式胜方、允许分低者获胜）与下篇灵魂契合/王之宝库（`s6_soul_roll`/`s6_soul_pick`/`s6_reforge`，赛前强制灵魂契合；宝库卡 `s6_card_activate`/`s6_card_use`/`s6_storage_record`/`s6_rift`，暗选按选手逐人提交、4 人齐后同时亮出，爆破 11 分制、天选/存储器开局分、时空裂隙回溯）。
 - 新规则应先在 `constants.RULE_ID` 增加枚举，再在 `rules/index.js` 注册。
 
 `rules/adapter.js` 会为缺失的可选 hook 填充 no-op，并为缺失的核心 hook 回退到标准规则，避免插件不完整导致运行时异常。
