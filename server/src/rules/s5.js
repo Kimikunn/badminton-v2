@@ -1,4 +1,5 @@
 const standardRule = require('./standard');
+const { validateResistanceGame } = require('./resistance');
 const { parseJson } = require('../utils/json');
 const { RULE_ID, SCORING_MODE, WINNER_SIDE } = require('../constants');
 const {
@@ -43,32 +44,12 @@ function getGameConfig(ctx) {
   };
 }
 
-function validateResistanceGame(ctx, input) {
-  const config = ctx.gameConfig || getGameConfig(ctx);
-  const scoreA = Number(input.scoreA || 0);
-  const scoreB = Number(input.scoreB || 0);
-  const winner = input.winner || null;
-
-  if (scoreA < 0 || scoreB < 0) return { canEnd: false, winner: null, reason: '比分不能为负数' };
-  if (scoreA > config.maxScore || scoreB > config.maxScore) {
-    return { canEnd: false, winner: null, reason: `最高${config.maxScore}分封顶` };
-  }
-  if (!Object.values(WINNER_SIDE).includes(winner)) return { canEnd: false, winner: null, reason: '抵抗局需要选择胜方' };
-
-  const winnerScore = winner === WINNER_SIDE.A ? scoreA : scoreB;
-  if (winnerScore < config.targetScore) {
-    return { canEnd: false, winner: null, reason: `抵抗局胜方需至少达到${config.targetScore}分` };
-  }
-
-  return { canEnd: true, winner, reason: '' };
-}
-
 function validateGameEnd(ctx, input) {
   const config = ctx.gameConfig || getGameConfig(ctx);
   if (config.scoringMode === SCORING_MODE.STANDARD) {
     return standardRule.validateGameEnd({ ...ctx, gameConfig: config }, input);
   }
-  return validateResistanceGame({ ...ctx, gameConfig: config }, input);
+  return validateResistanceGame(config, input);
 }
 
 function getTeamPlayers(match, team) {

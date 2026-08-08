@@ -8,7 +8,11 @@
  *   comebackData.s6.topKings[roundNo] = { rolls, kingId, form }。
  * - 王在赛前选择形态：daiqing（黛青）/feihong（绯红）/yuebai（月白）。
  * - 黛青：王所在方每局自动 2:0 开局（服务端在局进入进行中时写入开局分）。
- * - 绯红/月白：局内人工记分，记分页按 kingForm 展示规则提示。
+ * - 绯红：局内人工记分，记分页按 kingForm 展示规则提示。
+ * - 月白：王参与的场次的局按抵抗局处理（同 S5 秩序模型）——getGameConfig
+ *   返回 scoringMode 'resistance'（21/30，requiresWinner），局终显式选择胜方，
+ *   允许分低者获胜（如 21:29 胜方为 21 分侧）。刻意简化：不追踪"对方是否
+ *   先到 15 分"的局中事件，王的所有月白局一律按抵抗局配置。
  *
  * 下篇规则（切片二）：
  * - 第 5/6/7 轮固定组合 PA7 对阵：AB vs CD / AC vs BD / AD vs BC，打满 7 局。
@@ -25,8 +29,11 @@
  *
  * 切片三：王之宝库卡片效果执行
  * - 暗选（s6_card_activate）：局前卡 block/charge/storage/rift/stardust/blast 在某局
- *   pending（或局行未创建）时按方提交，cardId=null 表示"不使用"；双方提交后服务端
- *   同时置 revealed=true（同时亮出）；提交即扣库存。第 1 局必须在比赛开始前提交。
+ *   pending（或局行未创建）时逐人提交（payload 带 playerId，side 由选手所在队伍
+ *   推导），cardId=null 表示"不使用"；该场 4 名选手全部提交后服务端同时置
+ *   revealed=true（同时亮出）；提交即扣库存（按组合聚合）。选手只能启用本人在
+ *   灵魂契合中选到的卡（soulBond[*][comboLabel].picks 归属）。第 1 局必须在
+ *   比赛开始前提交。同一方两名选手可各激活一张。
  * - 随时卡（s6_card_use）：pause/blade/pause_plus 在比赛进行中随时记录使用并扣库存。
  * - 存储器（s6_storage_record）：该局结束后录入启用方额外球得分（胜 0-5 / 负 0-3），
  *   服务端自动把得分带入下一局开局（storageCarry 或直接加到进行中局的比分）。
@@ -73,7 +80,7 @@ const COMBO_LABELS_BY_ROUND = {
 export const KING_FORMS = {
   daiqing: { id: 'daiqing', name: '黛青', keyword: '开局领先', effect: '王所在方每局 2:0 开局' },
   feihong: { id: 'feihong', name: '绯红', keyword: '每球两分', effect: '王率先到达 15 分后，王的得分每球计 2 分' },
-  yuebai: { id: 'yuebai', name: '月白', keyword: '赛点抵抗', effect: '对方先到达 15 分后，赛点需连拿 2 分' }
+  yuebai: { id: 'yuebai', name: '月白', keyword: '赛点抵抗', effect: '对方先到 15 分后王获得抵抗——赛点需连拿 2 分，结束需手动选择胜方（可能出现分低者获胜）' }
 }
 
 // 上篇规则文案（规则 Sheet 展示用，与组件展示文字保持一致）
@@ -116,7 +123,7 @@ export const BLAST_MAX_SCORE = 12
 
 // 切片三卡片使用规则文案（规则 Sheet 展示用）
 export const CARD_PLAY_RULES = [
-  { id: 'secret', title: '暗选与亮出', text: '启用条件为"每局开始前"的卡片（阻碍/进击/存储器/时空裂隙/星尘卡/爆破）由记分员在局开始前分别录入双方选择，也可选择"不使用"；双方提交后同时亮出。第 1 局的暗选必须在比赛开始前完成。' },
+  { id: 'secret', title: '暗选与亮出', text: '启用条件为"每局开始前"的卡片（阻碍/进击/存储器/时空裂隙/星尘卡/爆破）由 4 名选手在局开始前各自录入本人选择（仅限本人在灵魂契合中选到的卡），也可选择"不使用"；4 人全部提交后同时亮出。第 1 局的暗选必须在比赛开始前完成。' },
   { id: 'anytime', title: '随时卡', text: '暂停卡/名刀/高级暂停卡在比赛进行中随时启用，记分页记录使用并扣减库存；名刀启用后下一球对方得分无效。' },
   { id: 'settle', title: '结算卡片', text: '阻碍/进击/星尘卡的效果在局结束后自动并入组合星尘结算；同局冲突时高阶奖励优先生效（星尘卡/阻碍先于进击）。' },
   { id: 'storage', title: '存储器', text: '该局结束后录入启用方额外球得分（胜 0-5、负 0-3），得分自动累积到下一局开局。' },
@@ -276,12 +283,12 @@ function getComboPhaseState(roundNo, context = {}) {
   }
 }
 
-// 某方在某局已亮出的局前暗选（每方每局至多一条，服务端保证；撤回后重打的同号局
-// 继承原暗选——按 (matchId, gameNo, side) 关联即可）
-function findRevealedActivation(treasury, matchId, gameNo, side) {
-  return (treasury?.activations || []).find(entry =>
+// 某方在某局已亮出的局前暗选（同方两名选手可各激活一条，逐人归属；撤回后重打的
+// 同号局继承原暗选——按 (matchId, gameNo, side) 关联即可）
+function findRevealedActivations(treasury, matchId, gameNo, side) {
+  return (treasury?.activations || []).filter(entry =>
     entry.timing === 'pre_game' && entry.revealed
-    && entry.matchId === matchId && entry.gameNo === gameNo && entry.side === side) || null
+    && entry.matchId === matchId && entry.gameNo === gameNo && entry.side === side)
 }
 
 // 本局已亮出的暗选效果（镜像服务端 getActiveEffects）：值为生效方 'a'/'b'/null
@@ -378,28 +385,30 @@ function applyTreasurySettlement(match, getGamesByMatch, perspective, treasuryBy
     if (winner !== 'a' && winner !== 'b') continue
 
     const loser = otherSide(winner)
-    const winnerAct = findRevealedActivation(treasuryBySide?.[winner], match.id, entry.gameNo, winner)
-    const loserAct = findRevealedActivation(treasuryBySide?.[loser], match.id, entry.gameNo, loser)
+    const winnerActs = findRevealedActivations(treasuryBySide?.[winner], match.id, entry.gameNo, winner)
+    const loserActs = findRevealedActivations(treasuryBySide?.[loser], match.id, entry.gameNo, loser)
+    const winnerHas = cardId => winnerActs.some(act => act.cardId === cardId)
+    const loserHas = cardId => loserActs.some(act => act.cardId === cardId)
 
     // ① 星尘卡(t3) 负方效果：对方该胜不计入连胜
-    if (loserAct?.cardId === 'stardust') {
+    if (loserHas('stardust')) {
       entry.neutral = true
       adjustments.push({ gameNo: entry.gameNo, cardId: 'stardust', side: loser, affectedSide: winner, delta: null, display: '星尘卡·连胜被挡' })
     }
     // ① 星尘卡(t3) 胜方效果：直接 +2，净胜 ≥7 再 +1
-    if (winnerAct?.cardId === 'stardust') {
+    if (winnerHas('stardust')) {
       const diff = Math.abs(entry.scoreA - entry.scoreB)
       const bonus = diff >= 7 ? 3 : 2
       entry.flat += bonus
       adjustments.push({ gameNo: entry.gameNo, cardId: 'stardust', side: winner, affectedSide: winner, delta: bonus, display: `星尘卡 +${bonus}` })
     }
     // ② 阻碍(t3)：对方该胜不产生终结 +3
-    if (loserAct?.cardId === 'block') {
+    if (loserHas('block')) {
       entry.noBreaker = true
       adjustments.push({ gameNo: entry.gameNo, cardId: 'block', side: loser, affectedSide: winner, delta: null, display: '阻碍·终结无效' })
     }
     // ③ 进击(t1)：该胜仍计入连胜时复制一次连胜计数；已被星尘卡挡下则不适用
-    if (winnerAct?.cardId === 'charge') {
+    if (winnerHas('charge')) {
       if (!entry.neutral) {
         sequence.push({ ...entry, dup: true, flat: 0 })
         adjustments.push({ gameNo: entry.gameNo, cardId: 'charge', side: winner, affectedSide: winner, delta: null, display: '进击·连胜+1' })
@@ -542,29 +551,55 @@ export default {
     }
   },
 
-  // 某局的暗选状态：双方是否已提交、是否已亮出；亮出前不暴露 cardId
+  // 某局的暗选状态（逐人）：4 名选手各自的提交情况，全部提交后服务端同时亮出；
+  // 亮出前不暴露 cardId。entries 按 teamA → teamB 顺序，side 由选手所在队伍推导
   getPendingSecretState(matchId, gameNo, context = {}) {
     const roundNo = Number(context?.round?.roundNo ?? context?.roundNo)
     const labels = COMBO_LABELS_BY_ROUND[roundNo] || []
     const treasury = getS6Data(context)?.treasury || {}
-    let aEntry = null
-    let bEntry = null
+    const match = context?.match || {}
+    const players = [
+      ...(match.teamA || []).map(playerId => ({ playerId, side: 'a' })),
+      ...(match.teamB || []).map(playerId => ({ playerId, side: 'b' }))
+    ]
+    const byPlayer = new Map()
     for (const label of labels) {
       for (const entry of treasury?.[label]?.activations || []) {
         if (entry.timing !== 'pre_game' || entry.matchId !== matchId || entry.gameNo !== gameNo) continue
-        if (entry.side === 'a') aEntry = entry
-        else if (entry.side === 'b') bEntry = entry
+        if (entry.playerId) byPlayer.set(entry.playerId, entry)
       }
     }
-    const revealed = !!(aEntry?.revealed && bEntry?.revealed)
+    const allSubmitted = players.length > 0 && players.every(p => byPlayer.has(p.playerId))
+    const revealed = allSubmitted && players.every(p => byPlayer.get(p.playerId)?.revealed)
     return {
       gameNo,
-      aSubmitted: !!aEntry,
-      bSubmitted: !!bEntry,
-      revealed,
-      aCard: revealed ? (aEntry?.cardId ?? null) : null,
-      bCard: revealed ? (bEntry?.cardId ?? null) : null
+      entries: players.map(({ playerId, side }) => ({
+        playerId,
+        side,
+        submitted: byPlayer.has(playerId),
+        cardId: revealed ? (byPlayer.get(playerId)?.cardId ?? null) : null
+      })),
+      allSubmitted,
+      revealed
     }
+  },
+
+  // 选手本人拥有（灵魂契合 picks 中 playerId+cardId，任一轮次）的局前暗选卡；
+  // remaining 为组合聚合库存（服务端提交即扣减），选手只看到本人选到的卡
+  getPlayerPreGameCards(playerId, comboLabel, context = {}) {
+    const s6 = getS6Data(context)
+    const inventory = s6?.treasury?.[comboLabel]?.inventory || {}
+    const owned = new Set()
+    for (const roundBond of Object.values(s6?.soulBond || {})) {
+      for (const pick of roundBond?.[comboLabel]?.picks || []) {
+        if (pick.playerId === playerId && PRE_GAME_CARDS.includes(pick.cardId)) owned.add(pick.cardId)
+      }
+    }
+    return [...owned].map(cardId => ({
+      cardId,
+      ...TREASURY_CARDS[cardId],
+      remaining: inventory[cardId] || 0
+    }))
   },
 
   getComboTieStatus(matches, getGamesByMatch, rounds, context) {
@@ -607,6 +642,17 @@ export default {
       const teamB = context?.match?.teamB || []
       if (teamA.includes(king.kingId)) config.openingScoreA += 2
       else if (teamB.includes(king.kingId)) config.openingScoreB += 2
+    }
+
+    // 上篇月白：王参与的局按抵抗局处理（同 S5 秩序；显式胜方，允许分低者获胜）。
+    // 爆破仅下篇，与月白不会同时命中（与服务端 isYuebaiKingMatch 口径一致）
+    if (king?.form === 'yuebai') {
+      const teamA = context?.match?.teamA || []
+      const teamB = context?.match?.teamB || []
+      if (teamA.includes(king.kingId) || teamB.includes(king.kingId)) {
+        config.scoringMode = 'resistance'
+        config.requiresWinner = true
+      }
     }
 
     // 下篇：天选组合每局 +2；存储器 carry 一次性带入（服务端局开始已写入局行，

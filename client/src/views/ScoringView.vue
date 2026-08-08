@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { usePlayersStore, useMatchesStore, useSeasonsStore } from '@/stores'
 import { STATUS, BEST_OF_OPTIONS } from '@/constants'
 import { getRule } from '@/rules'
-import s6Rule, { KING_FORMS, TREASURY_CARDS, PRE_GAME_CARDS, ANYTIME_CARDS } from '@/rules/s6'
+import s6Rule, { KING_FORMS, TREASURY_CARDS, ANYTIME_CARDS } from '@/rules/s6'
 import Card from '@/components/ui/Card.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
@@ -76,6 +76,13 @@ function sideName(side) {
   return side === 'a' ? (teamAPlayers.value.join('/') || 'A队') : (teamBPlayers.value.join('/') || 'B队')
 }
 
+function playerName(id) {
+  return playersStore.getPlayerName(id)
+}
+
+// 抵抗局胜方选择卡标题：S5 秩序 / S6 月白（复用同一 UI）
+const resistanceTitle = computed(() => (season.value?.ruleId === 's6' ? '月白 · 抵抗' : '秩序 · 抵抗'))
+
 // 暗选目标局：比赛未开始 → 第 1 局（开始前必须提交）；进行中 → 当前局的下一局
 // （服务端只允许在该局 pending/未创建时提交暗选）
 const secretGameNo = computed(() => {
@@ -91,30 +98,34 @@ const secretState = computed(() => {
 })
 
 const showSecretSheet = ref(false)
-const secretSide = ref('a')
+const secretPlayer = ref(null) // { playerId, side } —— 逐人暗选的目标选手
 const secretSubmitting = ref(false)
+// 该选手本人在灵魂契合中选到的局前卡（库存按组合聚合扣减）
 const secretOptions = computed(() => {
-  const inventory = matchTreasury.value?.sides?.[secretSide.value]?.inventory || {}
-  return PRE_GAME_CARDS.map(cardId => ({
-    cardId,
-    ...TREASURY_CARDS[cardId],
-    remaining: inventory[cardId] || 0
-  }))
+  if (!secretPlayer.value) return []
+  const label = matchTreasury.value?.sides?.[secretPlayer.value.side]?.label
+  if (!label) return []
+  return s6Rule.getPlayerPreGameCards(secretPlayer.value.playerId, label, s6Context.value)
 })
+// 按方分组的逐人暗选条目（模板展示用）
+const secretEntriesBySide = computed(() => ({
+  a: (secretState.value?.entries || []).filter(entry => entry.side === 'a'),
+  b: (secretState.value?.entries || []).filter(entry => entry.side === 'b')
+}))
 
-function openSecretSheet(side) {
-  secretSide.value = side
+function openSecretSheet(entry) {
+  secretPlayer.value = { playerId: entry.playerId, side: entry.side }
   showSecretSheet.value = true
 }
 
 async function submitSecret(cardId) {
-  if (!secretState.value || secretSubmitting.value) return
+  if (!secretState.value || !secretPlayer.value || secretSubmitting.value) return
   secretSubmitting.value = true
   try {
     await seasonsStore.recordAction(season.value.id, 's6_card_activate', {
       matchId: matchId.value,
       gameNo: secretState.value.gameNo,
-      side: secretSide.value,
+      playerId: secretPlayer.value.playerId,
       cardId
     })
     toast.show(cardId ? `${TREASURY_CARDS[cardId].name}已暗选` : '已提交不使用', 'success')
@@ -123,9 +134,10 @@ async function submitSecret(cardId) {
   secretSubmitting.value = false
 }
 
-// 第 1 局双方暗选亮出后才允许开始比赛（服务端只接受 pending 局的暗选）
+// 第 1 局 4 名选手全部提交暗选后才允许开始比赛（服务端只接受 pending 局的暗选；
+// 4 人集齐后服务端同时亮出）
 const canStartS6Match = computed(() =>
-  isS6Combo.value && match.value?.status === STATUS.PENDING && !!secretState.value?.revealed
+  isS6Combo.value && match.value?.status === STATUS.PENDING && !!secretState.value?.allSubmitted
 )
 const startingMatch = ref(false)
 async function handleStartMatch() {
@@ -204,7 +216,7 @@ const storagePrompts = computed(() => {
       const game = games.value.find(g => g.gameNo === entry.gameNo)
       if (game?.status !== STATUS.COMPLETED) continue
       const won = game.winner === side
-      prompts.push({ side, gameNo: entry.gameNo, won, max: won ? 5 : 3 })
+      prompts.push({ side, playerId: entry.playerId || null, gameNo: entry.gameNo, won, max: won ? 5 : 3 })
     }
   }
   return prompts
@@ -212,7 +224,7 @@ const storagePrompts = computed(() => {
 const storagePoints = ref({})
 const storageSubmitting = ref(false)
 function storageKey(prompt) {
-  return `${prompt.side}-${prompt.gameNo}`
+  return `${prompt.playerId || prompt.side}-${prompt.gameNo}`
 }
 function storageOptions(max) {
   return Array.from({ length: max + 1 }, (_, i) => ({ key: String(i), label: String(i) }))
@@ -229,6 +241,7 @@ async function submitStorage(prompt) {
       matchId: matchId.value,
       gameNo: prompt.gameNo,
       side: prompt.side,
+      playerId: prompt.playerId,
       points
     })
     toast.show('存储器得分已记录', 'success')
@@ -255,7 +268,13 @@ async function handleRift(gamesToRevert) {
   if (!ok) return
   riftSubmitting.value = true
   try {
-    await seasonsStore.recordAction(season.value.id, 's6_rift', { matchId: matchId.value, games: gamesToRevert })
+    // 逐人暗选后同方可能各有一条 rift：恰好一条时精确匹配本人暗选，多条交由服务端取任一
+    const riftEntries = ['a', 'b'].flatMap(side =>
+      (matchTreasury.value?.sides?.[side]?.activations || []).filter(entry =>
+        entry.timing === 'pre_game' && entry.cardId === 'rift' && !entry.consumed))
+    const payload = { matchId: matchId.value, games: gamesToRevert }
+    if (riftEntries.length === 1 && riftEntries[0].playerId) payload.playerId = riftEntries[0].playerId
+    await seasonsStore.recordAction(season.value.id, 's6_rift', payload)
     await matchesStore.init({ force: true })
     toast.show(`已回溯 ${gamesToRevert} 局`, 'success')
   } catch (e) { toast.show(e.message, 'error') }
@@ -366,7 +385,7 @@ watch(() => [editForm.value.scoreA, editForm.value.scoreB, editForm.value.winner
 
 async function ensureStarted() {
   if (!match.value || match.value.status !== STATUS.PENDING) return true
-  // S6 下篇：第 1 局暗选须在比赛开始前提交，改为双方亮出后手动开始
+  // S6 下篇：第 1 局暗选须在比赛开始前提交，改为 4 人集齐亮出后手动开始
   if (isS6Combo.value) return true
   try { await matchesStore.startMatch(matchId.value); return true }
   catch(e) { toast.show('开始失败', 'error'); return false }
@@ -504,7 +523,7 @@ onMounted(async () => { await ensureStarted(); isLoading.value = false })
         :border-class="scoreInputBorderClass"
       />
 
-      <!-- S6 下篇：局前暗选（双方提交后同时亮出；亮出前只展示"已暗选"） -->
+      <!-- S6 下篇：局前暗选（4 名选手各自提交，集齐后同时亮出；亮出前只展示"已暗选"） -->
       <Card v-if="secretState" padding="sm">
         <div class="flex flex-col gap-3">
           <div class="flex items-center gap-2">
@@ -513,14 +532,20 @@ onMounted(async () => { await ensureStarted(); isLoading.value = false })
             <Badge v-if="secretState.revealed" variant="accent" size="sm">已亮出</Badge>
           </div>
           <div class="grid grid-cols-2 gap-2">
-            <div v-for="side in ['a', 'b']" :key="side" class="flex flex-col items-center gap-1.5 min-w-0">
+            <div v-for="side in ['a', 'b']" :key="side" class="flex flex-col items-center gap-2 min-w-0">
               <span class="text-xs text-fg-muted truncate max-w-full">{{ sideName(side) }}</span>
-              <span
-                v-if="secretState.revealed"
-                class="text-sm font-semibold text-fg"
-              >{{ (side === 'a' ? secretState.aCard : secretState.bCard) ? TREASURY_CARDS[side === 'a' ? secretState.aCard : secretState.bCard]?.name : '不使用' }}</span>
-              <Badge v-else-if="side === 'a' ? secretState.aSubmitted : secretState.bSubmitted" variant="muted" size="sm">已暗选</Badge>
-              <Button v-else variant="secondary" size="sm" @click="openSecretSheet(side)">录入暗选</Button>
+              <div
+                v-for="entry in secretEntriesBySide[side]" :key="entry.playerId"
+                class="flex flex-col items-center gap-1 min-w-0 max-w-full"
+              >
+                <span class="text-xs text-fg-secondary truncate max-w-full">{{ playerName(entry.playerId) }}</span>
+                <span
+                  v-if="secretState.revealed"
+                  class="text-sm font-semibold text-fg"
+                >{{ entry.cardId ? TREASURY_CARDS[entry.cardId]?.name : '不使用' }}</span>
+                <Badge v-else-if="entry.submitted" variant="muted" size="sm">已暗选</Badge>
+                <Button v-else variant="secondary" size="sm" @click="openSecretSheet(entry)">录入暗选</Button>
+              </div>
             </div>
           </div>
         </div>
@@ -570,7 +595,7 @@ onMounted(async () => { await ensureStarted(); isLoading.value = false })
       <Card v-if="hasCurrentGame && !isMatchOver && requiresWinner" padding="sm">
         <div class="flex flex-col gap-3">
           <div>
-            <h3 class="text-xs font-semibold text-fg-secondary uppercase tracking-wide">秩序 · 抵抗</h3>
+            <h3 class="text-xs font-semibold text-fg-secondary uppercase tracking-wide">{{ resistanceTitle }}</h3>
             <p class="text-xs text-fg-muted mt-1">抵抗局需要选择本局胜方，分高者不一定获胜。</p>
           </div>
           <div class="grid grid-cols-2 gap-2">
@@ -606,7 +631,7 @@ onMounted(async () => { await ensureStarted(); isLoading.value = false })
             <h3 class="text-xs font-semibold text-fg-secondary uppercase tracking-wide">存储器 · G{{ prompt.gameNo }}</h3>
           </div>
           <p class="text-xs text-fg-muted">
-            {{ sideName(prompt.side) }}本局{{ prompt.won ? '获胜' : '失败' }}，录入额外球得分（0-{{ prompt.max }}），自动累积到下一局开局
+            {{ prompt.playerId ? `${playerName(prompt.playerId)}（${sideName(prompt.side)}）` : sideName(prompt.side) }}本局{{ prompt.won ? '获胜' : '失败' }}，录入额外球得分（0-{{ prompt.max }}），自动累积到下一局开局
           </p>
           <SegmentedControl
             :model-value="storagePoints[storageKey(prompt)] ?? '0'"
@@ -637,7 +662,7 @@ onMounted(async () => { await ensureStarted(); isLoading.value = false })
       <div class="mt-auto pt-4 flex flex-col gap-2" v-if="!isMatchOver">
         <template v-if="isS6Combo && match?.status === STATUS.PENDING">
           <Button variant="primary" size="lg" block :disabled="!canStartS6Match" :loading="startingMatch" @click="handleStartMatch">
-            {{ canStartS6Match ? '开始比赛' : '请先完成 G1 双方暗选' }}
+            {{ canStartS6Match ? '开始比赛' : '请先完成 G1 四人暗选' }}
           </Button>
           <Button variant="ghost" size="md" block @click="goBack">返回</Button>
         </template>
@@ -668,10 +693,10 @@ onMounted(async () => { await ensureStarted(); isLoading.value = false })
       @confirm="handleEndGame"
     />
 
-    <!-- S6 下篇：局前暗选录入（选择卡片或"不使用"，提交即扣库存） -->
+    <!-- S6 下篇：局前暗选录入（逐人：该选手本人的局前卡或"不使用"，提交即扣库存） -->
     <Sheet
       :show="showSecretSheet"
-      :title="`G${secretState?.gameNo ?? ''} 暗选 · ${sideName(secretSide)}`"
+      :title="`G${secretState?.gameNo ?? ''} 暗选 · ${secretPlayer ? playerName(secretPlayer.playerId) : ''}`"
       @close="showSecretSheet = false"
     >
       <div class="flex flex-col gap-2">
@@ -687,6 +712,7 @@ onMounted(async () => { await ensureStarted(); isLoading.value = false })
           </div>
           <p class="text-xs text-fg-muted mt-1">{{ opt.effect }}</p>
         </button>
+        <p v-if="!secretOptions.length" class="text-xs text-fg-muted">该选手没有可启用的局前卡（仅限本人在灵魂契合中选到的卡）</p>
         <button
           class="p-3 rounded-lg border border-line-light bg-canvas text-left cursor-pointer transition-all duration-fast active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none"
           :disabled="secretSubmitting"

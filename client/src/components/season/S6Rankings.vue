@@ -97,7 +97,9 @@ function activationState(activation) {
 function activationLabel(activation) {
   const card = TREASURY_CARDS[activation.cardId]
   const game = activation.gameNo ? `G${activation.gameNo} ` : ''
-  return `${game}${card?.name || activation.cardId || '不使用'}`
+  // 逐人暗选：局前卡带选手名（如 "G2 张三·爆破"）
+  const player = activation.timing === 'pre_game' && activation.playerId ? `${playerName(activation.playerId)}·` : ''
+  return `${game}${player}${card?.name || activation.cardId || '不使用'}`
 }
 
 const topDone = computed(() => topRounds.value.filter(r => r.status === 'completed').length)

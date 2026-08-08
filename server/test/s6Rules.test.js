@@ -205,6 +205,8 @@ test('daiqing form gives the king side a 2:0 opening score on every started game
     ruleId: 's6'
   });
   assert.equal(config.targetScore, 21);
+  assert.equal(config.scoringMode, 'standard');
+  assert.equal(config.requiresWinner, false);
   assert.equal(config.openingScoreA, 0);
   assert.equal(config.openingScoreB, 2);
   assert.equal(config.kingId, 'p3');
@@ -241,7 +243,7 @@ test('feihong and yuebai forms start games at 0:0', async () => {
 
 test('s6 games still validate standard 21-point endings', async () => {
   insertS6Season('S-S6-END');
-  await completeKingSelection('S-S6-END', 1, 'p2', 'yuebai');
+  await completeKingSelection('S-S6-END', 1, 'p2', 'feihong');
   await api.post('/api/rounds').send({ id: 'R-S6-END-1', seasonId: 'S-S6-END', roundNo: 1 }).expect(201);
   const games = await startMatch('R-S6-END-1-M1');
 
@@ -250,4 +252,51 @@ test('s6 games still validate standard 21-point endings', async () => {
 
   await finishGame(games[0].id, 21, 18);
   assert.equal(getDbGames('R-S6-END-1-M1')[0].winner, 'a');
+});
+
+test('yuebai king games use resistance scoring with an explicit winner', async () => {
+  insertS6Season('S-S6-YUEBAI');
+  await completeKingSelection('S-S6-YUEBAI', 1, 'p2', 'yuebai');
+  await api.post('/api/rounds').send({ id: 'R-S6-YUEBAI-1', seasonId: 'S-S6-YUEBAI', roundNo: 1 }).expect(201);
+  const games = await startMatch('R-S6-YUEBAI-1-M1');
+
+  const config = getRule('s6').getGameConfig({
+    game: games[0],
+    match: getDbMatch('R-S6-YUEBAI-1-M1'),
+    season: prepare('SELECT * FROM seasons WHERE id = ?').get('S-S6-YUEBAI'),
+    round: getDbRound('R-S6-YUEBAI-1'),
+    ruleId: 's6'
+  });
+  assert.equal(config.scoringMode, 'resistance');
+  assert.equal(config.targetScore, 21);
+  assert.equal(config.maxScore, 30);
+  assert.equal(config.requiresWinner, true);
+  assert.equal(config.supportsPierce, false);
+  assert.equal(config.openingScoreA, 0);
+  assert.equal(config.openingScoreB, 0);
+  assert.equal(config.kingId, 'p2');
+  assert.equal(config.kingForm, 'yuebai');
+
+  const rule = getRule('s6');
+  const ctx = { gameConfig: config };
+  // 分低者获胜：胜方 A 21:29 合法
+  assert.deepEqual(rule.validateGameEnd(ctx, { scoreA: 21, scoreB: 29, winner: 'a' }),
+    { canEnd: true, winner: 'a', reason: '' });
+  // 普通比分 21:15 同样可结束
+  assert.equal(rule.validateGameEnd(ctx, { scoreA: 21, scoreB: 15, winner: 'a' }).canEnd, true);
+  // 未显式选择胜方 → 拒绝
+  const noWinner = rule.validateGameEnd(ctx, { scoreA: 21, scoreB: 15 });
+  assert.equal(noWinner.canEnd, false);
+  assert.match(noWinner.reason, /胜方/);
+  // 超过 30 封顶 → 拒绝
+  assert.equal(rule.validateGameEnd(ctx, { scoreA: 31, scoreB: 29, winner: 'a' }).canEnd, false);
+  // 胜方未达 21 分 → 拒绝
+  assert.equal(rule.validateGameEnd(ctx, { scoreA: 20, scoreB: 29, winner: 'a' }).canEnd, false);
+
+  // 端到端：分低者获胜（21:29 胜方为 A）
+  await api.put(`/api/games/${games[0].id}/score`).send({ scoreA: 21, scoreB: 29 }).expect(200);
+  const rejected = await api.post(`/api/games/${games[0].id}/end`).send({}).expect(422);
+  assert.match(rejected.body.error.message, /胜方/);
+  await api.post(`/api/games/${games[0].id}/end`).send({ winner: 'a' }).expect(200);
+  assert.equal(getDbGames('R-S6-YUEBAI-1-M1')[0].winner, 'a');
 });

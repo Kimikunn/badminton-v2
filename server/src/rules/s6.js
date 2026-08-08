@@ -10,7 +10,13 @@
  * - 王在赛前经 s6_king_form 选择形态：daiqing（黛青）/feihong（绯红）/yuebai（月白）。
  * - 黛青：王所在方每局自动 2:0 开局，在局从 pending → in_progress 时由
  *   matchLifecycleService 调用 onGameStarted 应用一次。
- * - 绯红/月白：仅通过 getGameConfig 的 kingForm 暴露给客户端做提示，局内人工记分。
+ * - 绯红：仅通过 getGameConfig 的 kingForm 暴露给客户端做提示，局内人工记分。
+ * - 月白：王参与的场次的局按抵抗局处理（同 S5 秩序模型）——getGameConfig
+ *   返回 scoringMode 'resistance'（targetScore 21 / maxScore 30 /
+ *   requiresWinner true），validateGameEnd 复用 rules/resistance.js 的共享
+ *   校验（显式胜方、胜方得分 ≥21、≤30 封顶，允许分低者获胜如 21:29）。
+ *   刻意简化：不追踪"对方是否先到 15 分"的局中事件——抵抗校验是标准
+ *   21 分制结局的超集，故王的所有月白局一律按抵抗局配置。
  *
  * 撤回/重新开始语义：撤回已完成的局沿用服务端通用行为——局回到进行中并保留
  * 已记录比分（含开局分），记分员通过 updateScore 调整后再结束；开局分只在
@@ -40,13 +46,18 @@
  * 切片三：王之宝库卡片效果执行
  * - 卡片按启用条件分两类：随时卡（pause/blade/pause_plus，经 s6_card_use 仅记录
  *   使用并扣库存，效果为线下/人工）与局前暗选卡（block/charge/storage/rift/
- *   stardust/blast，经 s6_card_activate 在某局 pending 时按方提交，cardId=null
- *   表示"不使用"；双方都提交后两条记录同时 revealed=true）。
+ *   stardust/blast，经 s6_card_activate 在某局 pending 时逐人提交，cardId=null
+ *   表示"不使用"；该场 4 名选手全部提交后所有记录同时 revealed=true）。
+ * - 暗选逐人：s6_card_activate 负载为 { matchId, gameNo, playerId, cardId|null }，
+ *   side 由选手所在的比赛队伍推导（team_a→'a'/team_b→'b'）；选手只能启用本人
+ *   在灵魂契合中选到的卡（soulBond[*][comboLabel].picks 中 playerId+cardId 的
+ *   记录，任一轮次），库存仍按组合扣减；每人每局至多一条暗选。
  * - 暗选/使用记录写入 treasury[comboLabel].activations：
  *   { id, timing: 'pre_game'|'anytime', matchId, gameId, gameNo, side, cardId,
- *     revealed, consumed }。gameId 在局行已创建时（matchId-G{gameNo}）直接填入，
- *   否则为 null，客户端可按 (matchId, gameNo) 关联。consumed 仅用于
- *   storage（得分已记录）与 rift（回溯已执行）。暗选提交即扣库存。
+ *     revealed, consumed }，局前暗选另带 playerId（逐人归属）。gameId 在局行
+ *   已创建时（matchId-G{gameNo}）直接填入，否则为 null，客户端可按
+ *   (matchId, gameNo) 关联。consumed 仅用于 storage（得分已记录）与
+ *   rift（回溯已执行）。暗选提交即扣库存。
  * - side ↔ 组合映射：组合轮固定 teamA=COMBO_LABELS_BY_ROUND[roundNo][0]、
  *   teamB=[1]（见 roundCreationService.getComboPairingFromOrder），故
  *   side 'a'/'b' 直接映射到该轮第一/第二个组合标签。
@@ -55,15 +66,21 @@
  *   validateGameEnd 走专用校验（胜方须达 11 且不超过 12）。
  * - 天选：treasury[combo].chosen 的组合在下篇每局开局 +2（onGameStarted）。
  * - 存储器：s6_storage_record 在该局结束后记录启用方额外球得分（胜 0-5、负 0-3），
- *   下一局已自动进入进行中时直接加到该局比分；否则写入
- *   comeback_data.s6.storageCarry[matchId]，由 onGameStarted 在局开始时应用并清除
- *   （一次性）。存在未应用的 carry 时拒绝再次记录。
- * - 时空裂隙：s6_rift 校验该场存在未执行的 rift 暗选且第七局未完成后，复用
+ *   按暗选记录逐条匹配（payload 可带 playerId 精确到本人暗选；缺省时按未消费的
+ *   暗选顺序消费，故同方两人同局各激活存储器时可各记录一次）。下一局已自动进入
+ *   进行中时直接加到该局比分；否则把 { side, points, gameNo } 追加到
+ *   comeback_data.s6.storageCarry[matchId] 数组，由 onGameStarted 在局开始时按方
+ *   求和应用并整体清除（一次性）——同方两条 carry 即为求和语义。读取时兼容旧的
+ *   单对象形态（包装为单元素数组）。
+ * - 时空裂隙：s6_rift 校验该场存在未执行的 rift 暗选（payload 可带 playerId 精确
+ *   匹配本人暗选，缺省时取该场任一未执行记录；一方有两条 rift 暗选时可分别回溯
+ *   两次，只要库存支持）且第七局未完成后，复用
  *   gameService.revertGame（与 POST /games/:id/revert 同一实现，规则事件清理/
  *   局删除/比赛状态回滚语义一致）撤回最近 1-2 局已完成局，随后将暗选标记 consumed。
  *   客户端用 s6_rift 动作代替裸 revert 接口，使库存消耗与回溯原子生效。
  */
 const standardRule = require('./standard');
+const { validateResistanceGame } = require('./resistance');
 const { prepare } = require('../config/db');
 const { parseJson, stringifyJson } = require('../utils/json');
 const { RULE_ID, SCORING_MODE, MATCH_STATUS, WINNER_SIDE } = require('../constants');
@@ -114,6 +131,15 @@ function getTopKing(ctx) {
   return king && king.kingId ? king : null;
 }
 
+// 月白：王参与的场次的局按抵抗局处理（简化口径见文件头注释）
+function isYuebaiKingMatch(ctx) {
+  const king = getTopKing(ctx);
+  if (king?.form !== 'yuebai') return false;
+  const teamA = parseJson(ctx.match?.team_a, []);
+  const teamB = parseJson(ctx.match?.team_b, []);
+  return teamA.includes(king.kingId) || teamB.includes(king.kingId);
+}
+
 // 下篇局状态：两个组合的 treasury 与本场的存储器 carry；非下篇轮次返回 null
 function getComboPhaseState(ctx) {
   const roundNo = Number(ctx.round?.round_no);
@@ -125,6 +151,12 @@ function getComboPhaseState(ctx) {
     treasuryB: s6.treasury?.[labels[1]] || null,
     carry: s6.storageCarry?.[ctx.match?.id] || null
   };
+}
+
+// 存储器 carry 统一为数组读取（兼容旧的单对象形态）
+function getPendingCarries(carry) {
+  if (!carry) return [];
+  return Array.isArray(carry) ? carry : [carry];
 }
 
 function getOpeningScore(ctx) {
@@ -144,14 +176,15 @@ function getOpeningScore(ctx) {
     else if (teamB.includes(king.kingId)) opening.openingScoreB += 2;
   }
 
-  // 下篇：天选组合每局 +2；存储器 carry 一次性带入（由 onGameStarted 清除）
+  // 下篇：天选组合每局 +2；存储器 carry 一次性带入（由 onGameStarted 清除），
+  // 多条 carry 按方求和
   const combo = getComboPhaseState(ctx);
   if (combo) {
     if (combo.treasuryA?.chosen === true) opening.openingScoreA += 2;
     if (combo.treasuryB?.chosen === true) opening.openingScoreB += 2;
-    if (combo.carry) {
-      const points = Number(combo.carry.points || 0);
-      if (combo.carry.side === WINNER_SIDE.A) opening.openingScoreA += points;
+    for (const carry of getPendingCarries(combo.carry)) {
+      const points = Number(carry.points || 0);
+      if (carry.side === WINNER_SIDE.A) opening.openingScoreA += points;
       else opening.openingScoreB += points;
     }
   }
@@ -187,11 +220,13 @@ function getGameConfig(ctx) {
   const opening = getOpeningScore(ctx);
   const activeEffects = getActiveEffects(ctx, getComboPhaseState(ctx));
   const blast = activeEffects.blast !== null;
+  // 月白（仅上篇）：王参与的场次按抵抗局配置；爆破仅下篇，二者不会同时命中
+  const resistance = isYuebaiKingMatch(ctx);
   return {
-    scoringMode: SCORING_MODE.STANDARD,
+    scoringMode: resistance ? SCORING_MODE.RESISTANCE : SCORING_MODE.STANDARD,
     targetScore: blast ? BLAST_TARGET_SCORE : 21,
     maxScore: blast ? BLAST_MAX_SCORE : 30,
-    requiresWinner: false,
+    requiresWinner: resistance,
     supportsPierce: false,
     openingScoreA: opening.openingScoreA,
     openingScoreB: opening.openingScoreB,
@@ -222,6 +257,7 @@ function validateBlastGame(config, input) {
 function validateGameEnd(ctx, input) {
   const config = ctx.gameConfig || getGameConfig(ctx);
   if (config.activeEffects?.blast) return validateBlastGame(config, input);
+  if (config.scoringMode === SCORING_MODE.RESISTANCE) return validateResistanceGame(config, input);
   return standardRule.validateGameEnd({ ...ctx, gameConfig: config }, input);
 }
 
@@ -652,25 +688,44 @@ function resolveTreasuryMatchContext(ctx, matchId) {
   return { match, roundNo };
 }
 
-// 在某场某局某方已提交的局前暗选记录（两个组合的 treasury 都扫描）
-function findPreGameActivation(s6, roundNo, matchId, gameNo, side) {
+// 某场某局已提交的全部局前暗选记录（两个组合的 treasury 都扫描）
+function findPreGameActivations(s6, roundNo, matchId, gameNo) {
+  const entries = [];
   for (const label of COMBO_LABELS_BY_ROUND[roundNo] || []) {
-    const found = (s6.treasury?.[label]?.activations || []).find(entry =>
-      entry.timing === 'pre_game' && entry.matchId === matchId && entry.gameNo === gameNo && entry.side === side);
-    if (found) return found;
+    for (const entry of s6.treasury?.[label]?.activations || []) {
+      if (entry.timing === 'pre_game' && entry.matchId === matchId && entry.gameNo === gameNo) {
+        entries.push(entry);
+      }
+    }
   }
-  return null;
+  return entries;
 }
 
-// s6_card_activate：局前暗选（cardId=null 表示"不使用"）。双方提交后同时亮出。
+// 卡片归属：选手本人在灵魂契合中选到的卡（该组合任一轮次的 picks 中有
+// playerId+cardId 记录；组合标签由种子固定，跨轮次不变）
+function playerOwnsCard(s6, comboLabel, playerId, cardId) {
+  for (const roundBond of Object.values(s6.soulBond || {})) {
+    const picks = roundBond?.[comboLabel]?.picks || [];
+    if (picks.some(pick => pick.playerId === playerId && pick.cardId === cardId)) return true;
+  }
+  return false;
+}
+
+// s6_card_activate：局前暗选逐人提交（cardId=null 表示"不使用"）。
+// side 由选手所在比赛队伍推导；该场 4 名选手全部提交后所有记录同时亮出。
 function recordCardActivate(ctx, input = {}) {
   const resolved = resolveTreasuryMatchContext(ctx, input.matchId);
   if (resolved.error) return { validationError: resolved.error };
   const { match, roundNo } = resolved;
 
-  const side = String(input.side || '').trim();
+  const playerId = String(input.playerId || '').trim();
+  const teamA = parseJson(match.team_a, []);
+  const teamB = parseJson(match.team_b, []);
+  let side = null;
+  if (teamA.includes(playerId)) side = WINNER_SIDE.A;
+  else if (teamB.includes(playerId)) side = WINNER_SIDE.B;
+  if (!side) return { validationError: '该选手不属于此比赛' };
   const comboLabel = getComboLabelForSide(roundNo, side);
-  if (!comboLabel) return { validationError: '无效的比赛方' };
 
   const gameNo = Number(input.gameNo);
   if (!Number.isInteger(gameNo) || gameNo < 1 || gameNo > (match.best_of || 7)) {
@@ -684,8 +739,9 @@ function recordCardActivate(ctx, input = {}) {
 
   const data = ctx.data || {};
   const s6 = normalizeS6State(data.s6 || {});
-  if (findPreGameActivation(s6, roundNo, match.id, gameNo, side)) {
-    return { validationError: '该方本局已提交暗选' };
+  const submitted = findPreGameActivations(s6, roundNo, match.id, gameNo);
+  if (submitted.some(entry => entry.playerId === playerId)) {
+    return { validationError: '该选手本局已提交暗选' };
   }
 
   const treasury = ensureTreasury(s6, comboLabel);
@@ -693,6 +749,7 @@ function recordCardActivate(ctx, input = {}) {
   if (cardId) {
     if (!TREASURY_CARDS[cardId]) return { validationError: '无效的宝库卡片' };
     if (!PRE_GAME_CARDS.includes(cardId)) return { validationError: '该卡片无需在局前暗选' };
+    if (!playerOwnsCard(s6, comboLabel, playerId, cardId)) return { validationError: '该选手未获得此卡' };
     if (Number(treasury.inventory[cardId] || 0) <= 0) return { validationError: '该卡片库存不足' };
     treasury.inventory[cardId] -= 1;
   }
@@ -704,18 +761,18 @@ function recordCardActivate(ctx, input = {}) {
     gameId: game?.id || null,
     gameNo,
     side,
+    playerId,
     cardId,
     revealed: false,
     consumed: false
   };
   treasury.activations.push(entry);
 
-  // 双方均已提交（含"不使用"）时同时亮出
-  const otherSide = side === WINNER_SIDE.A ? WINNER_SIDE.B : WINNER_SIDE.A;
-  const counterpart = findPreGameActivation(s6, roundNo, match.id, gameNo, otherSide);
-  if (counterpart) {
-    counterpart.revealed = true;
-    entry.revealed = true;
+  // 该场 4 名选手全部提交（含"不使用"）时同时亮出
+  const all = findPreGameActivations(s6, roundNo, match.id, gameNo);
+  const submittedIds = new Set(all.map(item => item.playerId));
+  if ([...teamA, ...teamB].every(pid => submittedIds.has(pid))) {
+    for (const item of all) item.revealed = true;
   }
 
   return { nextData: { ...data, s6 } };
@@ -757,8 +814,10 @@ function recordCardUse(ctx, input = {}) {
 }
 
 // s6_storage_record：存储器局后记录启用方额外球得分（胜 0-5、负 0-3）。
-// 下一局已自动进入进行中时直接加到该局比分并立即生效；否则写入 storageCarry，
-// 待 onGameStarted 在局开始时应用并清除。第七局没有下一局，仅记录得分。
+// 按暗选记录逐条匹配：payload 可带 playerId 精确到本人暗选；缺省时取该方该局
+// 最早一条未消费的存储器暗选。下一局已自动进入进行中时直接加到该局比分并立即
+// 生效；否则把 { side, points, gameNo } 追加到 storageCarry[matchId] 数组，
+// 待 onGameStarted 在局开始时按方求和应用并清除。第七局没有下一局，仅记录得分。
 function recordStorageRecord(ctx, input = {}) {
   const resolved = resolveTreasuryMatchContext(ctx, input.matchId);
   if (resolved.error) return { validationError: resolved.error };
@@ -773,12 +832,16 @@ function recordStorageRecord(ctx, input = {}) {
     return { validationError: '无效的局号' };
   }
 
+  const playerId = input.playerId === null || input.playerId === undefined ? null : String(input.playerId).trim();
+
   const data = ctx.data || {};
   const s6 = normalizeS6State(data.s6 || {});
   const treasury = ensureTreasury(s6, comboLabel);
-  const activation = treasury.activations.find(entry =>
+  const candidates = treasury.activations.filter(entry =>
     entry.timing === 'pre_game' && entry.cardId === 'storage'
-    && entry.matchId === match.id && entry.gameNo === gameNo && entry.side === side);
+    && entry.matchId === match.id && entry.gameNo === gameNo && entry.side === side
+    && (!playerId || entry.playerId === playerId));
+  const activation = candidates.find(entry => !entry.consumed) || candidates[0];
   if (!activation) return { validationError: '该局没有该方的存储器暗选记录' };
   if (activation.consumed) return { validationError: '该局存储器得分已记录' };
 
@@ -794,10 +857,6 @@ function recordStorageRecord(ctx, input = {}) {
     return { validationError: won ? '获胜方额外球得分必须为 0-5 的整数' : '失败方额外球得分必须为 0-3 的整数' };
   }
 
-  if (s6.storageCarry[match.id]) {
-    return { validationError: '上一局的存储器得分尚未带入下一局，无法重复记录' };
-  }
-
   activation.consumed = true;
 
   const nextGame = getMatchGame(match.id, gameNo + 1);
@@ -807,7 +866,11 @@ function recordStorageRecord(ctx, input = {}) {
       prepare(`UPDATE games SET ${column} = ${column} + ? WHERE id = ?`).run(points, nextGame.id);
     }
   } else if (nextGame) {
-    s6.storageCarry[match.id] = { side, points, gameNo };
+    // 同方多次记录向数组追加，应用时按方求和（兼容旧的单对象形态）
+    const existing = s6.storageCarry[match.id];
+    const carries = Array.isArray(existing) ? existing : (existing ? [existing] : []);
+    carries.push({ side, points, gameNo });
+    s6.storageCarry[match.id] = carries;
   }
 
   return { nextData: { ...data, s6 } };
@@ -834,10 +897,12 @@ function recordRift(ctx, input = {}) {
 
   const data = ctx.data || {};
   const s6 = normalizeS6State(data.s6 || {});
+  const playerId = input.playerId === null || input.playerId === undefined ? null : String(input.playerId).trim();
   let activation = null;
   for (const label of COMBO_LABELS_BY_ROUND[roundNo]) {
     const found = (s6.treasury?.[label]?.activations || []).find(entry =>
-      entry.timing === 'pre_game' && entry.cardId === 'rift' && entry.matchId === match.id && !entry.consumed);
+      entry.timing === 'pre_game' && entry.cardId === 'rift' && entry.matchId === match.id && !entry.consumed
+      && (!playerId || entry.playerId === playerId));
     if (found) {
       activation = found;
       break;
