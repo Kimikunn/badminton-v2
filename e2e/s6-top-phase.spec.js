@@ -6,6 +6,7 @@ import { test, expect } from '@playwright/test'
  * 王序校验）→ 第 1 轮形态（黛青）→ 创建轮次 → 黛青形态下王所在方 2:0 开局（服务端写入）。
  * 第 2 轮走形态-only Sheet（王取自王序）→ 月白抵抗局 UI：提示条、「月白 · 抵抗」胜方选择卡、
  * 未选胜方/胜方不足 21 分不可结束、21:29 分低者获胜（服务端接受）。
+ * 第 1 轮 API 快进按剧本让王垫底 → 排名页断言王权顺延文案（王第四名，顺延第三名 X 提供饮料）。
  * API 负面：非排列王序 422、重复王选 422、未选形态建第 2 轮 422。
  * Run: PLAYWRIGHT_BASE_URL=http://localhost:8090 PLAYWRIGHT_EXPECT_SEASON_CREATE=1 npx playwright test e2e/s6-top-phase.spec.js --project=light
  */
@@ -226,24 +227,62 @@ test.describe('S6 top phase (王选)', () => {
       expect(sides.find(s => !s.names.includes(kingName))?.value).toBe('0')
     })
 
-    await test.step('fast-forward round 1 via API', async () => {
+    await test.step('fast-forward round 1 via API (king scripted last to trigger the 顺延 rule)', async () => {
       const roundsRes = await request.get(`${baseURL}/api/rounds?seasonId=${seasonId}`)
       const round1 = ((await roundsRes.json()).data || []).find(r => r.roundNo === 1)
       const matchesRes = await request.get(`${baseURL}/api/matches?seasonId=${seasonId}`)
       const round1Matches = ((await matchesRes.json()).data || []).filter(m => m.roundId === round1.id)
       expect(round1Matches).toHaveLength(3)
-      for (const match of round1Matches) {
-        // start 幂等；逐局写绝对比分后结束（teamA 2-0）
+      const kingId = players.find(p => p.name === kingName)?.id
+      expect(kingId).toBeTruthy()
+      // 王所在方每场 0:2 落败 → 王 0 胜垫底；负方得分逐场递增（5/9/13），
+      // 其余三人互为王搭档各一次 → 总得分互异，第三名（顺延提供人）唯一确定
+      for (const [matchIndex, match] of round1Matches.entries()) {
+        const kingOnA = match.teamA.includes(kingId)
+        const loserScore = 5 + matchIndex * 4
+        // start 幂等；逐局写绝对比分后结束
         await request.post(`${baseURL}/api/matches/${match.id}/start`, { headers: adminHeaders() })
         for (let i = 0; i < 2; i++) {
           const gamesRes = await request.get(`${baseURL}/api/matches/${match.id}/games`)
           const current = ((await gamesRes.json()).data || []).find(g => g.status === 'in_progress')
           expect(current).toBeTruthy()
-          await request.put(`${baseURL}/api/games/${current.id}/score`, { headers: adminHeaders(), data: { scoreA: 21, scoreB: 10 } })
+          const score = kingOnA ? { scoreA: loserScore, scoreB: 21 } : { scoreA: 21, scoreB: loserScore }
+          await request.put(`${baseURL}/api/games/${current.id}/score`, { headers: adminHeaders(), data: score })
           const endRes = await request.post(`${baseURL}/api/games/${current.id}/end`, { headers: adminHeaders(), data: {} })
           expect(endRes.ok()).toBeTruthy()
         }
       }
+    })
+
+    await test.step('rankings page shows the round-1 王权 provider (king last, 顺延第三名)', async () => {
+      // 独立口径复核轮内排名：大分 → 小分 → 得分（仅第 1 轮已完赛比赛）
+      const roundsRes = await request.get(`${baseURL}/api/rounds?seasonId=${seasonId}`)
+      const round1 = ((await roundsRes.json()).data || []).find(r => r.roundNo === 1)
+      const matchesRes = await request.get(`${baseURL}/api/matches?seasonId=${seasonId}`)
+      const round1Matches = ((await matchesRes.json()).data || []).filter(m => m.roundId === round1.id)
+      const stats = new Map(players.map(p => [p.id, { big: 0, small: 0, total: 0 }]))
+      for (const match of round1Matches) {
+        const gamesRes = await request.get(`${baseURL}/api/matches/${match.id}/games`)
+        const games = ((await gamesRes.json()).data || []).filter(g => g.status === 'completed')
+        for (const pid of [...match.teamA, ...match.teamB]) {
+          const side = match.teamA.includes(pid) ? 'a' : 'b'
+          const s = stats.get(pid)
+          if (match.winner === side) s.big++
+          for (const g of games) {
+            if (g.winner === side) s.small++
+            s.total += side === 'a' ? (g.scoreA || 0) : (g.scoreB || 0)
+          }
+        }
+      }
+      const standings = players
+        .map(p => ({ id: p.id, name: p.name, ...stats.get(p.id) }))
+        .sort((a, b) => (b.big - a.big) || (b.small - a.small) || (b.total - a.total))
+      // 剧本结果：王垫底（第四名），提供人顺延为第三名
+      expect(standings[3].name).toBe(kingName)
+      const providerName = standings[2].name
+
+      await page.goto(`/rankings?season=${seasonId}`, { waitUntil: 'networkidle' })
+      await expect(page.getByText(`王权：王第四名，顺延第三名 ${providerName} 提供饮料`)).toBeVisible()
     })
 
     await test.step('negative: creating round 2 without a king form is rejected', async () => {
