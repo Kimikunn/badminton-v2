@@ -181,3 +181,37 @@ docker-compose.yml 和 docker-compose.test.yml 同 service 名 app + 同默认 p
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: S6 王权每轮最后一名展示
+
+**Date**: 2026-08-13
+**Task**: S6 王权每轮最后一名展示
+**Branch**: `master`
+
+### Summary
+
+排名页王选面板逐轮展示王权提供人：calcTopRoundKingRights 按轮标准结算求末位，王垫底顺延第三名；部分完赛标暂列。e2e 王垫底剧本验证顺延分支，4 视口全绿。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3819c68` | (see git log) |
+| `f349888` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
