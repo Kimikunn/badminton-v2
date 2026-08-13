@@ -25,7 +25,8 @@ const props = defineProps({
   rounds: { type: Array, default: () => [] },
   matches: { type: Array, default: () => [] },
   comboRankings: { type: Array, default: () => [] },
-  topWinner: { type: Object, default: null }
+  topWinner: { type: Object, default: null },
+  kingRights: { type: Array, default: () => [] }
 })
 
 const ruleSheet = ref(null)
@@ -60,6 +61,21 @@ const kingOrder = computed(() => {
 
 function kingFormOf(roundNo) {
   return topKings.value[String(roundNo)]?.form || null
+}
+
+// 王权（每轮第四名给王提供饮料；王第四名顺延第三名）：按轮次索引的规则模块计算结果
+const kingRightByRound = computed(() =>
+  Object.fromEntries(props.kingRights.map(row => [row.roundNo, row]))
+)
+
+// 王权行内文案：未完赛轮次不误导——无已完赛比赛显示待定，部分完赛标注进行中
+function kingRightText(roundNo) {
+  const row = kingRightByRound.value[Number(roundNo)]
+  if (!row) return ''
+  if (!row.lastPlace) return '王权：待定'
+  if (!row.complete) return `王权：${playerName(row.lastPlace)} 暂列末位 · 进行中`
+  if (row.kingIsLast) return `王权：王第四名，顺延第三名 ${playerName(row.provider)} 提供饮料`
+  return `王权：${playerName(row.provider)} 提供饮料`
 }
 
 // 王序条目展示：首投骰面；重投过的由模板补注重投序列
@@ -231,6 +247,7 @@ const sheetRules = computed(() => {
           </span>
           <Badge v-if="kingFormOf(i + 1)" variant="purple" size="sm">{{ KING_FORMS[kingFormOf(i + 1)]?.name }}</Badge>
           <Badge v-else variant="muted" size="sm">待选形态</Badge>
+          <span v-if="kingRightByRound[i + 1]" class="ml-auto text-2xs text-fg-muted">{{ kingRightText(i + 1) }}</span>
         </div>
       </div>
       <!-- 旧口径：逐轮王选（无王序的历史数据，如 prod 第 1 轮） -->
@@ -245,6 +262,7 @@ const sheetRules = computed(() => {
             <span class="text-sm font-bold font-mono text-fg">R{{ row.roundNo }}</span>
             <Badge v-if="row.form" variant="purple" size="sm">{{ KING_FORMS[row.form]?.name }}</Badge>
             <Badge v-else variant="muted" size="sm">{{ row.kingId ? '待选形态' : '待王选' }}</Badge>
+            <span v-if="kingRightByRound[row.roundNo]" class="ml-auto text-2xs text-fg-muted">{{ kingRightText(row.roundNo) }}</span>
           </div>
           <div v-if="row.rolls.length" class="flex flex-wrap gap-2">
             <span

@@ -95,6 +95,19 @@ const s6TopWinner = computed(() => {
   if (topDone < 4) return null
   return seasonRankings.value[0] || null
 })
+// 王权：上篇每轮最后一名（王第四名时顺延第三名）提供饮料
+const s6KingRights = computed(() => {
+  if (ruleId.value !== 's6' || !currentSeason.value) return []
+  const rule = getRule('s6')
+  return rule?.calcTopRoundKingRights ? rule.calcTopRoundKingRights({
+    season: currentSeason.value,
+    rounds: seasonRounds.value,
+    matches: seasonMatches.value,
+    participants: currentSeason.value.participants || [],
+    getGamesByMatch: (mid) => matchesStore.getGamesByMatch(mid),
+    getPlayerById: (id) => playersStore.getPlayerById(id)
+  }) : []
+})
 </script>
 
 <template>
@@ -111,7 +124,7 @@ const s6TopWinner = computed(() => {
       <S3Rankings v-else-if="ruleId==='s3'" :rankings="seasonRankings" :season="currentSeason" :rounds="seasonRounds" />
       <S4Rankings v-else-if="ruleId==='s4'" :rankings="seasonRankings" :season="currentSeason" :rounds="seasonRounds" :matches="seasonMatches" :combo-rankings="s4ComboRankings" :top-winner="s4TopWinner" />
       <S5Rankings v-else-if="ruleId==='s5'" :rankings="seasonRankings" :season="currentSeason" :rounds="seasonRounds" />
-      <S6Rankings v-else-if="ruleId==='s6'" :rankings="seasonRankings" :season="currentSeason" :rounds="seasonRounds" :matches="seasonMatches" :combo-rankings="s6ComboRankings" :top-winner="s6TopWinner" />
+      <S6Rankings v-else-if="ruleId==='s6'" :rankings="seasonRankings" :season="currentSeason" :rounds="seasonRounds" :matches="seasonMatches" :combo-rankings="s6ComboRankings" :top-winner="s6TopWinner" :king-rights="s6KingRights" />
     </template>
 
     <!-- Friendly tab -->

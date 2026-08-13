@@ -90,7 +90,7 @@ export const KING_FORMS = {
 // 上篇规则文案（规则 Sheet 展示用，与组件展示文字保持一致）
 export const KING_RULES = [
   { id: 'roll', title: '王选', text: '上篇开始前进行一次王选：4 名参赛者各投一次骰子，按点数从大到小依次决定第 1-4 轮的"王"；同点者组内重投，仅决定并列者之间的顺序。' },
-  { id: 'privilege', title: '王权', text: '每轮第四名要给"王"提供一瓶运动饮料，若"王"为第四名则由第三名提供。' },
+  { id: 'privilege', title: '王权', text: '每轮第四名要给"王"提供一瓶运动饮料，若"王"为第四名则由第三名提供。名次按该轮已完赛比赛的标准结算（大分 → 小分 → 得分）确定，排名页王选面板逐轮展示提供人。' },
   { id: 'triumph', title: '凯旋', text: '上篇最终前两名在组合赛中各获得 1 次重新投掷骰子的机会。' }
 ]
 
@@ -221,6 +221,53 @@ function getTopKing(roundNo, context = {}) {
   const kingId = s6?.kingOrder?.[Number(roundNo) - 1]?.playerId || legacy?.kingId
   if (!kingId) return null
   return { kingId, form: legacy?.form || null, rolls: legacy?.rolls }
+}
+
+// 王权：上篇每轮第四名给本轮的王提供一瓶运动饮料；王为第四名时顺延第三名。
+// 轮次内排名复用 standard 结算（仅取该轮已完赛比赛），大分 → 小分 → 得分。
+// 返回每个已创建上篇轮次的 { roundNo, status, kingId, standings, completedMatchCount,
+// complete, lastPlace, provider, kingIsLast }；该轮无已完赛比赛时 lastPlace/provider 为 null
+export function calcTopRoundKingRights(context = {}) {
+  const rounds = context?.rounds || []
+  const matches = context?.matches || []
+  const getGamesByMatch = context?.getGamesByMatch || (() => [])
+  const getPlayerById = context?.getPlayerById || ((id) => ({ id }))
+  const participants = context?.participants || context?.season?.participants || []
+
+  return rounds
+    .filter(round => isTopRound(round.roundNo))
+    .sort((a, b) => Number(a.roundNo) - Number(b.roundNo))
+    .map(round => {
+      const roundMatches = matches.filter(match =>
+        match.roundId === round.id && match.status === STATUS.COMPLETED)
+      const king = getTopKing(round.roundNo, context)
+      const standings = standardRule
+        .calcRankings(participants, roundMatches, getGamesByMatch, getPlayerById, context)
+        .sort((a, b) =>
+          (b.finalBigScore - a.finalBigScore)
+          || (b.finalSmallScore - a.finalSmallScore)
+          || (b.totalPoints - a.totalPoints))
+
+      const hasResults = roundMatches.length > 0
+      const lastPlace = hasResults ? standings[standings.length - 1]?.id || null : null
+      const kingIsLast = !!(lastPlace && king?.kingId && king.kingId === lastPlace)
+      // 顺延：王为第四名时由第三名提供
+      const provider = !lastPlace ? null
+        : kingIsLast ? standings[standings.length - 2]?.id || null
+        : lastPlace
+
+      return {
+        roundNo: Number(round.roundNo),
+        status: round.status,
+        kingId: king?.kingId || null,
+        standings,
+        completedMatchCount: roundMatches.length,
+        complete: round.status === STATUS.COMPLETED,
+        lastPlace,
+        provider,
+        kingIsLast
+      }
+    })
 }
 
 // 灵魂契合种子口径（与服务端 deriveSeeds 一致）：优先读已持久化的
@@ -481,6 +528,10 @@ export default {
 
   getTopKing(roundNo, context) {
     return getTopKing(roundNo, context)
+  },
+
+  calcTopRoundKingRights(context) {
+    return calcTopRoundKingRights(context)
   },
 
   getKingOrder(context) {

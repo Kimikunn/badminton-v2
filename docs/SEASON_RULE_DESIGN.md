@@ -85,7 +85,8 @@ defineProps({
   rounds: Array,     // 轮次列表
   matches: Array,    // 比赛列表（S4/S6 专用）
   comboRankings: Array,  // 组合排名（S4/S6 专用）
-  topWinner: Object      // 最强王者（S4/S6 专用）
+  topWinner: Object,     // 最强王者（S4/S6 专用）
+  kingRights: Array      // 王权：每轮最后一名/顺延提供人（S6 专用）
 })
 ```
 
