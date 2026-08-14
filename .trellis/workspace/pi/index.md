@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 5
-- **Last Active**: 2026-08-13
+- **Total Sessions**: 6
+- **Last Active**: 2026-08-14
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~217 | Active |
+| `journal-1.md` | ~250 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 6 | 2026-08-14 | S6 排版修复：数字骰子芯片与网格对齐 | `cc13a09` | `master` |
 | 5 | 2026-08-13 | S6 王权每轮最后一名展示 | `3819c68`, `f349888` | `master` |
 | 4 | 2026-08-08 | S6 王选改一次性王序 + 生产数据修复 | `a742008`, `4a06f76` | `master` |
 | 3 | 2026-08-08 | S6 规则修正：月白抵抗局与逐人暗选 | `00864c9`, `feb60c0` | `master` |

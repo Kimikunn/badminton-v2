@@ -215,3 +215,36 @@ docker-compose.yml 和 docker-compose.test.yml 同 service 名 app + 同默认 p
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: S6 排版修复：数字骰子芯片与网格对齐
+
+**Date**: 2026-08-14
+**Task**: S6 排版修复：数字骰子芯片与网格对齐
+**Branch**: `master`
+
+### Summary
+
+PWA 手机端排版修复：Unicode 骰面字符在部分 Android 字体缺字形，新增 DiceChip 数字芯片组件全面替换；王选面板改固定四列网格（轮次/王/骰子/形态）实现跨行对齐，王权文案独立行。截图复查两种视口两色主题，e2e 全量回归零改动通过。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cc13a09` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
