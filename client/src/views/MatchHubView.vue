@@ -19,6 +19,7 @@ import Card from '@/components/ui/Card.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Avatar from '@/components/ui/Avatar.vue'
 import Button from '@/components/ui/Button.vue'
+import DiceChip from '@/components/ui/DiceChip.vue'
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import Input from '@/components/ui/Input.vue'
 import Sheet from '@/components/ui/Sheet.vue'
@@ -207,7 +208,6 @@ function rollRoundDice() {
 // 王选只在第 1 轮创建前进行一次：4 名参赛者各投一次骰子，按点数从大到小定
 // 第 1-4 轮的王；同点者组内重投，仅决定组内顺序（不做全局重排）。第 2-4 轮
 // 创建前只弹形态选择（该轮的王取自王序）。
-const KING_DICE_FACES = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅']
 const showKingSelect = ref(false)
 const showKingForm = ref(false)
 const kingRolls = ref({}) // { [playerId]: number[] } 完整投掷序列（首投 + 组内重投）
@@ -301,10 +301,6 @@ function rollKingDice(playerId) {
   if (!pendingKingIds.value.includes(playerId)) return
   const rolls = kingRolls.value[playerId] || []
   kingRolls.value = { ...kingRolls.value, [playerId]: [...rolls, Math.floor(Math.random() * 6) + 1] }
-}
-
-function kingDiceFace(value) {
-  return KING_DICE_FACES[value - 1] || value
 }
 
 // 一次性王选提交：王序（s6_king_roll）→ 第 1 轮形态（s6_king_form）→ 创建轮次
@@ -877,9 +873,9 @@ onMounted(() => {
               <Avatar :name="playersStore.getPlayerName(entry.playerId)" size="sm" />
               <span class="flex-1 min-w-0 text-sm font-medium text-fg truncate">{{ playersStore.getPlayerName(entry.playerId) }}</span>
               <span v-if="entry.rolls.length" class="flex items-center gap-1.5 shrink-0">
-                <span class="text-2xl leading-none text-fg">{{ kingDiceFace(entry.rolls[0]) }}</span>
-                <span v-if="entry.rolls.length > 1" class="text-xs text-fg-muted">
-                  重投 {{ entry.rolls.slice(1).map(kingDiceFace).join(' ') }}
+                <DiceChip :value="entry.rolls[0]" size="md" />
+                <span v-if="entry.rolls.length > 1" class="flex items-center gap-1 text-xs text-fg-muted">
+                  重投 <DiceChip v-for="(v, j) in entry.rolls.slice(1)" :key="j" :value="v" />
                 </span>
               </span>
               <button
@@ -982,7 +978,7 @@ onMounted(() => {
 
               <!-- 已提交的点数 -->
               <div v-if="getSoulRoll(soulActiveCombo, pid)" class="flex items-center gap-2 flex-wrap">
-                <span class="text-2xl leading-none text-fg">{{ getSoulRoll(soulActiveCombo, pid).dice.map(d => KING_DICE_FACES[d - 1]).join(' ') }}</span>
+                <DiceChip v-for="(d, i) in getSoulRoll(soulActiveCombo, pid).dice" :key="i" :value="d" size="md" />
                 <span class="text-xs text-fg-muted">判定 <span class="text-sm font-bold text-fg">{{ getSoulRoll(soulActiveCombo, pid).used }}</span></span>
                 <Badge v-if="getSoulRoll(soulActiveCombo, pid).rollChoice === 2" variant="muted" size="sm">第二次为准</Badge>
                 <Badge v-if="getSoulRoll(soulActiveCombo, pid).reforged" variant="accent" size="sm">已重铸</Badge>
@@ -991,11 +987,11 @@ onMounted(() => {
               <!-- 本地暂存：选次数 → 掷骰 → 提交 -->
               <template v-else-if="soulStaging[pid]">
                 <div v-if="soulStaging[pid].dice.length" class="flex items-center gap-3 flex-wrap">
-                  <span
+                  <DiceChip
                     v-for="(d, i) in soulStaging[pid].dice" :key="i"
-                    class="text-2xl leading-none"
-                    :class="soulStaging[pid].rollChoice === 2 && i === 0 ? 'text-fg-muted' : 'text-fg'"
-                  >{{ KING_DICE_FACES[d - 1] }}</span>
+                    :value="d" size="md"
+                    :class="soulStaging[pid].rollChoice === 2 && i === 0 ? 'opacity-50' : ''"
+                  />
                   <Badge v-if="soulStaging[pid].rollChoice === 2" variant="muted" size="sm">第二次为准</Badge>
                   <Badge v-if="soulStaging[pid].rerollSource" variant="warning" size="sm">重投</Badge>
                 </div>
@@ -1082,7 +1078,7 @@ onMounted(() => {
                 <!-- 重铸（第二阶解锁，立刻重投二选一，占一次选择） -->
                 <template v-if="getTierCap(soulActiveCombo.unlockTier) >= 2 && getPlayerPickCount(soulActiveCombo, pid) < getAllowedPicks(soulActiveCombo, pid)">
                   <div v-if="reforgeState?.playerId === pid" class="flex flex-col gap-2 p-2.5 rounded-lg bg-surface-hover border border-line-light">
-                    <p class="text-xs text-fg-secondary">重铸：原点数 <span class="font-bold text-fg">{{ getSoulRoll(soulActiveCombo, pid)?.used }}</span>，新点数 <span class="font-bold text-accent">{{ KING_DICE_FACES[reforgeState.newDice - 1] }} {{ reforgeState.newDice }}</span></p>
+                    <p class="text-xs text-fg-secondary flex items-center gap-1 flex-wrap">重铸：原点数 <span class="font-bold text-fg">{{ getSoulRoll(soulActiveCombo, pid)?.used }}</span>，新点数 <DiceChip :value="reforgeState.newDice" /></p>
                     <div class="flex gap-2">
                       <button class="flex-1 px-3 py-2 rounded-lg border border-line bg-surface text-fg text-sm cursor-pointer transition-all duration-fast active:scale-95" :disabled="soulSubmitting" @click="submitReforge(getSoulRoll(soulActiveCombo, pid)?.used)">保留原点数</button>
                       <button class="flex-1 px-3 py-2 rounded-lg border border-accent bg-accent-subtle text-accent text-sm font-medium cursor-pointer transition-all duration-fast active:scale-95" :disabled="soulSubmitting" @click="submitReforge(reforgeState.newDice)">使用新点数</button>

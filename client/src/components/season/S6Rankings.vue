@@ -12,6 +12,7 @@ import Badge from '@/components/ui/Badge.vue'
 import Sheet from '@/components/ui/Sheet.vue'
 import Avatar from '@/components/ui/Avatar.vue'
 import RankMedal from '@/components/ui/RankMedal.vue'
+import DiceChip from '@/components/ui/DiceChip.vue'
 import S1Rankings from '@/components/season/S1Rankings.vue'
 import {
   KING_FORMS, KING_RULES, SOUL_RULES, COMBO_SCORING_RULES,
@@ -30,7 +31,6 @@ const props = defineProps({
 })
 
 const ruleSheet = ref(null)
-const DICE = { 1: '⚀', 2: '⚁', 3: '⚂', 4: '⚃', 5: '⚄', 6: '⚅' }
 const CIRCLED = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧']
 
 // --- Data ---
@@ -181,10 +181,6 @@ function comboMemberNames(label) {
   return ids.length ? ids.map(id => playerName(id)).join(' / ') : `${label} 组合`
 }
 
-function diceFaces(dice) {
-  return (dice || []).map(value => DICE[value] || value).join(' ')
-}
-
 const RULE_TITLES = {
   king: '王选规则',
   daiqing: '黛青形态',
@@ -234,20 +230,29 @@ const sheetRules = computed(() => {
       <div v-if="kingOrder" class="flex flex-col gap-2">
         <div
           v-for="(entry, i) in kingOrder" :key="entry.playerId"
-          class="flex items-center gap-2 flex-wrap p-3 rounded-lg bg-canvas border border-line-light cursor-pointer transition-transform duration-fast active:scale-95"
+          class="p-3 rounded-lg bg-canvas border border-line-light cursor-pointer transition-transform duration-fast active:scale-95"
           @click="ruleSheet = 'king'"
         >
-          <span class="text-sm font-bold text-fg">{{ CIRCLED[i] }}</span>
-          <span class="text-xs font-semibold font-mono text-fg-muted">R{{ i + 1 }} 王</span>
-          <Crown :size="12" class="text-accent shrink-0" />
-          <span class="text-sm font-semibold text-fg">{{ playerName(entry.playerId) }}</span>
-          <span class="text-lg leading-none text-fg">{{ DICE[kingOrderDice(entry)] || kingOrderDice(entry) }}</span>
-          <span v-if="entry.rolls?.length > 1" class="text-2xs text-fg-muted">
-            重投 {{ entry.rolls.slice(1).map(v => DICE[v] || v).join(' ') }}
-          </span>
-          <Badge v-if="kingFormOf(i + 1)" variant="purple" size="sm">{{ KING_FORMS[kingFormOf(i + 1)]?.name }}</Badge>
-          <Badge v-else variant="muted" size="sm">待选形态</Badge>
-          <span v-if="kingRightByRound[i + 1]" class="ml-auto text-2xs text-fg-muted">{{ kingRightText(i + 1) }}</span>
+          <!-- 固定列网格：轮次/王/骰子/形态四列跨行对齐 -->
+          <div class="grid grid-cols-[1.75rem_minmax(0,1fr)_4.5rem_4.25rem] items-center gap-x-2">
+            <span class="text-xs font-semibold font-mono text-fg-muted">R{{ i + 1 }}</span>
+            <span class="flex items-center gap-1.5 min-w-0">
+              <Crown :size="13" class="text-accent shrink-0" />
+              <span class="text-sm font-semibold text-fg truncate">{{ playerName(entry.playerId) }}</span>
+            </span>
+            <span class="flex items-center justify-end gap-1">
+              <DiceChip :value="kingOrderDice(entry)" />
+              <template v-if="entry.rolls?.length > 1">
+                <span class="text-2xs text-fg-muted">重投</span>
+                <DiceChip v-for="(v, j) in entry.rolls.slice(1)" :key="j" :value="v" />
+              </template>
+            </span>
+            <span class="flex justify-center">
+              <Badge v-if="kingFormOf(i + 1)" variant="purple" size="sm">{{ KING_FORMS[kingFormOf(i + 1)]?.name }}</Badge>
+              <Badge v-else variant="muted" size="sm">待选形态</Badge>
+            </span>
+          </div>
+          <p v-if="kingRightByRound[i + 1]" class="mt-1.5 pl-9 text-xs text-fg-muted">{{ kingRightText(i + 1) }}</p>
         </div>
       </div>
       <!-- 旧口径：逐轮王选（无王序的历史数据，如 prod 第 1 轮） -->
@@ -262,7 +267,6 @@ const sheetRules = computed(() => {
             <span class="text-sm font-bold font-mono text-fg">R{{ row.roundNo }}</span>
             <Badge v-if="row.form" variant="purple" size="sm">{{ KING_FORMS[row.form]?.name }}</Badge>
             <Badge v-else variant="muted" size="sm">{{ row.kingId ? '待选形态' : '待王选' }}</Badge>
-            <span v-if="kingRightByRound[row.roundNo]" class="ml-auto text-2xs text-fg-muted">{{ kingRightText(row.roundNo) }}</span>
           </div>
           <div v-if="row.rolls.length" class="flex flex-wrap gap-2">
             <span
@@ -271,10 +275,11 @@ const sheetRules = computed(() => {
               :class="roll.playerId === row.kingId ? 'border-accent bg-accent-subtle text-accent font-semibold' : 'border-line-light text-fg-secondary'"
             >
               <Crown v-if="roll.playerId === row.kingId" :size="12" />
-              {{ playerName(roll.playerId) }} {{ DICE[roll.dice] || roll.dice }}
+              {{ playerName(roll.playerId) }} <DiceChip :value="roll.dice" />
             </span>
           </div>
           <p v-else class="text-xs text-fg-muted italic">尚未进行王选</p>
+          <p v-if="kingRightByRound[row.roundNo]" class="mt-1.5 text-xs text-fg-muted">{{ kingRightText(row.roundNo) }}</p>
         </div>
       </div>
     </Card>
@@ -354,7 +359,8 @@ const sheetRules = computed(() => {
               v-for="roll in row.combo.rolls || []" :key="roll.playerId"
               class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs border border-line-light text-fg-secondary"
             >
-              {{ playerName(roll.playerId) }} {{ diceFaces(roll.dice) }}
+              {{ playerName(roll.playerId) }}
+              <DiceChip v-for="(v, j) in roll.dice || []" :key="j" :value="v" />
               <span class="font-semibold text-fg">→ {{ roll.used }}</span>
               <span v-if="roll.reforged" class="text-accent">重铸</span>
             </span>
