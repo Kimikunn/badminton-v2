@@ -6,7 +6,8 @@ import { test, expect } from '@playwright/test'
  * 王序校验）→ 第 1 轮形态（黛青）→ 创建轮次 → 黛青形态下王所在方 2:0 开局（服务端写入）。
  * 第 2 轮走形态-only Sheet（王取自王序）→ 月白抵抗局 UI：提示条、「月白 · 抵抗」胜方选择卡、
  * 未选胜方/胜方不足 21 分不可结束、21:29 分低者获胜（服务端接受）。
- * 第 1 轮 API 快进按剧本让王垫底 → 排名页断言王权顺延文案（王第四名，顺延第三名 X 提供饮料）。
+ * 第 1 轮 API 快进按剧本让王垫底 → 排名页断言王权顺延文案（王第四名，顺延第三名 X 提供饮料）
+ * 及排名列表 DOM 顺序与独立口径（大分→小分→得分）完全一致（三人大分/小分并列、得分区分）。
  * API 负面：非排列王序 422、重复王选 422、未选形态建第 2 轮 422。
  * Run: PLAYWRIGHT_BASE_URL=http://localhost:8090 PLAYWRIGHT_EXPECT_SEASON_CREATE=1 npx playwright test e2e/s6-top-phase.spec.js --project=light
  */
@@ -281,8 +282,22 @@ test.describe('S6 top phase (王选)', () => {
       expect(standings[3].name).toBe(kingName)
       const providerName = standings[2].name
 
+      // 剧本构造排序回归场景：其余三人大分（各 2 胜）与小分（各 4 局）全部并列，
+      // 仅靠得分（负场 5/9/13 分）区分名次 —— 大分→小分→进球数 的比较器必须生效
+      expect(standings.map(s => s.big)).toEqual([2, 2, 2, 0])
+      expect(standings.slice(0, 3).every(s => s.small === 4)).toBe(true)
+      expect(new Set(standings.map(s => s.total)).size).toBe(4)
+
       await page.goto(`/rankings?season=${seasonId}`, { waitUntil: 'networkidle' })
       await expect(page.getByText(`王权：王第四名，顺延第三名 ${providerName} 提供饮料`)).toBeVisible()
+
+      // 排名列表的 DOM 顺序与独立口径完全一致（S1Rankings 默认「胜场大分」tab，
+      // 继承 calcRankings 的大分→小分→进球数顺序；仅排名区内的选手名行参与比较）
+      const rankingSection = page.locator('div.flex.flex-col.gap-5', { has: page.getByRole('button', { name: '胜场大分' }) })
+      const nameCells = rankingSection.locator('div.flex.flex-col.gap-2 > div span.block.text-sm.font-semibold.truncate')
+      await expect(nameCells).toHaveCount(4)
+      const domOrder = (await nameCells.allTextContents()).map(s => s.trim())
+      expect(domOrder).toEqual(standings.map(s => s.name))
     })
 
     await test.step('negative: creating round 2 without a king form is rejected', async () => {
