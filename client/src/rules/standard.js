@@ -1,9 +1,20 @@
 /**
  * 标准规则（S1及默认）
  * 基础计分方式：大分=胜场数，小分=赢局数
+ * 排名排序：大分 → 小分 → 进球数（得分）→ 选手ID（稳定）
  */
 
 import { STATUS } from '@/constants'
+
+/**
+ * 大分 → 小分 → 进球数 的全比较器（S1/S2/S3/S6 共用，与 S5 compareRankings 同口径）
+ */
+export function comparePlayerRankings(a, b) {
+  if ((b.finalBigScore ?? 0) !== (a.finalBigScore ?? 0)) return (b.finalBigScore ?? 0) - (a.finalBigScore ?? 0)
+  if ((b.finalSmallScore ?? 0) !== (a.finalSmallScore ?? 0)) return (b.finalSmallScore ?? 0) - (a.finalSmallScore ?? 0)
+  if ((b.totalPoints ?? 0) !== (a.totalPoints ?? 0)) return (b.totalPoints ?? 0) - (a.totalPoints ?? 0)
+  return String(a.id).localeCompare(String(b.id))
+}
 
 export default {
   id: 'standard',
@@ -83,8 +94,8 @@ export default {
       }
     })
 
-    // 按大分排序
-    return rankings.sort((a, b) => b.finalBigScore - a.finalBigScore)
+    // 按大分 → 小分 → 进球数排序
+    return rankings.sort(comparePlayerRankings)
   },
 
   /**

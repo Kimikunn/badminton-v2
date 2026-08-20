@@ -4,6 +4,7 @@
  */
 
 import { STATUS } from '@/constants'
+import { comparePlayerRankings } from './standard'
 
 /**
  * 绝对压制2.0 Buff 配置
@@ -439,7 +440,8 @@ export default {
       }
     })
 
-    return rankings.sort((a, b) => b.finalBigScore - a.finalBigScore)
+    // 按大分 → 小分 → 进球数排序
+    return rankings.sort(comparePlayerRankings)
   },
 
   /**
