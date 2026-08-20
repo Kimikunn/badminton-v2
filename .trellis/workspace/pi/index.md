@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 6
-- **Last Active**: 2026-08-14
+- **Total Sessions**: 7
+- **Last Active**: 2026-08-20
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~250 | Active |
+| `journal-1.md` | ~284 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 7 | 2026-08-20 | 修复排名排序：大分→小分→进球数 | `39b6a25`, `f8c1cd9` | `master` |
 | 6 | 2026-08-14 | S6 排版修复：数字骰子芯片与网格对齐 | `cc13a09` | `master` |
 | 5 | 2026-08-13 | S6 王权每轮最后一名展示 | `3819c68`, `f349888` | `master` |
 | 4 | 2026-08-08 | S6 王选改一次性王序 + 生产数据修复 | `a742008`, `4a06f76` | `master` |

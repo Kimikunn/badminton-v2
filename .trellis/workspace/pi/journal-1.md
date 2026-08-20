@@ -248,3 +248,37 @@ PWA 手机端排版修复：Unicode 骰面字符在部分 Android 字体缺字�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: 修复排名排序：大分→小分→进球数
+
+**Date**: 2026-08-20
+**Task**: 修复排名排序：大分→小分→进球数
+**Branch**: `master`
+
+### Summary
+
+standard/s2/s3 的 calcRankings 只按大分排序的 bug 修复：新增共享比较器 comparePlayerRankings（大分→小分→进球数→ID，与 S5 同口径），S1/S2/S3/S6 上篇全部生效。e2e 用三人同大分同小分按进球数分序的剧本锁定回归。全规格×4 视口绿，服务端 110/110。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `39b6a25` | (see git log) |
+| `f8c1cd9` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
