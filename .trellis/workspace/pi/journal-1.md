@@ -282,3 +282,36 @@ standard/s2/s3 的 calcRankings 只按大分排序的 bug 修复：新增共享�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: 订场提醒与推送：从抓包到生产上线
+
+**Date**: 2026-08-29
+**Task**: 订场提醒与推送：从抓包到生产上线
+**Branch**: `master`
+
+### Summary
+
+完成订场监控功能全流程：Stream 抓包验证小程序接口可行性（listAreaLease + token-user 重放）；服务端新增 venue-watch 模块（轮询器 0→1 状态 diff、401 告警去重、每日汇总排版接口）；凭证走 server/.env；监控目标支持 4 天放票窗日期卡片、重复规律（每天/工作日/每周末/自定义）、排除不可用日期；UI 并入订场页 VenueWatchPanel；推送通道从 PushPlus（需实名付费）切到 WxPusher Topic 群发；修复容器时区（Dockerfile 装 tzdata + TZ=Asia/Shanghai）；docker-compose.test.yml 固定 project 名避免与 prod 互相认领容器（期间 prod 曾短暂中断已恢复）；145 测试全绿，已部署 prod 并提交 6accf9f。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6accf9f` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
