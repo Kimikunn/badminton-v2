@@ -1,23 +1,15 @@
 /**
  * 订场监控 — 每日场次汇总（digest）排版与变更提醒标题
  *
- * - buildDigest(env)：拉取今天起放票窗口内（BOOKING_WINDOW_DAYS 天）的可订数据，
- *   按日期分节排版为 markdown，供 GET /digest 预览与 POST /digest/send 推送
- * - buildNotifyTitle(date, slots)：poller 变更提醒的标题（含日期与场地短名）
+ * - buildDigest(env, fetchAreaLease)：拉取今天起放票窗口内（BOOKING_WINDOW_DAYS 天）
+ *   的可订数据，按日期分节排版为 markdown，由引擎每日固定时刻触发推送
+ * - buildNotifyTitle(date, slots)：引擎变更提醒的标题（含日期与场地短名）
  *
- * fetchAreaLease 在调用时延迟 require venueWatchPoller，避免与 poller 循环依赖
- * （poller 顶部引入本模块的 buildNotifyTitle）。
+ * fetchAreaLease 由调用方（引擎）注入，避免与引擎循环依赖。
  */
-const venueWatchService = require('./venueWatchService');
+const { BOOKING_WINDOW_DAYS, dateStr, isSlotAvailable } = require('./venueShared');
 
 const WEEKDAY_NAMES = ['日', '一', '二', '三', '四', '五', '六'];
-
-function dateStr(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
 
 /** 8/31 */
 function mdLabel(date) {
@@ -34,10 +26,6 @@ function weekdayLabel(date) {
 /** 场地名精简：去掉括号及内容，如"一号场(3F)"→"一号场" */
 function courtShort(areaName) {
   return String(areaName || '').replace(/[（(][^)）]*[)）]/g, '').trim();
-}
-
-function isSlotAvailable(item) {
-  return item && item.status === 'NORMAL' && item.showStatus === 'AVAILABLE';
 }
 
 /**
@@ -75,13 +63,12 @@ function buildSection(date, data) {
 /**
  * 拉取放票窗口内各日可订数据并排版。
  * @param {{ tokenUser: string }} env
+ * @param {(date: string, tokenUser: string) => Promise<object>} fetchAreaLease 引擎注入
  * @returns {Promise<{ title: string, content: string } | { error: 'token_invalid' | 'upstream', date?: string }>}
  */
-async function buildDigest(env) {
-  const { fetchAreaLease } = require('./venueWatchPoller');
-
+async function buildDigest(env, fetchAreaLease) {
   const days = [];
-  for (let i = 0; i < venueWatchService.BOOKING_WINDOW_DAYS; i++) {
+  for (let i = 0; i < BOOKING_WINDOW_DAYS; i++) {
     const d = new Date();
     d.setDate(d.getDate() + i);
     days.push(dateStr(d));
@@ -106,7 +93,7 @@ async function buildDigest(env) {
 
   const title = availableLabels.length
     ? `场次汇总： ${availableLabels.join('、')} 有可订`
-    : '近4天暂无可订场次';
+    : `近${BOOKING_WINDOW_DAYS}天暂无可订场次`;
   return { title, content: sections.join('\n\n') };
 }
 

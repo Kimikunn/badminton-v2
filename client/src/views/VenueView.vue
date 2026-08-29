@@ -14,7 +14,7 @@ import Sheet from '@/components/ui/Sheet.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import BookingCalendar from '@/components/venue/BookingCalendar.vue'
-import VenueWatchPanel from '@/components/venue/VenueWatchPanel.vue'
+import IntentPanel from '@/components/venue/IntentPanel.vue'
 import { ClipboardList, Pencil, Trash2, ChevronDown } from 'lucide-vue-next'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
@@ -378,8 +378,8 @@ async function deleteEditingVenue() {
       </Button>
     </Card>
 
-    <!-- 订场提醒 -->
-    <VenueWatchPanel :unavailable-date-set="unavailableDateSet" />
+    <!-- 订场意图 -->
+    <IntentPanel :unavailable-date-set="unavailableDateSet" />
 
     <!-- Venues -->
     <Card padding="md">

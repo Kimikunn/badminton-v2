@@ -20,6 +20,10 @@ __pycache__/
 # Server secrets (venue-watch credentials)
 server/.env
 
+# 小程序解包分析产物（含 createOrder 签名私钥明文，勿入库）
+/.analysis/
+/*.zip
+
 # Agent / AI tooling
 .agents/
 .claude/

@@ -57,7 +57,7 @@ Helpers: `success`, `error`, `notFound` (404 NOT_FOUND), `validationError`
 (422 VALIDATION_ERROR), `serverError` (500). Error messages are Chinese,
 user-facing. Never call `res.json` directly with a hand-rolled shape.
 
-## Validation — two coexisting layers (use both)
+## Validation — two coexisting layers
 
 1. **Declarative shape checks** in `server/src/validators/<domain>Validators.js`
    (express-validator `body(...)` chains), wired in the route with the
@@ -72,6 +72,12 @@ user-facing. Never call `res.json` directly with a hand-rolled shape.
 
 For update endpoints pass `{ partial: true }`-style options so absent fields
 are skipped (see `validateVenuePayload(body, { partial: true })`).
+
+Exception (intents domain, ADR-0002 refactor): `validators/intentValidators.js`
+merges cross-field rules into the validators layer via `body().custom(...)`
+(incl. reading the existing row for partial updates); the controller then only
+does 404 existence checks. New domains may follow either pattern, but do not
+duplicate the same rule in both layers.
 
 ## Services & DB access
 

@@ -1,0 +1,26 @@
+-- 016: 监控锁场系统重构为订场意图模型（ADR-0001）
+--
+-- 表重命名 + v1 废弃列删除 + 字段语义转换：
+--
+-- 1) venue_watch_targets → booking_intents
+--    - auto_lock(0/1) → mode('notify'/'auto_lock')
+--    - max_locks_per_slot → courts_needed（钳制 1-3）
+--    - area_ids → preferred_area_ids（空数组语义变为"用全局 area_priority"）
+--    - slots 非空：window_start = min(slot.startTime)，window_end = max(slot.endTime)，
+--      duration_hours = count(slots)
+--    - slots 为 NULL：window_start/end = start_time/end_time，
+--      duration_hours = (end - start) 小时数（至少 1）
+--    - 废弃列随旧表删除：slots、exclude_unavailable、area_id、area_name
+-- 2) venue_lock_orders → booking_intent_locks
+--    - target_id → intent_id；新增 unpaid_expired_count DEFAULT 0（两击降级计数）
+--    - 全量唯一索引改为部分唯一索引 uniq_no WHERE status='locked'，
+--      失败的锁场尝试不再阻塞格子回流后的重抢
+-- 3) venue_watch_config → watch_config
+--    - 删除 v1 废弃列：token_user、webhook_type/url/token/topic、poll_interval_sec
+--    - 保留：enabled、token_invalid_notified、poll_failure_notified、area_priority
+-- 4) venue_watch_areas → watch_areas；venue_watch_slot_state → watch_slot_state（原样拷贝）
+-- 5) venue_watch_notifications → watch_notifications（新增 intent_id 列，旧数据为 NULL）
+--
+-- 注意：schema.sql 已对新库直接创建新表结构，本文件由 db.js 的
+-- migrateIntentRefactor() 特判执行（数据映射需解析 slots JSON，纯 SQL 无法表达，
+-- 且整体包在事务中保证原子性），此处 SQL 仅作迁移内容记录，不会被原样执行。

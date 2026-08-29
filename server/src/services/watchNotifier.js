@@ -1,5 +1,5 @@
 /**
- * 订场监控推送 — 按 webhook 类型构造 payload
+ * 订场监控推送（watchNotifier） — 按 webhook 类型构造 payload
  *
  * 支持 wxpusher（默认，官方固定端点）/ pushplus（官方固定端点）/
  * wecom（群机器人 webhook）/ serverchan。

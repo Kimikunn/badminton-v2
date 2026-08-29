@@ -139,51 +139,66 @@ CREATE TABLE IF NOT EXISTS tips (
   generated_at TEXT DEFAULT (datetime('now'))
 );
 
-CREATE TABLE IF NOT EXISTS venue_watch_config (
+CREATE TABLE IF NOT EXISTS watch_config (
   id INTEGER PRIMARY KEY DEFAULT 1,
-  -- v2 起凭证/推送参数全部走服务器 .env（GYM_TOKEN_USER/PUSH_*），
-  -- 以下 v1 列废弃保留，代码不再读取（migration 010 已清空值）
-  token_user TEXT,
-  webhook_type TEXT,
-  webhook_url TEXT,
-  webhook_token TEXT,
-  webhook_topic TEXT,
-  poll_interval_sec INTEGER,
   enabled INTEGER DEFAULT 1,
   token_invalid_notified INTEGER DEFAULT 0, -- 401 告警去重标记
+  area_priority TEXT,           -- 全局锁场场地优先级（JSON 有序 areaId 数组）；意图 preferred_area_ids 为空时生效，空 = 按场馆返回顺序
+  poll_failure_notified INTEGER DEFAULT 0,  -- 连续拉取失败告警去重标记
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
-CREATE TABLE IF NOT EXISTS venue_watch_targets (
+CREATE TABLE IF NOT EXISTS booking_intents (
   id TEXT PRIMARY KEY,
-  date TEXT,                 -- YYYY-MM-DD，单日模式；NULL = 每周模式
-  weekdays TEXT,             -- JSON 数组 0-6（0=周日）；NULL = 单日模式
-  start_time TEXT NOT NULL,  -- HH:MM
-  end_time TEXT NOT NULL,    -- HH:MM
-  area_id INTEGER,           -- v1 遗留，废弃保留
-  area_name TEXT,            -- v1 遗留，废弃保留
-  area_ids TEXT NOT NULL DEFAULT '[]',  -- JSON 数组，空 = 任意场地
-  exclude_unavailable INTEGER NOT NULL DEFAULT 1,  -- 展开日期时排除 unavailable_days 标记的日期
+  mode TEXT NOT NULL DEFAULT 'auto_lock',  -- auto_lock 自动锁场 / notify 仅提醒
+  date TEXT,                 -- YYYY-MM-DD，单次日期；NULL = 每周模式
+  weekdays TEXT,             -- JSON 数组 0-6（0=周日）；NULL = 单次模式
+  window_start TEXT NOT NULL,  -- HH:MM，可订窗口起
+  window_end TEXT NOT NULL,    -- HH:MM，可订窗口止
+  duration_hours INTEGER NOT NULL DEFAULT 1,  -- 打球时长：窗口内需连续的小时数（允许跨场地，不接受断开）
+  courts_needed INTEGER NOT NULL DEFAULT 1,   -- 同一小时需要几片场（1-3）
+  preferred_area_ids TEXT NOT NULL DEFAULT '[]',  -- JSON 有序 areaId 数组；空 = 用全局 area_priority
   enabled INTEGER DEFAULT 1,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
-CREATE TABLE IF NOT EXISTS venue_watch_areas (
+CREATE TABLE IF NOT EXISTS booking_intent_locks (
+  id TEXT PRIMARY KEY,          -- bil- 前缀
+  intent_id TEXT NOT NULL,      -- 触发锁场的订场意图
+  uniq_no TEXT NOT NULL,        -- slot 唯一标识（同 watch_slot_state）
+  date TEXT NOT NULL,
+  start_time TEXT NOT NULL,
+  end_time TEXT NOT NULL,
+  area_id INTEGER,
+  area_name TEXT,
+  order_id TEXT,                -- 外部订单号；失败时为空
+  status TEXT NOT NULL,         -- locked | failed
+  error TEXT,                   -- 失败原因；成功时为空
+  unpaid_expired_count INTEGER NOT NULL DEFAULT 0,  -- 该格锁到后超时未支付回流的次数（两击降级计数）
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- 部分唯一索引：只拦"已锁到"的重复占坑；failed 记录不阻塞格子回流后的重试
+CREATE UNIQUE INDEX IF NOT EXISTS idx_booking_intent_locks_uniq_no_locked
+  ON booking_intent_locks(uniq_no) WHERE status = 'locked';
+
+CREATE TABLE IF NOT EXISTS watch_areas (
   area_id INTEGER PRIMARY KEY,  -- 场馆场地 ID（外部接口）
-  area_name TEXT,               -- poller 拉取时顺带记录，供目标输出 areaNames
+  area_name TEXT,               -- 引擎拉取时顺带记录，供意图输出 areaNames
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
-CREATE TABLE IF NOT EXISTS venue_watch_slot_state (
+CREATE TABLE IF NOT EXISTS watch_slot_state (
   uniq_no TEXT PRIMARY KEY,  -- 接口原生键，如 41_20260831_09:00_10:00
   date TEXT,                 -- 冗余日期，便于过期清理
   available INTEGER DEFAULT 0,
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
-CREATE TABLE IF NOT EXISTS venue_watch_notifications (
+CREATE TABLE IF NOT EXISTS watch_notifications (
   id TEXT PRIMARY KEY,
+  intent_id TEXT,            -- 来源意图；016 迁移的旧数据为 NULL
   uniq_no TEXT,
   area_name TEXT,
   date TEXT,
@@ -198,4 +213,4 @@ CREATE TABLE IF NOT EXISTS venue_watch_notifications (
 -- Default data
 INSERT OR IGNORE INTO club (id, name, description) VALUES (1, 'BAD Club', '');
 INSERT OR IGNORE INTO booking_config (id, rotation, current_person_index) VALUES (1, '[]', 0);
-INSERT OR IGNORE INTO venue_watch_config (id) VALUES (1);
+INSERT OR IGNORE INTO watch_config (id) VALUES (1);

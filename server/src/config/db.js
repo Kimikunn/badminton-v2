@@ -104,6 +104,26 @@ function runMigrationFile(migrationsDir, file) {
     migrateVenueWatchExcludeUnavailable();
     return;
   }
+  if (file === '012_venue_watch_slots.sql') {
+    migrateVenueWatchSlots();
+    return;
+  }
+  if (file === '013_venue_lock_orders.sql') {
+    migrateVenueLockOrders();
+    return;
+  }
+  if (file === '014_venue_lock_max_per_slot.sql') {
+    migrateVenueLockMaxPerSlot();
+    return;
+  }
+  if (file === '015_venue_watch_area_priority.sql') {
+    migrateVenueWatchAreaPriority();
+    return;
+  }
+  if (file === '016_intent_refactor.sql') {
+    migrateIntentRefactor();
+    return;
+  }
 
   const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf-8');
   db.run(sql);
@@ -142,6 +162,165 @@ function migrateVenueWatchExcludeUnavailable() {
   if (!hasColumn('venue_watch_targets', 'exclude_unavailable')) {
     db.run('ALTER TABLE venue_watch_targets ADD COLUMN exclude_unavailable INTEGER NOT NULL DEFAULT 1');
   }
+}
+
+function migrateVenueWatchSlots() {
+  if (!hasColumn('venue_watch_targets', 'slots')) {
+    db.run('ALTER TABLE venue_watch_targets ADD COLUMN slots TEXT');
+  }
+}
+
+function migrateVenueLockOrders() {
+  if (!hasColumn('venue_watch_targets', 'auto_lock')) {
+    db.run('ALTER TABLE venue_watch_targets ADD COLUMN auto_lock INTEGER NOT NULL DEFAULT 0');
+  }
+  db.run(`CREATE TABLE IF NOT EXISTS venue_lock_orders (
+    id TEXT PRIMARY KEY,
+    target_id TEXT NOT NULL,
+    uniq_no TEXT NOT NULL,
+    date TEXT NOT NULL,
+    start_time TEXT NOT NULL,
+    end_time TEXT NOT NULL,
+    area_id INTEGER,
+    area_name TEXT,
+    order_id TEXT,
+    status TEXT NOT NULL,
+    error TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`);
+  db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_venue_lock_orders_uniq_no ON venue_lock_orders(uniq_no)');
+}
+
+function migrateVenueLockMaxPerSlot() {
+  if (!hasColumn('venue_watch_targets', 'max_locks_per_slot')) {
+    db.run('ALTER TABLE venue_watch_targets ADD COLUMN max_locks_per_slot INTEGER NOT NULL DEFAULT 1');
+  }
+}
+
+function migrateVenueWatchAreaPriority() {
+  if (!hasColumn('venue_watch_config', 'area_priority')) {
+    db.run('ALTER TABLE venue_watch_config ADD COLUMN area_priority TEXT');
+  }
+  if (!hasColumn('venue_watch_config', 'poll_failure_notified')) {
+    db.run('ALTER TABLE venue_watch_config ADD COLUMN poll_failure_notified INTEGER NOT NULL DEFAULT 0');
+  }
+}
+
+function hasTable(tableName) {
+  const result = db.exec(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`, [tableName]);
+  return result.length > 0 && result[0].values.length > 0;
+}
+
+function hhmmToMinutes(t) {
+  const [h, m] = String(t).split(':').map(Number);
+  return h * 60 + (m || 0);
+}
+
+/**
+ * 016: venue_watch_* / venue_lock_orders → 订场意图模型新表（见 migrations/016_intent_refactor.sql）。
+ * 新库（schema.sql 已建新表、旧表不存在）与已迁移库直接跳过；整体事务保证原子性。
+ */
+function migrateIntentRefactor() {
+  if (!hasTable('venue_watch_targets')) return;
+
+  transaction(() => {
+    // venue_watch_targets → booking_intents
+    // 注意：db.js 的 prepare() 包装每次 run() 后即 free，语句对象不可跨行复用，循环内逐行 prepare。
+    for (const t of prepare('SELECT * FROM venue_watch_targets').all()) {
+      let windowStart = t.start_time;
+      let windowEnd = t.end_time;
+      let durationHours = Math.max(1, Math.round((hhmmToMinutes(t.end_time) - hhmmToMinutes(t.start_time)) / 60));
+      let slots = null;
+      try { slots = t.slots ? JSON.parse(t.slots) : null; } catch (_) { slots = null; }
+      if (Array.isArray(slots) && slots.length > 0) {
+        windowStart = slots.map(s => s.startTime).sort()[0];
+        windowEnd = slots.map(s => s.endTime).sort().slice(-1)[0];
+        durationHours = slots.length;
+      }
+      prepare(`INSERT INTO booking_intents
+        (id, mode, date, weekdays, window_start, window_end, duration_hours, courts_needed, preferred_area_ids, enabled, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        t.id,
+        t.auto_lock ? 'auto_lock' : 'notify',
+        t.date,
+        t.weekdays,
+        windowStart,
+        windowEnd,
+        durationHours,
+        Math.min(3, Math.max(1, t.max_locks_per_slot || 1)),
+        t.area_ids || '[]',
+        t.enabled,
+        t.created_at,
+        t.updated_at
+      );
+    }
+
+    // venue_lock_orders → booking_intent_locks
+    if (hasTable('venue_lock_orders')) {
+      for (const l of prepare('SELECT * FROM venue_lock_orders').all()) {
+        prepare(`INSERT INTO booking_intent_locks
+          (id, intent_id, uniq_no, date, start_time, end_time, area_id, area_name, order_id, status, error, unpaid_expired_count, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`).run(
+          l.id, l.target_id, l.uniq_no, l.date, l.start_time, l.end_time,
+          l.area_id, l.area_name, l.order_id, l.status, l.error, l.created_at
+        );
+      }
+    }
+
+    // venue_watch_config → watch_config（schema.sql 可能已插入默认行，存在则更新）
+    const cfg = prepare('SELECT * FROM venue_watch_config WHERE id = 1').get();
+    if (cfg) {
+      if (prepare('SELECT id FROM watch_config WHERE id = 1').get()) {
+        prepare(`UPDATE watch_config
+          SET enabled = ?, token_invalid_notified = ?, poll_failure_notified = ?, area_priority = ?, updated_at = ?
+          WHERE id = 1`).run(
+          cfg.enabled, cfg.token_invalid_notified, cfg.poll_failure_notified, cfg.area_priority, cfg.updated_at
+        );
+      } else {
+        prepare(`INSERT INTO watch_config
+          (id, enabled, token_invalid_notified, poll_failure_notified, area_priority, updated_at)
+          VALUES (1, ?, ?, ?, ?, ?)`).run(
+          cfg.enabled, cfg.token_invalid_notified, cfg.poll_failure_notified, cfg.area_priority, cfg.updated_at
+        );
+      }
+    }
+
+    // venue_watch_areas / venue_watch_slot_state → 原样拷贝
+    if (hasTable('venue_watch_areas')) {
+      for (const a of prepare('SELECT * FROM venue_watch_areas').all()) {
+        prepare('INSERT OR REPLACE INTO watch_areas (area_id, area_name, updated_at) VALUES (?, ?, ?)').run(
+          a.area_id, a.area_name, a.updated_at
+        );
+      }
+    }
+    if (hasTable('venue_watch_slot_state')) {
+      for (const s of prepare('SELECT * FROM venue_watch_slot_state').all()) {
+        prepare('INSERT OR REPLACE INTO watch_slot_state (uniq_no, date, available, updated_at) VALUES (?, ?, ?, ?)').run(
+          s.uniq_no, s.date, s.available, s.updated_at
+        );
+      }
+    }
+
+    // venue_watch_notifications → watch_notifications（旧数据 intent_id 置 NULL）
+    if (hasTable('venue_watch_notifications')) {
+      for (const n of prepare('SELECT * FROM venue_watch_notifications').all()) {
+        prepare(`INSERT INTO watch_notifications
+          (id, intent_id, uniq_no, area_name, date, start_time, end_time, price, success, error, created_at)
+          VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+          n.id, n.uniq_no, n.area_name, n.date, n.start_time, n.end_time,
+          n.price, n.success, n.error, n.created_at
+        );
+      }
+    }
+
+    // 旧表及 v1 废弃列随表删除
+    db.run('DROP TABLE IF EXISTS venue_watch_targets');
+    db.run('DROP TABLE IF EXISTS venue_lock_orders');
+    db.run('DROP TABLE IF EXISTS venue_watch_config');
+    db.run('DROP TABLE IF EXISTS venue_watch_areas');
+    db.run('DROP TABLE IF EXISTS venue_watch_slot_state');
+    db.run('DROP TABLE IF EXISTS venue_watch_notifications');
+  });
 }
 
 /**
