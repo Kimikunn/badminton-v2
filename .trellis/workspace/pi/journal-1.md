@@ -315,3 +315,36 @@ standard/s2/s3 的 calcRankings 只按大分排序的 bug 修复：新增共享�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: 监控锁场系统重构为订场意图模型
+
+**Date**: 2026-08-29
+**Task**: 监控锁场系统重构为订场意图模型
+**Branch**: `master`
+
+### Summary
+
+完成 intent-refactor 任务（7 步全绿）：迁移 016 把 venue_watch_*/venue_lock_orders 无损迁到 booking_intents/booking_intent_locks/watch_*（部分唯一索引修复失败占坑）；poller+rush 合并为单一 watchEngine（分钟 tick + 取数计划，09:00 burst 1s×10，digest 09:05 内部触发）；bookingLockService 实现连续时长满足判定（允许跨场）与两击降级；API /api/venue-watch→/api/intents，校验合并进 validators；前端 VenueWatchPanel 重写为 IntentPanel 卡片列表；测试重写 178/178 绿，e2e smoke 5/5。注意：放票窗口按 CONTEXT.md 从 5 天改为 4 天；PWA 旧 /api/venue-watch 缓存失效；生产库已备份到 server/database/backups/。实现中发现 db.js prepare() 包装单次性（run 后即 free，循环内需逐行 prepare）。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e766539` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
