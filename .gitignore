@@ -17,6 +17,9 @@ __pycache__/
 .env.local
 .env.*.local
 
+# Server secrets (venue-watch credentials)
+server/.env
+
 # Agent / AI tooling
 .agents/
 .claude/

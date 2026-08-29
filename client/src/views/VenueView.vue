@@ -14,6 +14,7 @@ import Sheet from '@/components/ui/Sheet.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import BookingCalendar from '@/components/venue/BookingCalendar.vue'
+import VenueWatchPanel from '@/components/venue/VenueWatchPanel.vue'
 import { ClipboardList, Pencil, Trash2, ChevronDown } from 'lucide-vue-next'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
@@ -376,6 +377,9 @@ async function deleteEditingVenue() {
         <ClipboardList :size="16" class="inline mr-1" />{{ nextPerson ? nextPerson.name + ' 记录订场' : '新增记录' }}
       </Button>
     </Card>
+
+    <!-- 订场提醒 -->
+    <VenueWatchPanel :unavailable-date-set="unavailableDateSet" />
 
     <!-- Venues -->
     <Card padding="md">

@@ -139,6 +139,63 @@ CREATE TABLE IF NOT EXISTS tips (
   generated_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS venue_watch_config (
+  id INTEGER PRIMARY KEY DEFAULT 1,
+  -- v2 起凭证/推送参数全部走服务器 .env（GYM_TOKEN_USER/PUSH_*），
+  -- 以下 v1 列废弃保留，代码不再读取（migration 010 已清空值）
+  token_user TEXT,
+  webhook_type TEXT,
+  webhook_url TEXT,
+  webhook_token TEXT,
+  webhook_topic TEXT,
+  poll_interval_sec INTEGER,
+  enabled INTEGER DEFAULT 1,
+  token_invalid_notified INTEGER DEFAULT 0, -- 401 告警去重标记
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS venue_watch_targets (
+  id TEXT PRIMARY KEY,
+  date TEXT,                 -- YYYY-MM-DD，单日模式；NULL = 每周模式
+  weekdays TEXT,             -- JSON 数组 0-6（0=周日）；NULL = 单日模式
+  start_time TEXT NOT NULL,  -- HH:MM
+  end_time TEXT NOT NULL,    -- HH:MM
+  area_id INTEGER,           -- v1 遗留，废弃保留
+  area_name TEXT,            -- v1 遗留，废弃保留
+  area_ids TEXT NOT NULL DEFAULT '[]',  -- JSON 数组，空 = 任意场地
+  exclude_unavailable INTEGER NOT NULL DEFAULT 1,  -- 展开日期时排除 unavailable_days 标记的日期
+  enabled INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS venue_watch_areas (
+  area_id INTEGER PRIMARY KEY,  -- 场馆场地 ID（外部接口）
+  area_name TEXT,               -- poller 拉取时顺带记录，供目标输出 areaNames
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS venue_watch_slot_state (
+  uniq_no TEXT PRIMARY KEY,  -- 接口原生键，如 41_20260831_09:00_10:00
+  date TEXT,                 -- 冗余日期，便于过期清理
+  available INTEGER DEFAULT 0,
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS venue_watch_notifications (
+  id TEXT PRIMARY KEY,
+  uniq_no TEXT,
+  area_name TEXT,
+  date TEXT,
+  start_time TEXT,
+  end_time TEXT,
+  price REAL,
+  success INTEGER DEFAULT 0,
+  error TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
 -- Default data
 INSERT OR IGNORE INTO club (id, name, description) VALUES (1, 'BAD Club', '');
 INSERT OR IGNORE INTO booking_config (id, rotation, current_person_index) VALUES (1, '[]', 0);
+INSERT OR IGNORE INTO venue_watch_config (id) VALUES (1);

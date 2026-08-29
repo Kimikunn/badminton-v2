@@ -1,3 +1,5 @@
+name: badmintontest
+
 services:
   app:
     build:
@@ -7,6 +9,8 @@ services:
         BUILD_DIR: dist-test
     container_name: badminton-test
     restart: unless-stopped
+    env_file:
+      - server/.env
     ports:
       - "8090:3000"
     volumes:
@@ -15,6 +19,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
+      - TZ=Asia/Shanghai
       - DB_PATH=/app/server/database/test.db
       - ADMIN_TOKEN=${ADMIN_TOKEN:-}
       - ENABLE_TEST_FEATURES=true

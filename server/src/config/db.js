@@ -100,6 +100,10 @@ function runMigrationFile(migrationsDir, file) {
     migrateAddChampionPlayerId();
     return;
   }
+  if (file === '011_venue_watch_exclude_unavailable.sql') {
+    migrateVenueWatchExcludeUnavailable();
+    return;
+  }
 
   const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf-8');
   db.run(sql);
@@ -131,6 +135,12 @@ function migrateAddMatchFormat() {
 function migrateAddChampionPlayerId() {
   if (!hasColumn('seasons', 'champion_player_id')) {
     db.run('ALTER TABLE seasons ADD COLUMN champion_player_id TEXT REFERENCES players(id)');
+  }
+}
+
+function migrateVenueWatchExcludeUnavailable() {
+  if (!hasColumn('venue_watch_targets', 'exclude_unavailable')) {
+    db.run('ALTER TABLE venue_watch_targets ADD COLUMN exclude_unavailable INTEGER NOT NULL DEFAULT 1');
   }
 }
 

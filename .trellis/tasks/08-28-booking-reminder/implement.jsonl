@@ -1,0 +1,6 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/api-routes.md", "reason": "分层/响应契约/参数化SQL约定，新模块必须遵守"}
+{"file": ".trellis/spec/backend/auth.md", "reason": "单一admin写令牌模型，GET公开写保护"}
+{"file": ".trellis/spec/backend/testing.md", "reason": "node:test+supertest harness 用法"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Sheet+Input+toast 表单模式与颜色 token"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Pinia store 模板"}

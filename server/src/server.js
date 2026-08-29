@@ -4,6 +4,7 @@
 const app = require('./app');
 const config = require('./config/config');
 const { initDatabase, closeDatabase } = require('./config/db');
+const venueWatchPoller = require('./services/venueWatchPoller');
 const logger = require('./utils/logger');
 
 let server = null;
@@ -18,6 +19,13 @@ async function startServer() {
       logger.info(`BAD Club v2 启动成功`);
       logger.info(`  地址: http://localhost:${port}`);
       logger.info(`  环境: ${config.server.env}`);
+
+      // 订场监控轮询器：启动失败不得阻塞 listen
+      try {
+        venueWatchPoller.start();
+      } catch (err) {
+        logger.error('订场监控轮询器启动失败: ' + err.message);
+      }
     });
 
   } catch (err) {
@@ -28,6 +36,7 @@ async function startServer() {
 
 function gracefulShutdown() {
   logger.info('正在关闭...');
+  venueWatchPoller.stop();
 
   // 10s 后仍未正常关闭时，强制保存数据库后退出，避免数据丢失
   const forceExit = setTimeout(() => {

@@ -7,6 +7,8 @@ services:
       dockerfile: Dockerfile
     container_name: badminton
     restart: unless-stopped
+    env_file:
+      - server/.env
     ports:
       - "8088:3000"
     volumes:
@@ -15,4 +17,5 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
+      - TZ=Asia/Shanghai
       - ADMIN_TOKEN=${ADMIN_TOKEN:-}

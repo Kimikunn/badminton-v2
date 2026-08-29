@@ -9,6 +9,8 @@
  * @props {string} error - 错误提示
  * @props {Array} options - select 类型的选项 [{ value, label }]
  * @props {number} rows - textarea 行数
+ * @props {string} min - date/number 类型最小值
+ * @props {string} max - date/number 类型最大值
  */
 const model = defineModel({ type: [String, Number], default: '' })
 
@@ -18,7 +20,9 @@ defineProps({
   label: { type: String, default: '' },
   error: { type: String, default: '' },
   options: { type: Array, default: () => [] },
-  rows: { type: Number, default: 3 }
+  rows: { type: Number, default: 3 },
+  min: { type: String, default: '' },
+  max: { type: String, default: '' }
 })
 </script>
 
@@ -51,6 +55,8 @@ defineProps({
       class="w-full px-3 py-2.5 bg-canvas border border-line rounded-lg font-sans text-base text-fg placeholder:text-fg-muted focus:outline-none focus:border-accent focus:ring-[3px] focus:ring-accent-subtle transition-[border-color,box-shadow] duration-fast ease-out appearance-none"
       :type="type"
       :placeholder="placeholder"
+      :min="min || undefined"
+      :max="max || undefined"
     />
 
     <span v-if="error" class="text-xs text-danger">{{ error }}</span>
