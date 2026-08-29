@@ -1,0 +1,7 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/index.md", "reason": "后端层规范入口：写 services/routes/migrations 前的检查清单"}
+{"file": ".trellis/spec/backend/api-routes.md", "reason": "路由与校验分层约定，步骤 4 合并校验时遵守"}
+{"file": ".trellis/spec/backend/testing.md", "reason": "服务端测试组织方式，步骤 6 重写测试时遵守"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "前端层规范入口"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Pinia store 约定，重写 intent store 时遵守"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "组件规范，重写 IntentPanel 时遵守"}
