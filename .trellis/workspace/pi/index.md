@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 9
-- **Last Active**: 2026-08-29
+- **Total Sessions**: 10
+- **Last Active**: 2026-08-30
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~350 | Active |
+| `journal-1.md` | ~383 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 10 | 2026-08-30 | 辅助订场实测反馈修正与生产部署 | `683ba82` | `master` |
 | 9 | 2026-08-29 | 监控锁场系统重构为订场意图模型 | `e766539` | `master` |
 | 8 | 2026-08-29 | 订场提醒与推送：从抓包到生产上线 | `6accf9f` | `master` |
 | 7 | 2026-08-20 | 修复排名排序：大分→小分→进球数 | `39b6a25`, `f8c1cd9` | `master` |

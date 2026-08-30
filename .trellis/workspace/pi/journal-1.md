@@ -348,3 +348,36 @@ standard/s2/s3 的 calcRankings 只按大分排序的 bug 修复：新增共享�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: 辅助订场实测反馈修正与生产部署
+
+**Date**: 2026-08-30
+**Task**: 辅助订场实测反馈修正与生产部署
+**Branch**: `master`
+
+### Summary
+
+首轮实测后的问题修正：时区（UTC 存/本地渲染）；09:00 放票图形验证导致锁场全败 → 风控 fail-fast + 锁场失败即时推送；删除用户不需要的 09:05 场次汇总 digest；每日限订 2 笔（GYM_DAILY_ORDER_LIMIT 可配，取消返还，停手+推送）；锁到即停（整段满足自动停用意图，重开走 requestEvaluation 绕过 diff 直接评估）；不跟踪支付（删两击降级，迁移 017）；面板改名辅助订场、设置收纳、状态徽标移除、日志仅测试环境可见、表单改星期条（今天起 7 天滚动）统一每周模型。CONTEXT.md 补可订时段/放票风控/每日限订词条。生产（8088）与测试（8090）环境均已部署，生产库迁移前已备份。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `683ba82` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
