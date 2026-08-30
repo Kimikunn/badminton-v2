@@ -58,7 +58,12 @@ function updateIntent(req, res) {
   // 显式 null 视为未提供，避免误清空模式；date/weekdays 传其一即切换模式
   if (weekdays !== undefined && weekdays !== null) patch.weekdays = weekdays;
   else if (date !== undefined && date !== null) patch.date = date;
-  success(res, intentService.updateIntent(req.params.id, patch));
+  const updated = intentService.updateIntent(req.params.id, patch);
+  // 停用 → 启用：通知引擎下一 tick 直接评估当前在架可订（锁到即停后的手动重开入口）
+  if (!existing.enabled && patch.enabled === true) {
+    watchEngine.requestEvaluation(req.params.id);
+  }
+  success(res, updated);
 }
 
 function deleteIntent(req, res) {

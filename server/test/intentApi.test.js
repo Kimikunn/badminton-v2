@@ -123,7 +123,7 @@ test('意图 CRUD：单次/每周双模式、更新切换模式、404', async ()
   assert.deepEqual(single.body.data.preferredAreaNames, []); // 尚未拉取过，允许为空
   assert.equal(single.body.data.enabled, true);
   assert.equal(single.body.data.expired, false);
-  assert.equal(single.body.data.status, 'monitoring');
+  assert.equal('status' in single.body.data, false); // 无实时状态字段：锁场结果以锁场记录为准
 
   // 每周模式
   const weekly = await api.post('/api/intents').set(ADMIN)
@@ -305,7 +305,6 @@ test('GET /locks 倒序分页 + ?intentId= 过滤，只读无需写权限', asyn
   assert.equal(page1.body.data.total, 3);
   assert.equal(page1.body.data.list.length, 2);
   assert.equal(page1.body.data.list[0].status, 'locked');
-  assert.equal(page1.body.data.list[0].unpaidExpiredCount, 0);
 
   const page2 = await api.get('/api/intents/locks?pageNo=2&pageSize=2').expect(200);
   assert.equal(page2.body.data.list.length, 1);

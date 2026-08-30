@@ -208,25 +208,17 @@ test('expandIntentDates：unavailable_days 标记的日期一律排除', () => {
   assert.deepEqual(intentService.expandIntentDates(intentService.getIntentById(weekly.id)), [datePlus(2)]);
 });
 
-// === 意图卡片状态 ===
+// === 意图过期标记 ===
 
-test('getIntentStatus：expired / locked / downgraded / monitoring', () => {
+test('formatIntent：单次日期过期标记（无实时状态字段——锁场状态以锁场记录为准）', () => {
   resetIntents();
-  const monitoring = makeIntent({ date: today() });
-  assert.equal(intentService.formatIntent(intentService.getIntentById(monitoring.id)).status, 'monitoring');
-
-  // 窗口内某天有 locked 记录 → locked
-  prepare(`INSERT INTO booking_intent_locks (id, intent_id, uniq_no, date, start_time, end_time, status)
-    VALUES ('bil-t1', ?, 'u1', ?, '17:00', '18:00', 'locked')`).run(monitoring.id, today());
-  assert.equal(intentService.formatIntent(intentService.getIntentById(monitoring.id)).status, 'locked');
-
-  // 该记录两击超时 → downgraded 优先于 locked
-  prepare(`UPDATE booking_intent_locks SET unpaid_expired_count = 2 WHERE id = 'bil-t1'`).run();
-  assert.equal(intentService.formatIntent(intentService.getIntentById(monitoring.id)).status, 'downgraded');
+  const active = makeIntent({ date: today() });
+  const formattedActive = intentService.formatIntent(intentService.getIntentById(active.id));
+  assert.equal(formattedActive.expired, false);
+  assert.equal('status' in formattedActive, false);
 
   const expired = makeIntent({ date: datePlus(-1) });
   const formatted = intentService.formatIntent(intentService.getIntentById(expired.id));
-  assert.equal(formatted.status, 'expired');
   assert.equal(formatted.expired, true);
 });
 

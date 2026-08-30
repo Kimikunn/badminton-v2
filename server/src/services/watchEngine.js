@@ -8,11 +8,10 @@
  *   - 其余日期：常规 POLL_INTERVAL_SEC 节奏（含抖动）
  * - 下游只有一条管道：取数 → 更新 watch_slot_state 快照得 0→1 变化 →
  *   匹配启用中的意图（日期/星期 + 窗口覆盖 + 场地过滤）→
- *   auto_lock 意图走 bookingLockService.tryFulfill；notify 意图（含被降级的发生）走推送
+ *   auto_lock 意图走 bookingLockService.tryFulfill；notify 意图走推送
  * - 快照 diff 只用于通知去重；锁场去重独立（booking_intent_locks 部分唯一索引）
- * - 我锁过的格子再次 0→1 = 超时未支付回流，交 bookingLockService.handleUnpaidReturn
- *   两击降级处理
- * - 每日 09:05 触发一次 digest 场次汇总推送（进程内按日去重）
+ * - 我锁过的格子再次 0→1 = 订单已释放（超时未支付或手动取消），交
+ *   bookingLockService.markExpiredOnReturn 记账（释放限订额度），不重锁不推送
  *
  * - start()/stop() 由 server.js 在 listen 成功 / gracefulShutdown 时调用
  * - 凭证/推送参数每 tick 读 process.env（改 .env 后需重启生效）；
@@ -41,8 +40,6 @@ const JITTER_MAX_MS = 15000;
 const RUSH_HOUR = 9;              // 每天 09:00:00 放新放票日的票
 const BURST_MAX_ATTEMPTS = 10;    // burst：1s × ≤10 次，出数即止
 const BURST_INTERVAL_MS = 1000;
-const DIGEST_HOUR = 9;            // digest 每日触发时刻 09:05（放票 burst 之后）
-const DIGEST_MINUTE = 5;
 
 let timer = null;
 let stopped = true;
@@ -52,13 +49,14 @@ let bursting = false;
 // 取数计划：date → { date, mode: 'normal' | 'burst' | 'bursting', nextFetchAt }
 const plan = new Map();
 
+// 重新启用的意图待评估集合：diff 只报"新出现"的可订，重开意图时已在架的
+// 可订格子不产生 0→1，需要绕过 diff 直接评估一次（见 requestEvaluation）
+const pendingEvaluation = new Set();
+
 // 告警状态：拉取连败计数（进程内）与"签名未配置"一次性提醒（进程内）
 let consecutivePollFailures = 0;
 let signerWarned = false;
 const POLL_FAILURE_ALERT_THRESHOLD = 2;
-
-// digest 进程内按日去重
-let lastDigestDate = null;
 
 /** 今天 + offset 天的日期串 */
 function todayPlus(offset) {
@@ -243,18 +241,32 @@ async function processFetch(date, data, env, intents, { baseline } = {}) {
     }
   });
 
+  // 重新启用的意图：已在架的可订格子不产生 0→1，绕过 diff 直接评估一次（每意图一次）。
+  // 必须在 transitions 早退之前执行——重开意图时往往没有任何新变化。
+  for (const intent of intents) {
+    if (!pendingEvaluation.has(intent.row.id)) continue;
+    if (intent.row.mode !== 'auto_lock' || !intent.dates.has(date)) continue;
+    pendingEvaluation.delete(intent.row.id);
+    try {
+      await bookingLockService.tryFulfill(intent.row, date, slots, env);
+    } catch (err) {
+      logger.error(`watchEngine.reevaluate - intent ${intent.row.id} ${date}: ${err.message}`);
+    }
+  }
+
   if (!transitions.length) return { notified: 0 };
 
   const fulfillIntents = new Map(); // intentId → intent 包装
   const notifyGroups = new Map();   // intentId → { intent, slots: [] }
 
   for (const slot of transitions) {
-    // 我锁过的格子再次可订 = 超时未支付回流：两击降级处理（重锁/降级自带通知）
-    await bookingLockService.handleUnpaidReturn(slot, env);
+    // 我锁过的格子再次可订 = 订单已释放：仅记账（释放限订额度与 uniq_no 占位），
+    // 不重锁不推送；意图仍启用时下面会按普通可订格子重新匹配尝试
+    bookingLockService.markExpiredOnReturn(slot);
 
     for (const intent of intents) {
       if (!matchesIntent(slot, intent)) continue;
-      if (intent.row.mode === 'auto_lock' && !bookingLockService.isDowngraded(intent.row.id, slot.date)) {
+      if (intent.row.mode === 'auto_lock') {
         fulfillIntents.set(intent.row.id, intent);
       } else {
         if (!notifyGroups.has(intent.row.id)) notifyGroups.set(intent.row.id, { intent, slots: [] });
@@ -272,7 +284,7 @@ async function processFetch(date, data, env, intents, { baseline } = {}) {
     }
   }
 
-  // notify 意图（含被降级的发生）：同一意图同一日期合并为一条推送
+  // notify 意图：同一意图同一日期合并为一条推送
   let notified = 0;
   for (const { intent, slots: matched } of notifyGroups.values()) {
     const result = await notifyWith(env, digest.buildNotifyTitle(date, matched), buildMarkdown(date, matched));
@@ -349,38 +361,13 @@ async function maybeStartBurst(env, intents) {
   }
 }
 
-// === digest：每日固定时刻场次汇总 ===
-
-async function maybeSendDigest(env) {
-  const todayStr = today();
-  if (lastDigestDate === todayStr) return;
-  const now = new Date();
-  if (now.getHours() < DIGEST_HOUR || (now.getHours() === DIGEST_HOUR && now.getMinutes() < DIGEST_MINUTE)) return;
-  if (!env.tokenUser || !env.pushConfigured) return;
-
-  lastDigestDate = todayStr; // 当日只尝试一次，失败记日志明日再来
-  try {
-    const built = await digest.buildDigest(env, fetchAreaLease);
-    if (built.error) {
-      logger.error(`watchEngine.digest - 构造失败: ${built.error} (${built.date || ''})`);
-      return;
-    }
-    const result = await notifyWith(env, built.title, built.content);
-    if (!result.success) {
-      logger.error(`watchEngine.digest - 推送失败: ${result.error}`);
-    }
-  } catch (err) {
-    logger.error(`watchEngine.digest - ${err.message}`);
-  }
-}
+// === digest 已移除：用户不需要全量场次汇总推送（2026-08-30 反馈），
+// === 只保留按意图的精准通知（可订提醒 / 锁场成功 / 锁场失败 / 已达限订）。
 
 // === 主流程 ===
 
 async function runTick() {
   const env = intentService.getEnvConfig();
-
-  // digest 独立于监控总开关（信息类推送）
-  await maybeSendDigest(env);
 
   const flags = intentService.getFlags();
   if (!flags.enabled) return { skipped: 'disabled' };
@@ -527,12 +514,20 @@ function stop() {
   // 进行中的 tick 不等待，其 DB 写入由自身事务保证一致性
 }
 
-/** 测试用：重置进程内状态（连败计数、签名提醒、digest 去重、取数计划） */
+/** 测试用：重置进程内状态（连败计数、签名提醒、取数计划、待评估意图） */
 function resetEngineState() {
   consecutivePollFailures = 0;
   signerWarned = false;
-  lastDigestDate = null;
   plan.clear();
+  pendingEvaluation.clear();
+}
+
+/**
+ * 意图从停用变为启用时由 controller 调用：下一 tick 对该意图覆盖的日期
+ * 绕过快照 diff 直接评估一次当前在架可订（锁到即停后手动重开的入口）。
+ */
+function requestEvaluation(intentId) {
+  pendingEvaluation.add(intentId);
 }
 
 module.exports = {
@@ -545,6 +540,7 @@ module.exports = {
   matchesIntent,
   loadActiveIntents,
   resetEngineState,
+  requestEvaluation,
   RUSH_HOUR,
   BURST_MAX_ATTEMPTS,
   BURST_INTERVAL_MS

@@ -175,7 +175,6 @@ CREATE TABLE IF NOT EXISTS booking_intent_locks (
   order_id TEXT,                -- 外部订单号；失败时为空
   status TEXT NOT NULL,         -- locked | failed
   error TEXT,                   -- 失败原因；成功时为空
-  unpaid_expired_count INTEGER NOT NULL DEFAULT 0,  -- 该格锁到后超时未支付回流的次数（两击降级计数）
   created_at TEXT DEFAULT (datetime('now'))
 );
 

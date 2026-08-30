@@ -47,6 +47,7 @@ function getEnvConfig() {
   const pushUrl = process.env.PUSH_URL || '';
   const pushTopic = process.env.PUSH_TOPIC || '';
   const interval = parseInt(process.env.POLL_INTERVAL_SEC, 10);
+  const orderLimit = parseInt(process.env.GYM_DAILY_ORDER_LIMIT, 10);
   return {
     tokenUser,
     pushType: type,
@@ -54,6 +55,8 @@ function getEnvConfig() {
     pushTopic,
     pushUrl,
     pollIntervalSec: Math.max(Number.isInteger(interval) ? interval : DEFAULT_POLL_INTERVAL_SEC, MIN_POLL_INTERVAL_SEC),
+    // 场馆每账号每日限订笔数（默认 2；场馆放宽后改 GYM_DAILY_ORDER_LIMIT 并重启）
+    dailyOrderLimit: Number.isInteger(orderLimit) && orderLimit > 0 ? orderLimit : 2,
     gymTokenConfigured: !!tokenUser,
     pushConfigured: isPushConfigured(type, pushToken, pushUrl, pushTopic)
   };
@@ -153,28 +156,6 @@ function resolveAreaNames(areaIds) {
   return areaIds.map(id => nameById.get(id)).filter(Boolean);
 }
 
-/**
- * 意图卡片实时状态：
- * - expired：单次日期已过
- * - downgraded：可订窗口内有发生因两次超时未支付降级为仅提醒
- * - locked：可订窗口内有发生已锁到（待支付）
- * - monitoring：其余（监控中）
- */
-function getIntentStatus(row, todayStr = today()) {
-  if (isIntentExpired(row, todayStr)) return 'expired';
-  for (const date of expandIntentDates(row, todayStr)) {
-    const downgraded = prepare(`SELECT 1 FROM booking_intent_locks
-      WHERE intent_id = ? AND date = ? AND status = 'locked' AND unpaid_expired_count >= 2 LIMIT 1`)
-      .get(row.id, date);
-    if (downgraded) return 'downgraded';
-    const locked = prepare(`SELECT 1 FROM booking_intent_locks
-      WHERE intent_id = ? AND date = ? AND status = 'locked' LIMIT 1`)
-      .get(row.id, date);
-    if (locked) return 'locked';
-  }
-  return 'monitoring';
-}
-
 function formatIntent(row, todayStr = today()) {
   const preferredAreaIds = parseJson(row.preferred_area_ids, []);
   return {
@@ -190,7 +171,6 @@ function formatIntent(row, todayStr = today()) {
     preferredAreaNames: resolveAreaNames(preferredAreaIds),
     enabled: !!row.enabled,
     expired: isIntentExpired(row, todayStr),
-    status: getIntentStatus(row, todayStr),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };

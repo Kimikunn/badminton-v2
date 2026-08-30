@@ -1,9 +1,9 @@
 /**
  * watchEngine — 单一监控引擎：取数计划（常规节奏 + 新放票日 burst）、快照 diff、
- * 意图匹配、告警去重、每日 digest。fetch 全部经 watchTestKit stub，不访问外网。
+ * 意图匹配、告警去重。fetch 全部经 watchTestKit stub，不访问外网。
  *
- * 涉及时钟的用例用 t.mock.timers 固定 Date（08:00 = burst/digest 前的常规节奏；
- * 09:00:30 = burst 窗口；09:06 = digest 触发后），与真实运行时刻无关。
+ * 涉及时钟的用例用 t.mock.timers 固定 Date（08:00 = burst 前的常规节奏；
+ * 09:00:30 = burst 窗口），与真实运行时刻无关。
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -19,7 +19,7 @@ const watchNotifier = require('../src/services/watchNotifier');
 const { BOOKING_WINDOW_DAYS, today } = require('../src/services/venueShared');
 const kit = require('./helpers/watchTestKit');
 
-/** 与 digest 模块一致的日期标签（M/D、周X），用于拼预期文案 */
+/** 与 watchDigest 模块一致的日期标签（M/D、周X），用于拼预期文案 */
 function mdLabel(date) {
   const d = new Date(`${date}T00:00:00`);
   return `${d.getMonth() + 1}/${d.getDate()}`;
@@ -458,50 +458,15 @@ test('burst：无意图覆盖新放票日则不 burst', async (t) => {
   assert.equal(releaseCalls.length, 1); // 只按常规节奏拉一次
 });
 
-// === digest：每日 09:05 触发一次 ===
+// === 引擎级回流：锁到即停 + 回流记账（不跟踪支付） ===
 
-test('digest：09:05 后推送场次汇总，当日只推一次', async (t) => {
-  resetEngine();
-  kit.configureEnv();
-  // digest 独立于监控总开关与意图：不建意图、开关关闭也照发
-  intentService.updateConfig({ enabled: false });
-  mockTime(t, 9, 6, { mockTimeout: true });
-
-  kit.stubFetch(kit.leaseAndPushFetch((url) => {
-    const d = new URL(String(url)).searchParams.get('date');
-    return d === today()
-      ? kit.leaseResponse([kit.slot('41_A_19:00_20:00', '19:00', '20:00')], { date: d })
-      : kit.emptyLease(d);
-  }));
-
-  await watchEngine.tick();
-  assert.equal(kit.PUSH_CALLS.length, 1);
-  assert.match(kit.PUSH_CALLS[0].body.title, /^场次汇总： /);
-  assert.match(kit.PUSH_CALLS[0].body.content, /19:00-20:00/);
-
-  // 当日再去重
-  await watchEngine.tick();
-  assert.equal(kit.PUSH_CALLS.length, 1);
-});
-
-test('digest：09:05 前不触发', async (t) => {
-  resetEngine();
-  kit.configureEnv();
-  intentService.updateConfig({ enabled: false });
-  mockTime(t, 8, 0, { mockTimeout: true });
-
-  kit.stubFetch(kit.leaseAndPushFetch(() => kit.emptyLease()));
-  await watchEngine.tick();
-  assert.equal(kit.PUSH_CALLS.length, 0);
-});
-
-// === 引擎级两击降级：我锁过的格子再次 0→1 ===
-
-test('我锁过的格子回流：第 1 次自动重锁，第 2 次降级为仅提醒', async () => {
+test('锁到即停：整段锁齐意图自动停用；格子回流仅记账 expired，不重锁不推送；手动重开后可再抢', async () => {
   resetEngine();
   kit.configureEnv({ withKey: true });
   const date = kit.datePlus(2);
-  makeIntent({ mode: 'auto_lock', date, windowStart: '19:00', windowEnd: '20:00', durationHours: 1 });
+  const intent = makeIntent({ mode: 'auto_lock', date, windowStart: '19:00', windowEnd: '20:00', durationHours: 1 });
+  // 引擎在有启用中的意图时才轮询；锁到即停后靠这个仅提醒意图保持轮询
+  makeIntent({ mode: 'notify', date, windowStart: '09:00', windowEnd: '10:00', durationHours: 1 });
   const uniqNo = `41_${date}_19:00_20:00`;
   // 只在目标日期返回 slot（uniqNo 是全局键，不能跨日期重复出现）
   const mk = (available) => (url) => {
@@ -513,73 +478,43 @@ test('我锁过的格子回流：第 1 次自动重锁，第 2 次降级为仅�
   kit.stubFetch(kit.lockFlowFetch({ leaseHandler: mk(false) }));
   await watchEngine.pollOnce();
 
-  // 0→1：自动锁场
+  // 0→1：自动锁场成功 → 意图自动停用，推送注明已暂停
   const fetchStub = kit.lockFlowFetch({ leaseHandler: mk(true) });
   kit.stubFetch(fetchStub);
   await watchEngine.pollOnce();
   assert.deepEqual(fetchStub.orderCalls.map(c => c.kind), ['check', 'create']);
   const row = () => prepare('SELECT * FROM booking_intent_locks WHERE uniq_no = ?').get(uniqNo);
   assert.equal(row().status, 'locked');
-  assert.match(kit.PUSH_CALLS.find(c => /已锁场/.test(c.body.title)).body.content, /5 分钟/);
+  assert.equal(intentService.getIntentById(intent.id).enabled, 0);
+  const lockPush = kit.PUSH_CALLS.find(c => /已锁场/.test(c.body.title));
+  assert.match(lockPush.body.content, /5 分钟/);
+  assert.match(lockPush.body.content, /已自动暂停/);
 
-  // 1→0（订单超时释放中）→ 0→1（回流）：第 1 次自动重锁
+  // 1→0（订单释放中）→ 0→1（回流）：意图已停用 → 仅记账 expired，不重锁不推送
   kit.stubFetch(kit.lockFlowFetch({ leaseHandler: mk(false) }));
   await watchEngine.pollOnce();
-  const relockFetch = kit.lockFlowFetch({ leaseHandler: mk(true), createBody: { code: 200, data: { areaOrderId: 'ORD-RELOCK' } } });
-  kit.stubFetch(relockFetch);
+  const returnFetch = kit.lockFlowFetch({ leaseHandler: mk(true) });
+  kit.stubFetch(returnFetch);
   kit.PUSH_CALLS.length = 0;
+  await watchEngine.pollOnce();
+  assert.equal(returnFetch.orderCalls.length, 0);
+  assert.equal(row().status, 'expired');
+  assert.equal(kit.PUSH_CALLS.length, 0);
+
+  // 用户没支付、手动重开意图：重开请求评估，下一轮引擎对当前在架可订直接重抢
+  intentService.updateIntent(intent.id, { enabled: true });
+  watchEngine.requestEvaluation(intent.id); // 与 controller 在 enabled 0→1 时的行为一致
+  const relockFetch = kit.lockFlowFetch({ leaseHandler: mk(true), createBody: { code: 200, data: { areaOrderId: 'ORD-AGAIN' } } });
+  kit.stubFetch(relockFetch);
   await watchEngine.pollOnce();
   assert.deepEqual(relockFetch.orderCalls.map(c => c.kind), ['check', 'create']);
-  assert.equal(row().unpaid_expired_count, 1);
-  assert.equal(row().order_id, 'ORD-RELOCK');
-  assert.equal(kit.PUSH_CALLS.length, 1);
-  assert.match(kit.PUSH_CALLS[0].body.title, /【重新锁场】/);
-
-  // 再次 1→0 → 0→1：第 2 次降级为仅提醒（不再下单），并补一条可订提醒
-  kit.stubFetch(kit.lockFlowFetch({ leaseHandler: mk(false) }));
-  await watchEngine.pollOnce();
-  const finalFetch = kit.lockFlowFetch({ leaseHandler: mk(true) });
-  kit.stubFetch(finalFetch);
-  kit.PUSH_CALLS.length = 0;
-  await watchEngine.pollOnce();
-  assert.equal(finalFetch.orderCalls.length, 0);
-  assert.equal(row().unpaid_expired_count, 2);
-  // 降级后的可订提醒落 notifications（带 intentId）
-  const intentId = prepare('SELECT id FROM booking_intents').get().id;
-  assert.equal(prepare('SELECT COUNT(*) AS cnt FROM watch_notifications WHERE intent_id = ?').get(intentId).cnt > 0, true);
-  assert.match(kit.PUSH_CALLS.find(c => /【已降级】/.test(c.body.title)).body.content, /不再自动锁场/);
-  assert.ok(kit.PUSH_CALLS.some(c => /可订/.test(c.body.title) && !/降级/.test(c.body.title)), '降级后仍推可订提醒');
+  const rows = prepare('SELECT * FROM booking_intent_locks WHERE uniq_no = ? ORDER BY created_at, id').all(uniqNo);
+  assert.deepEqual(rows.map(r => r.status).sort(), ['expired', 'locked']);
+  // 重开后再次锁到 → 又自动停用
+  assert.equal(intentService.getIntentById(intent.id).enabled, 0);
 });
 
-// === watchDigest：排版与标题（fetch 注入） ===
-
-const COURT_NAMES = ['一号场', '二号场', '三号场', '四号场', '五号场', '六号场', '七号场',
-  '八号场', '九号场', '十号场', '十一号场', '十二号场', '十三号场', '十四号场'];
-
-/** 构造某天 14 片场地的 areas；availableFilter(areaIndex) 决定该格子是否可订 */
-function fullDayAreas(timeKey, availableFilter) {
-  const [startTime, endTime] = timeKey.split('-');
-  return COURT_NAMES.map((name, i) => ({
-    areaId: 41 + i,
-    areaName: `${name}(3F)`,
-    items: [{
-      uniqNo: `${41 + i}_${timeKey}`,
-      startTime,
-      endTime,
-      price: 60,
-      status: 'NORMAL',
-      showStatus: availableFilter(i) ? 'AVAILABLE' : 'LOCKED'
-    }]
-  }));
-}
-
-/** 按日期分发 4 天 digest 数据：dayFixtures[i] 为今天起第 i 天的 areas（null = 无可订） */
-function digestFetch(dayFixtures) {
-  return async (date) => {
-    const idx = Math.round((new Date(`${date}T00:00:00`) - new Date(`${today()}T00:00:00`)) / 86400000);
-    return { httpOk: true, status: 200, body: { code: 0, data: { areaDate: date, areas: dayFixtures[idx] || [] } } };
-  };
-}
+// === watchDigest：标题排版 ===
 
 test('courtShort：去掉括号及内容', () => {
   assert.equal(watchDigest.courtShort('一号场(3F)'), '一号场');
@@ -612,44 +547,6 @@ test('buildNotifyTitle：单 slot 带时段，多 slot 场地去重截断', () =
     { areaName: '五号场', startTime: '20:00', endTime: '21:00' }
   ]);
   assert.equal(many, `${prefix} 一号场/二号场/三号场 等5片 可订`);
-});
-
-test('buildDigest：全部可订 / 部分可订（等N片截断）/ 少量场地 / 暂无可订', async () => {
-  const digest = await watchDigest.buildDigest({ tokenUser: 'x' }, digestFetch([
-    fullDayAreas('09:00-10:00', () => true),                     // 今天：14 片全可订
-    fullDayAreas('11:00-12:00', (i) => i < 12),                  // +1：12 片可订 → 等12片
-    fullDayAreas('19:00-20:00', (i) => i < 2),                   // +2：2 片可订 → 全列
-    null                                                         // +3：无可订
-  ]));
-  assert.ok(!digest.error);
-
-  const days = [0, 1, 2, 3].map(i => kit.datePlus(i));
-  const header = (d) => `**${mdLabel(d)} ${weekdayLabel(d)}**`;
-
-  const sections = digest.content.split('\n\n');
-  assert.equal(sections.length, BOOKING_WINDOW_DAYS);
-  assert.equal(sections[0], `${header(days[0])}\n09:00-10:00 全部14片可订`);
-  assert.equal(sections[1], `${header(days[1])}\n11:00-12:00 一号场/二号场/三号场 等12片`);
-  assert.equal(sections[2], `${header(days[2])}\n19:00-20:00 一号场/二号场`);
-  assert.equal(sections[3], `${header(days[3])}\n暂无可订`);
-
-  const expectedTitle = `场次汇总： ${[0, 1, 2].map(i => `${weekdayLabel(days[i])}${mdLabel(days[i])}`).join('、')} 有可订`;
-  assert.equal(digest.title, expectedTitle);
-});
-
-test('buildDigest：近 4 天全部无可订时的标题与正文；401 与上游异常返回 error 标记', async () => {
-  const empty = await watchDigest.buildDigest({ tokenUser: 'x' }, digestFetch([null, null, null, null]));
-  assert.equal(empty.title, '近4天暂无可订场次');
-  assert.equal(empty.content.split('\n\n').length, BOOKING_WINDOW_DAYS);
-  assert.equal((empty.content.match(/暂无可订/g) || []).length, BOOKING_WINDOW_DAYS);
-
-  const invalid = await watchDigest.buildDigest({ tokenUser: 'x' },
-    async () => ({ httpOk: true, status: 200, body: { code: 401, msg: 'unauthorized' } }));
-  assert.equal(invalid.error, 'token_invalid');
-
-  const upstream = await watchDigest.buildDigest({ tokenUser: 'x' },
-    async () => { throw new Error('network down'); });
-  assert.equal(upstream.error, 'upstream');
 });
 
 // === notifier payload 构造（引擎推送依赖，保持回归） ===

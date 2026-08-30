@@ -173,12 +173,11 @@ test('016：旧库数据正确映射到新表，旧表删除，部分唯一索�
   assert.equal(b.courts_needed, 1);
   assert.equal(b.enabled, 0);
 
-  // venue_lock_orders → booking_intent_locks：target_id → intent_id，新增 unpaid_expired_count=0
+  // venue_lock_orders → booking_intent_locks：target_id → intent_id（017 后无 unpaid_expired_count 列）
   assert.equal(state.locks.length, 2);
   assert.equal(state.locks[0].intent_id, 'vwt-a');
   assert.equal(state.locks[0].status, 'locked');
   assert.equal(state.locks[0].order_id, 'ORD-1');
-  assert.equal(state.locks[0].unpaid_expired_count, 0);
   assert.equal(state.locks[1].status, 'failed');
   assert.equal(state.locks[1].error, '该时段已被预订');
 

@@ -124,6 +124,10 @@ function runMigrationFile(migrationsDir, file) {
     migrateIntentRefactor();
     return;
   }
+  if (file === '017_drop_unpaid_expired.sql') {
+    migrateDropUnpaidExpired();
+    return;
+  }
 
   const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf-8');
   db.run(sql);
@@ -259,8 +263,8 @@ function migrateIntentRefactor() {
     if (hasTable('venue_lock_orders')) {
       for (const l of prepare('SELECT * FROM venue_lock_orders').all()) {
         prepare(`INSERT INTO booking_intent_locks
-          (id, intent_id, uniq_no, date, start_time, end_time, area_id, area_name, order_id, status, error, unpaid_expired_count, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`).run(
+          (id, intent_id, uniq_no, date, start_time, end_time, area_id, area_name, order_id, status, error, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
           l.id, l.target_id, l.uniq_no, l.date, l.start_time, l.end_time,
           l.area_id, l.area_name, l.order_id, l.status, l.error, l.created_at
         );
@@ -321,6 +325,16 @@ function migrateIntentRefactor() {
     db.run('DROP TABLE IF EXISTS venue_watch_slot_state');
     db.run('DROP TABLE IF EXISTS venue_watch_notifications');
   });
+}
+
+/**
+ * 017: 移除支付跟踪，booking_intent_locks 删 unpaid_expired_count
+ * （见 migrations/017_drop_unpaid_expired.sql）。hasColumn 幂等。
+ */
+function migrateDropUnpaidExpired() {
+  if (hasColumn('booking_intent_locks', 'unpaid_expired_count')) {
+    db.run('ALTER TABLE booking_intent_locks DROP COLUMN unpaid_expired_count');
+  }
 }
 
 /**
