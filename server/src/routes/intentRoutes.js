@@ -31,4 +31,7 @@ router.get('/areas', asyncHandler(ctrl.listAreas, 'intent.listAreas'));
 // 当日可订查询（透传外部接口，只读）
 router.get('/availability', asyncHandler(ctrl.getAvailability, 'intent.getAvailability'));
 
+// 更新小程序 token（专用密钥 x-token-key 鉴权；Stream 抓包后由快捷指令上报）
+router.post('/token', asyncHandler(ctrl.updateToken, 'intent.updateToken'));
+
 module.exports = router;

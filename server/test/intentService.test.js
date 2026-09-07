@@ -73,6 +73,25 @@ test('getEnvConfig：实时读 env，pollIntervalSec 下限 60、缺省 120', ()
   assert.equal(intentService.getEnvConfig().pushConfigured, false);
 });
 
+test('getEnvConfig：runtime/gym-token 文件优先于 GYM_TOKEN_USER env', () => {
+  resetIntents();
+  const fs = require('fs');
+  const path = require('path');
+  const tokenFile = path.join(__dirname, '..', 'runtime', 'gym-token');
+
+  process.env.GYM_TOKEN_USER = 'env-token';
+  assert.equal(intentService.getEnvConfig().tokenUser, 'env-token');
+
+  // 写入运行时文件 → 优先于 env（token 捕获代理的热更新通道）
+  fs.mkdirSync(path.dirname(tokenFile), { recursive: true });
+  fs.writeFileSync(tokenFile, 'file-token\n');
+  assert.equal(intentService.getEnvConfig().tokenUser, 'file-token');
+
+  // 删除文件 → 回退 env
+  fs.rmSync(tokenFile);
+  assert.equal(intentService.getEnvConfig().tokenUser, 'env-token');
+});
+
 // === 配置读写 ===
 
 test('updateConfig：只接受 enabled/areaPriority，areaPriorityNames 从 watch_areas 解析', () => {

@@ -14,6 +14,9 @@ const { buildUpdate } = require('../utils/updateBuilder');
 const { prefixedId } = require('../utils/id');
 const { parseJson, stringifyJson } = require('../utils/json');
 const { BOOKING_WINDOW_DAYS, dateStr, today, hhmmToMinutes } = require('./venueShared');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
 
 const PUSH_TYPES = ['wxpusher', 'pushplus', 'wecom', 'serverchan'];
 const MIN_POLL_INTERVAL_SEC = 60;
@@ -39,10 +42,43 @@ function isPushConfigured(type, token, url, topic) {
 
 /**
  * 实时读取环境变量配置。敏感值仅供引擎内部使用，禁止用于接口输出与日志。
+ *
+ * token-user 优先读运行时文件 server/runtime/gym-token（token 捕获代理抓到
+ * 新 token 时写入，见 tools/tokenproxy/），文件不存在才回退 GYM_TOKEN_USER
+ * 环境变量——token 是短期凭证会过期，活文件让它免重启热更新。
  */
+const TOKEN_FILE = path.join(__dirname, '..', '..', 'runtime', 'gym-token');
+const TOKEN_UPDATE_KEY_FILE = path.join(__dirname, '..', '..', 'runtime', 'token-update-key');
+
+function readTokenUser() {
+  try {
+    const t = fs.readFileSync(TOKEN_FILE, 'utf-8').trim();
+    if (t) return t;
+  } catch (_) { /* 文件不存在属常态，回退 env */ }
+  return process.env.GYM_TOKEN_USER || '';
+}
+
+/** token 更新接口的密钥：runtime/token-update-key，首次使用时生成（gitignored） */
+function getTokenUpdateKey() {
+  try {
+    const k = fs.readFileSync(TOKEN_UPDATE_KEY_FILE, 'utf-8').trim();
+    if (k) return k;
+  } catch (_) { /* 首次，往下生成 */ }
+  const key = crypto.randomBytes(24).toString('hex');
+  fs.mkdirSync(path.dirname(TOKEN_UPDATE_KEY_FILE), { recursive: true });
+  fs.writeFileSync(TOKEN_UPDATE_KEY_FILE, key, { mode: 0o600 });
+  return key;
+}
+
+/** 写入运行时 token（token 更新接口 / 捕获代理共用通道） */
+function setRuntimeToken(token) {
+  fs.mkdirSync(path.dirname(TOKEN_FILE), { recursive: true });
+  fs.writeFileSync(TOKEN_FILE, token.trim());
+}
+
 function getEnvConfig() {
   const type = process.env.PUSH_TYPE || 'wxpusher';
-  const tokenUser = process.env.GYM_TOKEN_USER || '';
+  const tokenUser = readTokenUser();
   const pushToken = process.env.PUSH_TOKEN || '';
   const pushUrl = process.env.PUSH_URL || '';
   const pushTopic = process.env.PUSH_TOPIC || '';
@@ -334,6 +370,8 @@ module.exports = {
   BOOKING_WINDOW_DAYS,
   INTENT_MODES,
   getEnvConfig,
+  getTokenUpdateKey,
+  setRuntimeToken,
   getConfig,
   getFlags,
   updateConfig,

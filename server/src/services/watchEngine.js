@@ -17,8 +17,8 @@
  * - 凭证/推送参数每 tick 读 process.env（改 .env 后需重启生效）；
  *   缺 GYM_TOKEN_USER 或推送配置时跳过该 tick
  * - 首 poll（快照表为空）只播种基线不推送，避免启动刷屏（burst 例外：放票日出数即触发）
- * - 外部接口 401（body.code === 401）时告警一次（token_invalid_notified 去重），
- *   一次成功轮询后清零；403 = 该日尚未开售，按空数据处理不计失败
+ * - 外部接口 401（业务码 body.code===401 或网关级 HTTP 401）时告警一次
+ *   （token_invalid_notified 去重），真的拉到数据后才清零；403 = 该日尚未开售，按空数据处理不计失败
  *
  * 安全：token 只出现在请求头，绝不写日志。
  */
@@ -332,7 +332,7 @@ async function maybeStartBurst(env, intents) {
     for (let i = 0; i < BURST_MAX_ATTEMPTS; i++) {
       try {
         const resp = await fetchAreaLease(date, env.tokenUser);
-        if (resp.body && resp.body.code === 401) {
+        if (resp.status === 401 || (resp.body && resp.body.code === 401)) {
           await notifyTokenInvalid(env);
           break;
         }
@@ -393,6 +393,7 @@ async function runTick() {
   const now = Date.now();
   const due = [...plan.values()].filter(e => e.mode === 'normal' && e.nextFetchAt <= now);
   let failedFetches = 0;
+  let hadSuccess = false; // 本轮至少一个日期拉到有效数据（才允许清零 token 告警标记）
   let notified = 0;
   for (const entry of due) {
     entry.nextFetchAt = now + env.pollIntervalSec * 1000 + Math.floor(Math.random() * JITTER_MAX_MS);
@@ -404,7 +405,8 @@ async function runTick() {
       failedFetches += 1;
       continue;
     }
-    if (resp.body && resp.body.code === 401) {
+    // token 失效两种形态：业务码 {code:401} 与网关级 HTTP 401（body 结构不同）
+    if (resp.status === 401 || (resp.body && resp.body.code === 401)) {
       await notifyTokenInvalid(env);
       return { skipped: 'token_invalid' };
     }
@@ -415,12 +417,13 @@ async function runTick() {
       failedFetches += 1;
       continue;
     }
+    hadSuccess = true;
     const result = await processFetch(entry.date, resp.body.data, env, intents, { baseline });
     notified += result.notified;
   }
 
-  // 一次成功轮询后清零 401 告警标记
-  if (flags.tokenInvalidNotified) {
+  // 只有真的拉到过数据才清零 401 告警标记（全失败的轮次不能误判为"已恢复"）
+  if (hadSuccess && flags.tokenInvalidNotified) {
     intentService.setTokenInvalidNotified(false);
   }
 
@@ -465,7 +468,7 @@ async function pollOnce() {
       logger.error(`watchEngine.pollOnce - 拉取 ${date} 失败: ${err.message}`);
       continue;
     }
-    if (resp.body && resp.body.code === 401) {
+    if (resp.status === 401 || (resp.body && resp.body.code === 401)) {
       await notifyTokenInvalid(env);
       return { dates, notified: 0, skipped: 'token_invalid' };
     }

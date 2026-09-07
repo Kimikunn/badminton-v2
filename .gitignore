@@ -19,6 +19,7 @@ __pycache__/
 
 # Server secrets (venue-watch credentials)
 server/.env
+server/runtime/
 
 # 小程序解包分析产物（含 createOrder 签名私钥明文，勿入库）
 /.analysis/
@@ -34,3 +35,6 @@ e2e/screenshots/
 test-results/
 .playwright-cli/
 client/dist-old/
+
+# token 捕获代理的 CA 证书（本机生成，勿入库）
+tools/tokenproxy/mitmproxy-config/

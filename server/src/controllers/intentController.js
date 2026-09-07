@@ -3,6 +3,7 @@ const intentService = require('../services/intentService');
 const watchEngine = require('../services/watchEngine');
 const bookingLockService = require('../services/bookingLockService');
 const { validateDateText } = require('../utils/validators');
+const crypto = require('crypto');
 
 // 字段校验全部在 validators/intentValidators.js（express-validator 声明式 +
 // 跨字段 custom），本层只做 404 存在性检查与服务编排。
@@ -117,6 +118,21 @@ async function getAvailability(req, res) {
   success(res, resp.body.data);
 }
 
+// === 更新小程序 token（供 Stream 抓包后快捷指令上报；独立于管理令牌的专用密钥） ===
+
+function updateToken(req, res) {
+  const key = req.get('x-token-key') || '';
+  const expected = intentService.getTokenUpdateKey();
+  const ok = key.length === expected.length
+    && crypto.timingSafeEqual(Buffer.from(key), Buffer.from(expected));
+  if (!ok) return error(res, 'token 更新密钥无效', 'FORBIDDEN', 403);
+
+  const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+  if (token.length < 10 || /\s/.test(token)) return validationError(res, 'token 格式不对');
+  intentService.setRuntimeToken(token);
+  success(res, { updated: true, tokenPreview: `${token.slice(0, 6)}…` });
+}
+
 module.exports = {
   getConfig,
   updateConfig,
@@ -127,5 +143,6 @@ module.exports = {
   listAreas,
   listNotifications,
   listLocks,
-  getAvailability
+  getAvailability,
+  updateToken
 };

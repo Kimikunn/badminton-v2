@@ -1,0 +1,24 @@
+# Token 捕获代理（换 token 专用）：手机 Wi-Fi 代理指向 8899，
+# 小程序里重新登录一次，token-user 自动写入 server/runtime/gym-token，
+# App 实时读取免重启。手机端配置步骤见 tools/tokenproxy/README.md。
+#
+# 代理带 Basic 认证（防局域网内被当开放代理）：
+#   用户名 tokenproxy  密码 8XEWgpnn0jmsvtOO
+name: badminton-tokenproxy
+
+services:
+  proxy:
+    image: mitmproxy/mitmproxy:12
+    container_name: badminton-tokenproxy
+    restart: unless-stopped
+    command: >
+      mitmdump --listen-port 8899
+      --proxyauth tokenproxy:8XEWgpnn0jmsvtOO
+      -s /scripts/token_capture.py
+      --set confdir=/home/mitmproxy/.mitmproxy
+    ports:
+      - "8899:8899"
+    volumes:
+      - ./tools/tokenproxy/token_capture.py:/scripts/token_capture.py:ro
+      - ./tools/tokenproxy/mitmproxy-config:/home/mitmproxy/.mitmproxy
+      - ./server/runtime:/token

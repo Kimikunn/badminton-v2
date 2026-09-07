@@ -315,6 +315,34 @@ test('GET /locks 倒序分页 + ?intentId= 过滤，只读无需写权限', asyn
   assert.equal(filtered.body.data.list[0].intentId, b.id);
 });
 
+// === 更新小程序 token（专用密钥通道） ===
+
+test('POST /token：缺/错密钥 403，正确密钥写入运行时 token 文件并即时生效', async () => {
+  resetIntents();
+  const fs = require('fs');
+  const path = require('path');
+  const tokenFile = path.join(__dirname, '..', 'runtime', 'gym-token');
+
+  await api.post('/api/intents/token').set(ADMIN).send({ token: 'x'.repeat(32) }).expect(403);
+  await api.post('/api/intents/token').set({ ...ADMIN, 'x-token-key': 'wrong' })
+    .send({ token: 'x'.repeat(32) }).expect(403);
+  // 格式校验：太短 / 含空白
+  const key = intentService.getTokenUpdateKey();
+  await api.post('/api/intents/token').set({ ...ADMIN, 'x-token-key': key })
+    .send({ token: 'short' }).expect(422);
+
+  const token = `tok-${Date.now()}-${'a'.repeat(24)}`;
+  const res = await api.post('/api/intents/token').set({ ...ADMIN, 'x-token-key': key })
+    .send({ token }).expect(200);
+  assert.equal(res.body.data.updated, true);
+  assert.match(res.body.data.tokenPreview, /^tok-/);
+  assert.equal(fs.readFileSync(tokenFile, 'utf-8'), token);
+  // 即时生效：getEnvConfig 优先读文件
+  assert.equal(intentService.getEnvConfig().tokenUser, token);
+
+  fs.rmSync(tokenFile); // 不污染真实运行目录
+});
+
 // === GET /availability ===
 
 test('GET /availability 透传外部数据，401/403 返回 422 中文错误', async () => {

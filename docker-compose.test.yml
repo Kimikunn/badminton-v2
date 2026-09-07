@@ -16,6 +16,7 @@ services:
     volumes:
       - ./server/database:/app/server/database
       - ./server/uploads:/app/server/uploads
+      - ./server/runtime:/app/server/runtime
     environment:
       - NODE_ENV=production
       - PORT=3000

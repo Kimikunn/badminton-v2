@@ -296,6 +296,54 @@ test('401 告警一次不重复，成功轮询后清零标记', async (t) => {
   assert.equal(notifiedFlags().t, 0);
 });
 
+test('网关级 HTTP 401（body 无 code）同样识别为 token 失效，不误报拉取失败', async (t) => {
+  resetEngine();
+  kit.configureEnv();
+  makeIntent();
+  mockTime(t, 8, 0, { mockTimeout: true });
+
+  // 阿里云网关形态：HTTP 401，body 不是业务码结构
+  kit.stubFetch(kit.leaseAndPushFetch(() =>
+    kit.mockJsonResponse({ message: 'Invalid AccessToken' }, { ok: false, status: 401 })));
+  await watchEngine.tick();
+  assert.equal(kit.PUSH_CALLS.length, 1);
+  assert.match(kit.PUSH_CALLS[0].body.content, /token 已失效/);
+  assert.equal(notifiedFlags().t, 1);
+
+  // 再来两轮网关 401：不重复告警，也绝不触发"拉取失败"告警
+  await advancePastPollInterval(t);
+  await watchEngine.tick();
+  await advancePastPollInterval(t);
+  await watchEngine.tick();
+  assert.equal(kit.PUSH_CALLS.length, 1);
+  assert.equal(notifiedFlags().p, 0);
+});
+
+test('全失败轮次不清零 token 告警标记（401 → 网络失败 → 401 只告警一次）', async (t) => {
+  resetEngine();
+  kit.configureEnv();
+  makeIntent();
+  mockTime(t, 8, 0, { mockTimeout: true });
+
+  // 第 1 轮 401：告警一次
+  kit.stubFetch(kit.leaseAndPushFetch(() => kit.mockJsonResponse({ code: 401, msg: 'unauthorized' })));
+  await watchEngine.tick();
+  assert.equal(kit.PUSH_CALLS.length, 1);
+  assert.equal(notifiedFlags().t, 1);
+
+  // 第 2 轮网络全失败：不得清零 token 标记（没拉到数据 ≠ 已恢复）
+  kit.stubFetch(kit.leaseAndPushFetch(async () => { throw new Error('network down'); }));
+  await advancePastPollInterval(t);
+  await watchEngine.tick();
+  assert.equal(notifiedFlags().t, 1);
+
+  // 第 3 轮 401：标记还在，不重复告警
+  kit.stubFetch(kit.leaseAndPushFetch(() => kit.mockJsonResponse({ code: 401, msg: 'unauthorized' })));
+  await advancePastPollInterval(t);
+  await watchEngine.tick();
+  assert.equal(kit.PUSH_CALLS.length, 1);
+});
+
 test('连续两轮全部日期拉取失败 → 告警一次不重复，恢复后清零', async (t) => {
   resetEngine();
   kit.configureEnv();

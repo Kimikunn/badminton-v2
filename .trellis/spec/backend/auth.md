@@ -33,6 +33,16 @@ method automatically. Keep GETs side-effect free so this stays sound.
 `ENABLE_TEST_FEATURES === 'true'` (data reset for e2e). Never enable in
 production; never put real features under it.
 
+## External gym credential (token-user)
+
+The venue mini-program token is short-lived (~5-6 days). Read order in
+`intentService.getEnvConfig()`: runtime file `server/runtime/gym-token`
+first, `GYM_TOKEN_USER` env as fallback. The file is written by the token
+capture proxy (`tools/tokenproxy/`, see its README) — never hardcode reads
+of `process.env.GYM_TOKEN_USER` elsewhere; always go through
+`getEnvConfig()`. `server/runtime/` is gitignored and mounted into both
+app containers via compose.
+
 ## Client counterpart — `client/src/api/client.js`
 
 - Request interceptor attaches `x-admin-token` automatically on write methods;
