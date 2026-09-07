@@ -381,3 +381,36 @@ standard/s2/s3 的 calcRankings 只按大分排序的 bug 修复：新增共享�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: token 失效治理：401 告警修复 + 自助换 token
+
+**Date**: 2026-09-07
+**Task**: token 失效治理：401 告警修复 + 自助换 token
+**Branch**: `master`
+
+### Summary
+
+用户反馈监控停摆 5 天后报 token 失效且告警混乱。解包确认：无 refresh 机制，wx.login code 只能在微信客户端产生，服务端无法自动续期；风控验证码=腾讯防水墙滑块（verifyCaptcha 校验 ticket）。修复：401 双形态（业务码+网关 HTTP 401）统一识别、告警标记仅在拉到数据时清零。新增两条自助换 token 通道：mitmproxy 捕获代理（8899，docker-compose.tokenproxy.yml，小程序登录即自动捕获）+ POST /api/intents/token 更新接口（x-token-key 专用密钥，配 iOS 快捷指令一键上报）。token 改为读 server/runtime/gym-token 活文件，免重启。用户已实测换 token 成功，生产恢复。测试 183/183。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `274b068` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
