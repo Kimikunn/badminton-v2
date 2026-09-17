@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/api-routes.md", "reason": "routes→controller→service 分层、响应信封、校验层位置：本次新增过滤参数与 status 字段必须落在既有约定"}
+{"file": ".trellis/spec/backend/testing.md", "reason": "node:test + backendTestHarness 形态、迁移测试与 runtime 隔离约定"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Pinia setup store、lazy init、api 信封：本次状态集中管理的落点"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "SFC 结构、UI 原语优先、Sheet 表单模式：日历/日 sheet/设置 sheet 的写法"}

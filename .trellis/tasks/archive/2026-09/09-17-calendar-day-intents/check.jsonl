@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/testing.md", "reason": "验收要跑 cd server && npm test，含迁移与状态机用例覆盖"}
+{"file": ".trellis/spec/backend/api-routes.md", "reason": "核对 API 契约变更（date-only、status、?date=/?from=）与响应信封、写权限一致"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "核对无 lint/TS 引入、构建命令、PWA 缓存影响"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "核对新组件的 SFC/原语使用与原面板删除后的入口完整性"}
