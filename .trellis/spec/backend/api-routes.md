@@ -115,6 +115,16 @@ Rules (do not duplicate them elsewhere):
   `lastAttempt` (`{ status, errorCode, error, createdAt, attempts }`, derived from
   `booking_intent_locks`; `errorCode ∈ RISK_CONTROL|SOLDOUT|LIMIT|UNPAID|OTHER`).
   `expired` is kept as a compatibility alias for `status === 'expired'`.
+- **Lock records carry `expireAt`** (UTC; `expire_at` column, migration 019): the venue's
+  payment deadline from the `createOrder` response (`expireTime` is Beijing time → stored UTC,
+  rendered +8h in pushes/UI). `/api/intents/locks` returns it as `expireAt`.
+- **Order-level locking (2026-09-17)**: one lock action submits the whole run as **one order**
+  (N `areaItems` → N `locked` rows sharing `order_id`/`expire_at`). Constraints that follow from
+  the venue: **2 court-slots per day** (`时长 × 片场 ≤ 2`, so `durationHours` ≤ 2 and
+  `courtsNeeded` ≤ 2, both 422 above that) and **only one unpaid order at a time** — a `UNPAID`
+  rejection disables the intent and pushes 「需要先支付」 instead of retrying.
+  `createOrderCheck` code `LIMITED_BY_START_TIME` is a **soft notice** (<12h → no refund): the
+  order is still submitted and the success push adds "不可退款".
 - **Day availability is a separate dimension, never folded into `status`**: a day
   marked in `unavailable_days` is skipped by the engine and rendered as its own
   marker; there is deliberately no `blocked` status.
