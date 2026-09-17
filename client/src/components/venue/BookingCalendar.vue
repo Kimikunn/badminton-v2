@@ -108,11 +108,14 @@ const monthTotalHours = computed(() => {
   return total
 })
 
-// 图例：只列出“当月真正出现”的监控状态（按聚合优先级排序，与格子折叠规则同源），
-// 不堆静态长列表；过去日不渲染徽标 → 不计入，保证图例与格子实际所见一致
+// 图例：只列出“当月真正出现”且值得解释的监控状态（按聚合优先级排序，与格子折叠规则同源），
+// 不堆静态长列表；过去日不渲染徽标 → 不计入，保证图例与格子实际所见一致。
+// 已暂停/等待放票 是“安静的”状态（没有即将发生的动作），不进图例——图例只解释需要留意的状态。
+const LEGEND_HIDDEN_STATES = ['paused', 'waiting']
+
 const monthMonitorStates = computed(() => {
   const present = new Set(days.value.filter(c => c && !c.isPast && c.monitor).map(c => c.monitor.status))
-  return BADGE_PRIORITY.filter(s => present.has(s))
+  return BADGE_PRIORITY.filter(s => present.has(s) && !LEGEND_HIDDEN_STATES.includes(s))
 })
 
 const legendVisible = computed(() =>
