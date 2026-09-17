@@ -518,3 +518,38 @@ standard/s2/s3 的 calcRankings 只按大分排序的 bug 修复：新增共享�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: 锁场整单打包：一笔订单装整段片次（绕开未支付限制）+ 场馆反馈治理
+
+**Date**: 2026-09-17
+**Task**: 锁场整单打包：一笔订单装整段片次（绕开未支付限制）+ 场馆反馈治理
+**Branch**: `master`
+
+### Summary
+
+场馆实测（2026-09-17）确立三条硬约束并据此重写锁场：① 一笔订单可装多个片次（实测 2-4 个连续时段与同小时多片场都返回 200，订单 153439 totalAmount=70 证明 2 个时段进同一笔），而场馆同时只允许 1 笔未支付订单，逐片次下多笔时第二笔必被拒（生产 2026-09-11 真实 UNPAID 失败记录）→ 改为整单打包：buildAreaItems 透传整单 raw、placeOrder 一次 check+create、attemptLockOrder 成功落 N 条 locked（同 order_id/expire_at）失败落 N 条 failed（同 error/error_code）；② LIMITED_BY_START_TIME 是软提示不是拦截（该码后 createOrder 仍 200，含义是距开场不足 12 小时不可退款）→ 照常下单 + 推送注明不可退款 + 不落 LIMIT；③ UNPAID → 推「需要先支付」+ 自动停用意图（skipped:'unpaid'），不再徒劳重试。配置按每日 2 片次硬上限收敛：时长 1-2、片场 1-2、乘积 ≤2（越界 422），前端联动以「最后一次选择生效」自动纠正（SegmentedControl 不支持禁选项）。恢复支付截止可视化：下单响应 expireTime（北京时间）转 UTC 存 booking_intent_locks.expire_at（迁移 019，hasColumn 幂等），推送与 /locks 输出、锁场记录面板展示。测试 214/214（新增 6 条：整单打包 2 例、UNPAID 停机、软提示、时区、019 幂等、引擎级一轮一单）；client build 通过。独立审查无 P0，P1（文档未同步）已修，P2 顺手修 3 条（落库不完整告警、跨轮支付截止取最晚、界面展示支付截止），UI 自动化证据用 Playwright 补齐（选项 1/2、联动收敛、2 小时×1 片可保存）。部署：测试 8090 与生产 8088 均重建镜像并验收（迁移 019 执行、产物 hash 一致、意图 7 条与锁场记录 16 条完好）。遗留：放票日 09:00 实战行为待观察（连打是否一笔订单装 2 片次、UNPAID 是否停用并推送）。测试环境保留一条 paused 的 2 小时样例供随时查看。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6d598be` | (see git log) |
+| `fb10fa0` | (see git log) |
+| `8833adc` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 14
+- **Total Sessions**: 15
 - **Last Active**: 2026-09-17
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~520 | Active |
+| `journal-1.md` | ~555 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 15 | 2026-09-17 | 锁场整单打包：一笔订单装整段片次（绕开未支付限制）+ 场馆反馈治理 | `6d598be`, `fb10fa0`, `8833adc` | `master` |
 | 14 | 2026-09-17 | 按天监控收尾：默认值、同段不重复、图例校准与生产上线 | `e8df3a6`, `0b0bb96`, `2e3494c`, `5419770` | `master` |
 | 13 | 2026-09-17 | 订场监控并入日历：按天开启监控（单模型 + 状态机 + 迁移 018） | `85ce254`, `cc274dc`, `fa457d7` | `master` |
 | 12 | 2026-09-17 | 风控验证引导与锁场重试窗口 | `990bd1f` | `master` |
