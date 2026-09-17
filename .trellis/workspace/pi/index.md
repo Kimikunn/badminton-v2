@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 12
+- **Total Sessions**: 13
 - **Last Active**: 2026-09-17
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~449 | Active |
+| `journal-1.md` | ~484 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 13 | 2026-09-17 | 订场监控并入日历：按天开启监控（单模型 + 状态机 + 迁移 018） | `85ce254`, `cc274dc`, `fa457d7` | `master` |
 | 12 | 2026-09-17 | 风控验证引导与锁场重试窗口 | `990bd1f` | `master` |
 | 11 | 2026-09-07 | token 失效治理：401 告警修复 + 自助换 token | `274b068` | `master` |
 | 10 | 2026-08-30 | 辅助订场实测反馈修正与生产部署 | `683ba82` | `master` |

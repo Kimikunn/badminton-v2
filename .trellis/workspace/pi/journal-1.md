@@ -447,3 +447,38 @@ standard/s2/s3 的 calcRankings 只按大分排序的 bug 修复：新增共享�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: 订场监控并入日历：按天开启监控（单模型 + 状态机 + 迁移 018）
+
+**Date**: 2026-09-17
+**Task**: 订场监控并入日历：按天开启监控（单模型 + 状态机 + 迁移 018）
+**Branch**: `master`
+
+### Summary
+
+把辅助订场监控从每周几改成日历上的某一天：点选日历某天即在当天 sheet 设置/开关监控，一天可多条（多时段），删除 IntentPanel，日历成为唯一入口。服务端收敛单模型：date 必填、允许任意未来日期提前设置、传 weekdays 一律 422；每周数据由迁移 018 展开为单日意图（窗口内无匹配则承接下一个发生日，不丢配置），删 weekdays 列，加 booking_intent_locks.error_code（失败原因结构化 RISK_CONTROL/SOLDOUT/LIMIT/UNPAID/OTHER，不再靠中文文案匹配）。新增 7 状态派生 deriveIntentStatus（expired→awaiting_verify→fulfilled→pending_release→waiting→watching→paused，顺序即契约），awaiting_verify 接上风控重试窗口（watchEngine.getRiskRetries 暴露 deadline 由 controller 注入），每日清扫过期意图为停用。状态与不可用是两个正交维度：不可用日走 X 覆盖、不显示监控徽标、引擎跳过，取消标记后自动恢复，不引入 blocked。前端拆出 DaySheet/VenueWatchSettingsSheet，store 派生 monitorsByDate 与 badgeFor（优先级常量数组），Sheet 加 zClass 支持叠加层级；顺带修掉无订场记录时日历不可达的空态缺口。测试 206/206，client 构建通过，真实库副本迁移演练通过（weekly 6 行→7 条 date 意图，锁场 15/通知 24 完好，幂等）。独立审查发现 1 个 P1 + 6 个 P2，P1 与 4 个 P2 已修，2 项记录为遗留。测试环境 8090 验收待部署。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `85ce254` | (see git log) |
+| `cc274dc` | (see git log) |
+| `fa457d7` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
