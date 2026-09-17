@@ -62,7 +62,7 @@ const MODE_OPTIONS = [
 
 const showForm = ref(false)
 const editingId = ref(null)
-const form = ref({ windowStart: '19:00', windowEnd: '21:00', duration: '2', courts: '1', mode: 'auto_lock' })
+const form = ref({ windowStart: '20:00', windowEnd: '21:00', duration: '1', courts: '1', mode: 'auto_lock' })
 const saving = ref(false)
 
 const windowMinutes = computed(() => {
@@ -77,9 +77,9 @@ const durationValid = computed(() => windowValid.value && Number(form.value.dura
 function openForm(monitor = null) {
   editingId.value = monitor ? monitor.id : null
   form.value = {
-    windowStart: monitor?.windowStart || '19:00',
+    windowStart: monitor?.windowStart || '20:00',
     windowEnd: monitor?.windowEnd || '21:00',
-    duration: String(monitor?.durationHours || 2),
+    duration: String(monitor?.durationHours || 1),
     courts: String(monitor?.courtsNeeded || 1),
     mode: monitor?.mode || 'auto_lock'
   }
