@@ -18,7 +18,7 @@ function submit() {
 </script>
 
 <template>
-  <Sheet :show="adminTokenPromptState.show" :title="adminTokenPromptState.title" @close="cancelAdminToken">
+  <Sheet :show="adminTokenPromptState.show" :title="adminTokenPromptState.title" z-class="z-110" @close="cancelAdminToken">
     <form class="token-body" @submit.prevent="submit">
       <p class="token-message">{{ adminTokenPromptState.message }}</p>
       <Input

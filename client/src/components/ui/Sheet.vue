@@ -5,6 +5,7 @@
  * @props {boolean} show - 是否显示
  * @props {string} title - 面板标题
  * @props {string} height - auto | half | full
+ * @props {string} zClass - 容器层级类；同一屏叠加多个 Sheet 时，后开的传更高层级（如 z-110）
  *
  * @slots default - 面板内容
  * @slots header - 自定义头部
@@ -14,7 +15,8 @@
 defineProps({
   show: { type: Boolean, default: false },
   title: { type: String, default: '' },
-  height: { type: String, default: 'auto', validator: v => ['auto', 'half', 'full'].includes(v) }
+  height: { type: String, default: 'auto', validator: v => ['auto', 'half', 'full'].includes(v) },
+  zClass: { type: String, default: 'z-100' }
 })
 
 import { X } from 'lucide-vue-next'
@@ -27,7 +29,7 @@ const heightMap = { auto: 'max-h-[90dvh]', half: 'max-h-[50dvh]', full: 'max-h-[
 <template>
   <Teleport to="body">
     <transition name="sheet-fade">
-      <div v-if="show" class="fixed inset-0 z-100 flex items-end justify-center bg-black/40 backdrop-blur-sm" @click.self="emit('close')">
+      <div v-if="show" class="fixed inset-0 flex items-end justify-center bg-black/40 backdrop-blur-sm" :class="zClass" @click.self="emit('close')">
         <transition name="sheet-slide">
           <div v-if="show" class="w-full max-w-[480px] liquid-sheet flex flex-col overflow-hidden" :class="heightMap[height]">
             <!-- Handle -->

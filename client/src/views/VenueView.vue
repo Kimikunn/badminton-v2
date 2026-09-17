@@ -3,7 +3,7 @@
  * VenueView — 场地管理 & 订场
  */
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
-import { useBookingsStore, usePlayersStore, useVenuesStore } from '@/stores'
+import { useBookingsStore, usePlayersStore, useVenuesStore, useIntentStore } from '@/stores'
 import { api } from '@/api/client'
 import Card from '@/components/ui/Card.vue'
 import Avatar from '@/components/ui/Avatar.vue'
@@ -14,14 +14,16 @@ import Sheet from '@/components/ui/Sheet.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import BookingCalendar from '@/components/venue/BookingCalendar.vue'
-import IntentPanel from '@/components/venue/IntentPanel.vue'
-import { ClipboardList, Pencil, Trash2, ChevronDown } from 'lucide-vue-next'
+import DaySheet from '@/components/venue/DaySheet.vue'
+import VenueWatchSettingsSheet from '@/components/venue/VenueWatchSettingsSheet.vue'
+import { ClipboardList, Pencil, Trash2, ChevronDown, Settings } from 'lucide-vue-next'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 
 const bookingsStore = useBookingsStore()
 const playersStore = usePlayersStore()
 const venuesStore = useVenuesStore()
+const intentStore = useIntentStore()
 const toast = useToast()
 const { confirm: confirmAction } = useConfirm()
 
@@ -97,7 +99,7 @@ watch(showAllRecords, async (val) => {
   }
 })
 
-onMounted(() => { bookingsStore.init(); venuesStore.init(); fetchUnavailableDays() })
+onMounted(() => { bookingsStore.init(); venuesStore.init(); intentStore.init(); fetchUnavailableDays() })
 
 // === Unavailable days ===
 const unavailableDays = ref([])
@@ -137,6 +139,35 @@ async function unmarkUnavailable(id) {
 
 function getUnavailableForDate(date) {
   return unavailableDays.value.find(u => u.date === date) || null
+}
+
+// === 日历某天：DaySheet + 监控徽标（监控状态来自 intent store，不可用标记来自上面的 unavailableDays） ===
+const selectedDate = ref(null)
+const showWatchSettings = ref(false)
+
+const selectedBookings = computed(() =>
+  selectedDate.value ? bookingsStore.records.filter(r => r.date === selectedDate.value) : []
+)
+
+const selectedUnavailable = computed(() =>
+  selectedDate.value ? getUnavailableForDate(selectedDate.value) : null
+)
+
+// 日历徽标：store 按天派生 + 优先级折叠；维度二「不可用」不参与（格子仍走 X 覆盖）
+const monitorStatusByDate = computed(() => {
+  const map = new Map()
+  for (const date of intentStore.monitorsByDate.keys()) {
+    const badge = intentStore.badgeFor(date)
+    if (badge) map.set(date, badge)
+  }
+  return map
+})
+
+// 从某天 sheet 新增订场：带上该日期，并先关掉 DaySheet 免得两层面板叠着
+function startBookingFromDay(date) {
+  form.value.date = date
+  selectedDate.value = null
+  openAdd()
 }
 
 // === Rotation ===
@@ -315,9 +346,15 @@ async function deleteEditingVenue() {
     <Card ref="recordsCardRef" padding="md">
       <div class="flex items-center justify-between mb-3">
         <h3 class="text-xs font-semibold text-fg-secondary uppercase tracking-wide">订场记录</h3>
-        <SegmentedControl v-if="bookingsStore.records.length" v-model="recordViewMode" :options="recordViewOptions" size="sm" />
+        <div class="flex items-center gap-1.5">
+          <SegmentedControl v-model="recordViewMode" :options="recordViewOptions" size="sm" />
+          <button class="icon-btn" title="监控设置" @click="showWatchSettings = true">
+            <Settings :size="14" />
+          </button>
+        </div>
       </div>
-      <EmptyState v-if="!bookingsStore.records.length" icon="ClipboardList" title="暂无记录" />
+      <!-- 无记录时仍可切到日历：日历是监控的唯一入口，不能因空数据而不可达 -->
+      <EmptyState v-if="!bookingsStore.records.length && recordViewMode === 'list'" icon="ClipboardList" title="暂无记录" />
 
       <!-- List view -->
       <div v-else-if="recordViewMode === 'list'" class="flex flex-col">
@@ -354,13 +391,9 @@ async function deleteEditingVenue() {
       <BookingCalendar
         v-else
         :records="bookingsStore.records"
-        :get-player-name="(id) => playersStore.getPlayerName(id)"
-        :get-player-avatar="(id) => playersStore.getPlayerById(id)?.avatar"
         :unavailable-date-set="unavailableDateSet"
-        :get-unavailable-for-date="getUnavailableForDate"
-        @create-booking="(date) => { form.date = date; openAdd() }"
-        @mark-unavailable="markUnavailable"
-        @unmark-unavailable="unmarkUnavailable"
+        :monitor-status-by-date="monitorStatusByDate"
+        @select-day="selectedDate = $event"
       />
     </Card>
 
@@ -377,9 +410,6 @@ async function deleteEditingVenue() {
         <ClipboardList :size="16" class="inline mr-1" />{{ nextPerson ? nextPerson.name + ' 记录订场' : '新增记录' }}
       </Button>
     </Card>
-
-    <!-- 订场意图 -->
-    <IntentPanel :unavailable-date-set="unavailableDateSet" />
 
     <!-- Venues -->
     <Card padding="md">
@@ -519,6 +549,23 @@ async function deleteEditingVenue() {
         <Button v-if="editingVenue" variant="danger" size="md" block @click="deleteEditingVenue" class="mt-2">删除场地</Button>
       </div>
     </Sheet>
+
+    <!-- 某天面板：订场记录 / 监控 / 不可用 / 历史（点日历某天打开） -->
+    <DaySheet
+      :show="!!selectedDate"
+      :date="selectedDate || ''"
+      :bookings="selectedBookings"
+      :unavailable="selectedUnavailable"
+      :get-player-name="(id) => playersStore.getPlayerName(id)"
+      :get-player-avatar="(id) => playersStore.getPlayerById(id)?.avatar"
+      @close="selectedDate = null"
+      @create-booking="startBookingFromDay"
+      @mark-unavailable="markUnavailable"
+      @unmark-unavailable="unmarkUnavailable"
+    />
+
+    <!-- 全局监控设置：总开关 + 锁场场地优先级（订场记录卡片页头齿轮入口） -->
+    <VenueWatchSettingsSheet :show="showWatchSettings" @close="showWatchSettings = false" />
   </div>
 </template>
 

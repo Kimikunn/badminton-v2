@@ -1,34 +1,50 @@
 <script setup>
 /**
- * BookingCalendar — Month grid showing booking records as dots + unavailable day marks
+ * BookingCalendar — 月历格子：订场圆点 + 不可用 X 覆盖 + 监控徽标（纯展示）
+ *
+ * 一天两个正交维度（design §4.0）：monitorStatusByDate = 监控状态聚合（维度一），
+ * unavailableDateSet = 日期标记（维度二）。不可用日走 X 分支，与徽标二选一，不叠加。
+ *
+ * @props {Array} records - 订场记录（date/startTime/endTime），用于圆点与当月总小时
+ * @props {Set<string>} unavailableDateSet - 不可用日期（YYYY-MM-DD）
+ * @props {Map<string, {status, count}>} monitorStatusByDate - 每天折叠后的监控徽标
+ *
+ * @events select-day - 点击今天及以后某天（不可用日同样上抛，由 DaySheet 处理）
  */
 import { ref, computed } from 'vue'
 import { ChevronLeft, ChevronRight, X } from 'lucide-vue-next'
-import Sheet from '@/components/ui/Sheet.vue'
-import Avatar from '@/components/ui/Avatar.vue'
-import { useConfirm } from '@/composables/useConfirm'
+import { MONITOR_CELL_LABELS } from '@/stores/intent'
 
 const props = defineProps({
   records: { type: Array, default: () => [] },
-  getPlayerName: { type: Function, required: true },
-  getPlayerAvatar: { type: Function, default: () => '' },
   unavailableDateSet: { type: Set, default: () => new Set() },
-  getUnavailableForDate: { type: Function, default: () => null },
+  monitorStatusByDate: { type: Map, default: () => new Map() },
 })
 
-const emit = defineEmits(['create-booking', 'mark-unavailable', 'unmark-unavailable'])
-
-const { confirm: confirmAction } = useConfirm()
+const emit = defineEmits(['select-day'])
 
 const today = new Date()
 const year = ref(today.getFullYear())
 const month = ref(today.getMonth() + 1)
-const selectedDate = ref(null)
 
 const DAY_HEADERS = ['一', '二', '三', '四', '五', '六', '日']
 const MONTH_NAMES = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']
 
-const todayKey = computed(() => `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`)
+// 徽标配色，与 Badge 的 variant 一一对应（配色约定见 design §4.4）
+const MONITOR_PILL_CLASS = {
+  awaiting_verify: 'bg-warning-subtle text-warning',
+  fulfilled: 'bg-success-subtle text-success',
+  watching: 'bg-accent-subtle text-accent',
+  pending_release: 'bg-badge-blue-bg text-badge-blue',
+  waiting: 'bg-badge-blue-bg text-badge-blue',
+  paused: 'bg-surface-hover text-fg-muted',
+}
+
+const todayKey = computed(() => dateKey(today))
+
+function dateKey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 const bookingMap = computed(() => {
   const m = new Map()
@@ -59,6 +75,7 @@ const days = computed(() => {
       isToday: key === todayKey.value,
       isPast: key < todayKey.value,
       isUnavailable: props.unavailableDateSet.has(key),
+      monitor: props.monitorStatusByDate.get(key) || null,
     })
   }
   return cells
@@ -90,39 +107,6 @@ const monthTotalHours = computed(() => {
   }
   return total
 })
-
-const selectedBookings = computed(() => {
-  if (!selectedDate.value) return []
-  return bookingMap.value.get(selectedDate.value) || []
-})
-
-const selectedUnavailable = computed(() => {
-  if (!selectedDate.value) return null
-  return props.getUnavailableForDate(selectedDate.value)
-})
-
-const isSelectedPast = computed(() => selectedDate.value && selectedDate.value < todayKey.value)
-
-async function handleMarkUnavailable(date) {
-  if (selectedBookings.value.length) {
-    const ok = await confirmAction({
-      title: '标记不可用',
-      message: `当天有 ${selectedBookings.value.length} 条订场记录，标记不可用将同时删除，确认？`,
-      confirmText: '确认标记',
-      variant: 'danger',
-    })
-    if (!ok) return
-  }
-  emit('mark-unavailable', date)
-  selectedDate.value = null
-}
-
-function handleUnmark() {
-  if (selectedUnavailable.value) {
-    emit('unmark-unavailable', selectedUnavailable.value.id)
-    selectedDate.value = null
-  }
-}
 </script>
 
 <template>
@@ -157,8 +141,8 @@ function handleUnmark() {
         } : ''"
       >
         <template v-if="cell">
-          <!-- Unavailable overlay: X mark -->
-          <div v-if="cell.isUnavailable" class="day-unavail" :class="{ 'cursor-pointer active:scale-95': !cell.isPast }" @click="!cell.isPast && (selectedDate = cell.key)">
+          <!-- 维度二：不可用日 X 覆盖（与监控徽标二选一，不叠加） -->
+          <div v-if="cell.isUnavailable" class="day-unavail" :class="{ 'cursor-pointer active:scale-95': !cell.isPast }" @click="!cell.isPast && emit('select-day', cell.key)">
             <X :size="16" class="x-mark" />
             <span class="day-num muted">{{ cell.day }}</span>
           </div>
@@ -166,7 +150,7 @@ function handleUnmark() {
           <!-- Normal day -->
           <div
             v-else
-            class="day-normal"
+            class="day-normal relative"
             :class="{
               'text-accent font-semibold': cell.bookings.length,
               'past-cell': cell.isPast && !cell.bookings.length,
@@ -175,8 +159,10 @@ function handleUnmark() {
               'ring-2 ring-accent': cell.isToday,
               'hover:bg-surface-hover': !cell.isPast,
             }"
-            @click="!cell.isPast && (selectedDate = cell.key)"
+            @click="!cell.isPast && emit('select-day', cell.key)"
           >
+            <!-- 维度一：当天监控条数（>1 才显示）；过去日不渲染 -->
+            <span v-if="!cell.isPast && cell.monitor && cell.monitor.count > 1" class="monitor-count">{{ cell.monitor.count }}</span>
             <span class="leading-none">{{ cell.day }}</span>
             <span v-if="cell.bookings.length" class="flex gap-0.5 mt-0.5">
               <span
@@ -185,6 +171,12 @@ function handleUnmark() {
                 class="w-1.5 h-1.5 rounded-full shrink-0 bg-accent"
               />
             </span>
+            <!-- 维度一：当天监控聚合徽标（优先级折叠后的状态）；过去日不渲染 -->
+            <span
+              v-if="!cell.isPast && cell.monitor"
+              class="monitor-pill"
+              :class="MONITOR_PILL_CLASS[cell.monitor.status]"
+            >{{ MONITOR_CELL_LABELS[cell.monitor.status] }}</span>
           </div>
         </template>
       </div>
@@ -198,52 +190,6 @@ function handleUnmark() {
       </div>
       <span v-if="monthTotalHours" class="font-medium text-fg-secondary">{{ monthTotalHours }}h</span>
     </div>
-
-    <!-- Day detail sheet -->
-    <Sheet :show="!!selectedDate && !isSelectedPast" :title="selectedDate || ''" @close="selectedDate = null">
-      <div class="flex flex-col gap-2">
-        <!-- Unavailable state -->
-        <div v-if="selectedUnavailable" class="text-center py-4 text-sm">
-          <X :size="28" class="text-danger mx-auto mb-2" />
-          <p class="text-fg-secondary">已标记为不可用</p>
-          <button
-            class="mt-3 w-full py-2.5 rounded-lg bg-surface-hover text-fg-secondary text-sm font-medium active:opacity-80 transition-opacity"
-            @click="handleUnmark"
-          >取消标记</button>
-        </div>
-
-        <template v-else>
-          <!-- Bookings -->
-          <div v-if="selectedBookings.length" class="flex flex-col">
-            <div
-              v-for="r in selectedBookings"
-              :key="r.id"
-              class="flex items-center gap-3 py-2.5 border-b border-line-light last:border-b-0"
-            >
-              <Avatar :name="getPlayerName(r.playerId)" :src="getPlayerAvatar(r.playerId)" size="sm" />
-              <div class="flex-1 min-w-0">
-                <span class="block text-sm font-medium text-fg">{{ getPlayerName(r.playerId) }}</span>
-                <span class="block text-xs text-fg-muted">{{ r.venueName || '—' }} · {{ r.startTime }}-{{ r.endTime }}</span>
-              </div>
-              <span class="text-sm font-semibold text-accent shrink-0">¥{{ r.cost }}</span>
-            </div>
-          </div>
-          <div v-else class="text-center py-6 text-fg-muted text-sm">暂无订场</div>
-
-          <!-- Actions -->
-          <button
-            v-if="selectedDate >= todayKey"
-            class="mt-1 w-full py-2.5 rounded-lg bg-accent text-white text-sm font-semibold active:opacity-80 transition-opacity"
-            @click="emit('create-booking', selectedDate); selectedDate = null"
-          >新增订场</button>
-          <button
-            v-if="selectedDate >= todayKey"
-            class="w-full py-2.5 rounded-lg border border-danger text-danger text-sm font-medium active:opacity-80 transition-opacity"
-            @click="handleMarkUnavailable(selectedDate)"
-          >标记不可用</button>
-        </template>
-      </div>
-    </Sheet>
   </div>
 </template>
 
@@ -279,5 +225,14 @@ function handleUnmark() {
 .day-num.muted {
   @apply text-sm;
   color: oklch(0.55 0.22 25 / 0.4);
+}
+
+/* 监控徽标：格子只有 40px 上下，用 9px 字 + 紧凑内边距；超长时省略而不是撑破格子 */
+.monitor-pill {
+  @apply mt-0.5 max-w-full truncate rounded-full px-[3px] text-[9px] font-medium leading-[13px];
+}
+/* 条数角标：多条才显示，放在格子右上角，不跟状态文字抢宽度 */
+.monitor-count {
+  @apply absolute top-0 right-0 min-w-3 h-3 px-[3px] rounded-full bg-fg text-fg-inverse text-[8px] font-semibold leading-3 flex items-center justify-center;
 }
 </style>

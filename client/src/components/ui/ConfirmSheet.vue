@@ -7,7 +7,7 @@ const { confirmState, resolveConfirm, cancelConfirm } = useConfirm()
 </script>
 
 <template>
-  <Sheet :show="confirmState.show" :title="confirmState.options.title" @close="cancelConfirm">
+  <Sheet :show="confirmState.show" :title="confirmState.options.title" z-class="z-110" @close="cancelConfirm">
     <div class="confirm-body">
       <p class="confirm-message">{{ confirmState.options.message }}</p>
       <div class="confirm-actions">
