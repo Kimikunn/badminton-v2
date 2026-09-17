@@ -414,3 +414,36 @@ standard/s2/s3 的 calcRankings 只按大分排序的 bug 修复：新增共享�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: 风控验证引导与锁场重试窗口
+
+**Date**: 2026-09-17
+**Task**: 风控验证引导与锁场重试窗口
+**Branch**: `master`
+
+### Summary
+
+放票高峰 createOrder 被图形验证拦截后不再就地失败：引擎推「需要过验证」引导用户在小程序过一次验证（服务端与小程序共用 token-user，过验证后按会话免验证），随后 4 分钟窗口内每 12 秒重新拉取并绕过 diff 直接评估该意图，直到锁到/意图停用/总开关关闭/token 失效/窗口超时。风控中止不再由 bookingLockService 立刻推「锁场失败」，避免同一事件两条矛盾通知。附带：推送全量留痕（push ok/push fail）、锁齐时按每个锁到时段落 watch_notifications、runtime 活文件路径改为每次调用实时解析（GYM_RUNTIME_DIR 测试隔离，避免读写生产 token）、意图卡片按最近发生日排序且过期沉底。文档同步 CONTEXT.md 放票风控改写 + 锁场补签名说明、spec testing/auth 补 runtime 隔离与后台定时器测试约定、.codex/ 入 .gitignore。检查子代理修 4 处：重试窗口绕过监控总开关、rcRetryConfig 用例间不还原、intentService 死代码常量、AC4/AC6 测试缺口。验证 187/187 + client build 通过。同轮归档 08-29-auto-order（签名可行性验证已完成落地，遗留「真实放票时刻端到端 createOrder 实盘验证」标记为已知未验）。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `990bd1f` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
