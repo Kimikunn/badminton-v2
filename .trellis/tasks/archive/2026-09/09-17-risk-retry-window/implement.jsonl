@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/logging.md", "reason": "推送审计日志必须走共享 pino logger，遵循既有 logger.info/error 约定"}
+{"file": ".trellis/spec/backend/testing.md", "reason": "node:test + backendTestHarness 用例形态与 GYM_RUNTIME_DIR 隔离落点"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Vue 客户端风格（ESM、无分号、单引号）与验证命令"}
