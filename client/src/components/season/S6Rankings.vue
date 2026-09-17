@@ -1,7 +1,7 @@
 <script setup>
 /**
  * S6Rankings — S6 积分榜
- * 上篇因果链：① 王选（一次性投掷定第 1-4 轮王序 → 每轮形态；旧数据回退逐轮展示）→ ② 形态说明 → 排名
+ * 上篇因果链：① 王选（一次性投掷定第 1-4 轮王序 → 每轮形态；旧数据回退逐轮展示）→ ② 形态说明 → ③ 上篇排名（标准胜场大分/小分，**只算上篇 1-4 轮**）
  * 下篇因果链（切片二/三）：阶段进度 → 上篇优胜 → ① 灵魂契合（掷骰/总点数/解锁阶层）
  *   → ② 王之宝库（库存剩余 + 卡片激活状态）→ ③ 组合星尘榜（结算卡修正后的星尘
  *   + VS 对阵 + 排名 + 最强组合）
@@ -27,7 +27,9 @@ const props = defineProps({
   matches: { type: Array, default: () => [] },
   comboRankings: { type: Array, default: () => [] },
   topWinner: { type: Object, default: null },
-  kingRights: { type: Array, default: () => [] }
+  kingRights: { type: Array, default: () => [] },
+  // 上篇（1-4 轮）标准大分/小分排名；缺省回退到全季 rankings（旧调用方兼容）
+  topRankings: { type: Array, default: null }
 })
 
 const ruleSheet = ref(null)
@@ -296,6 +298,12 @@ const sheetRules = computed(() => {
       </div>
     </div>
 
+    <!-- ====== 上篇排名：只算上篇（1-4 轮）的标准胜场大分/小分 ====== -->
+    <div class="flex flex-col gap-5">
+      <h3 class="text-xs font-semibold text-fg-secondary uppercase tracking-wide">上篇排名</h3>
+      <S1Rankings :rankings="topRankings || rankings" />
+    </div>
+
     <!-- ====== 下篇（切片二） ====== -->
     <!-- 阶段进度 -->
     <div class="flex gap-2">
@@ -504,9 +512,6 @@ const sheetRules = computed(() => {
         </div>
       </div>
     </div>
-
-    <!-- ④ 排名（上篇标准大分/小分结算） -->
-    <S1Rankings :rankings="rankings" />
 
     <!-- Rule sheets -->
     <Sheet :show="!!ruleSheet" :title="ruleTitle" @close="ruleSheet = null">
