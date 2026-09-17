@@ -74,6 +74,39 @@ const windowMinutes = computed(() => {
 const windowValid = computed(() => windowMinutes.value > 0)
 const durationValid = computed(() => windowValid.value && Number(form.value.duration) * 60 <= windowMinutes.value)
 
+// 场馆可订时段 09:00-21:00（见 CONTEXT.md）：自动扩窗口不能超出这个范围
+const VENUE_OPEN_MIN = 9 * 60
+const VENUE_CLOSE_MIN = 21 * 60
+
+function toMinutes(hhmm) {
+  const [h, m] = hhmm.split(':').map(Number)
+  return h * 60 + m
+}
+
+function toHHMM(min) {
+  return `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`
+}
+
+/**
+ * 选时长时自动把窗口撑到够用：优先往后延（不超 21:00），否则往前扩。
+ * 否则会出现“选了 2 小时但窗口还是 1 小时 → 保存按钮直接置灰”的死路（用户反馈踩到）。
+ */
+function setDuration(hours) {
+  form.value.duration = String(hours)
+  const need = Number(hours) * 60
+  if (windowMinutes.value >= need) return
+  const startMin = toMinutes(form.value.windowStart)
+  const endMin = toMinutes(form.value.windowEnd)
+  if (startMin + need <= VENUE_CLOSE_MIN) form.value.windowEnd = toHHMM(startMin + need)
+  else form.value.windowStart = toHHMM(Math.max(endMin - need, VENUE_OPEN_MIN))
+}
+
+// 同日同窗口已存在（服务端也会拦）→ 提前提示并禁用保存，引导去编辑那一条
+const duplicateMonitor = computed(() => monitors.value.find(m => m.id !== editingId.value
+  && m.windowStart === form.value.windowStart && m.windowEnd === form.value.windowEnd) || null)
+
+const canSave = computed(() => durationValid.value && !duplicateMonitor.value)
+
 function openForm(monitor = null) {
   editingId.value = monitor ? monitor.id : null
   form.value = {
@@ -94,11 +127,10 @@ function closeForm() {
 async function saveMonitor() {
   if (!windowValid.value) { toast.show('窗口结束时间必须晚于开始时间', 'error'); return }
   if (!durationValid.value) { toast.show('打球时长不能超过时间窗口', 'error'); return }
-  // 同一天同一时间段不重复建监控（服务端有同样的兜底校验）
-  const clash = props.monitors.some(m => m.id !== editingId.value
-    && m.windowStart === form.value.windowStart && m.windowEnd === form.value.windowEnd)
-  if (clash) { toast.show('该时段已有监控', 'error'); return }
-
+  if (duplicateMonitor.value) {
+    toast.show('该时段已有监控，点那一条的铅笔图标改时长即可', 'error')
+    return
+  }
   const payload = {
     windowStart: form.value.windowStart,
     windowEnd: form.value.windowEnd,
@@ -342,9 +374,12 @@ async function handleMarkUnavailable() {
 
           <div class="flex flex-col gap-1">
             <label class="text-xs font-semibold text-fg-secondary uppercase tracking-wide">连打时长</label>
-            <SegmentedControl v-model="form.duration" :options="DURATION_OPTIONS" size="sm" />
+            <SegmentedControl :model-value="form.duration" :options="DURATION_OPTIONS" size="sm" @update:model-value="setDuration" />
             <p v-if="!windowValid" class="text-2xs text-danger">窗口结束时间必须晚于开始时间</p>
             <p v-else-if="!durationValid" class="text-2xs text-danger">打球时长不能超过时间窗口</p>
+            <p v-else-if="duplicateMonitor" class="text-2xs text-warning">
+              该时段已有监控（{{ duplicateMonitor.windowStart }}-{{ duplicateMonitor.windowEnd }} · 连打{{ duplicateMonitor.durationHours }}小时）——点那一条的铅笔图标改时长即可
+            </p>
           </div>
 
           <div class="flex flex-col gap-1">
@@ -357,7 +392,7 @@ async function handleMarkUnavailable() {
             <SegmentedControl v-model="form.mode" :options="MODE_OPTIONS" size="sm" />
           </div>
 
-          <Button variant="primary" size="md" block :loading="saving" :disabled="!durationValid" @click="saveMonitor">保存</Button>
+          <Button variant="primary" size="md" block :loading="saving" :disabled="!canSave" @click="saveMonitor">保存</Button>
         </div>
       </div>
 
