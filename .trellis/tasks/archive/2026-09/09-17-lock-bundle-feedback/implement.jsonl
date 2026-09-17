@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/api-routes.md", "reason": "响应信封与校验层位置：courtsNeeded/durationHours 上界收紧与 expireAt 新字段都落在这里的约定内"}
+{"file": ".trellis/spec/backend/testing.md", "reason": "node:test + backendTestHarness 形态；迁移测试与测试隔离约定（涉及 migration 019）"}
+{"file": ".trellis/spec/backend/logging.md", "reason": "推送/失败留痕与日志规范（UNPAID 停机与软提示都要按既有 logger 约定留痕）"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "DaySheet 的 SegmentedControl 联动与内联提示写法"}
