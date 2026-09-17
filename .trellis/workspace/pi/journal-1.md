@@ -553,3 +553,36 @@ standard/s2/s3 的 calcRankings 只按大分排序的 bug 修复：新增共享�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: 图例校准收尾：彻底移除图例里的监控状态
+
+**Date**: 2026-09-17
+**Task**: 图例校准收尾：彻底移除图例里的监控状态
+**Branch**: `master`
+
+### Summary
+
+用户反馈日历下方的图例仍显示「监控中」——5419770 只去掉了「已暂停/等待」，把「监控中」当需要留意的状态保留了，违背本意。本次彻底移除图例里的监控状态（删 monthMonitorStates / legendVisible / LEGEND_HIDDEN_STATES 与 .legend-pill 样式），Info bar 恢复为「● 有订场 · ✕ 不可用 · Nh」（两个条目各自按是否存在显示），格子上的监控徽标与 ×N 角标不受影响。验证：build / build:test 通过；测试环境 Playwright 实测图例行 =「有订场 不可用 3h」、图例内监控状态为空数组、格子徽标仍在（7×已暂停）；生产产物 hash 一致（index-DSD5drRJ.js）且产物内已无 legend-pill，health ok。部署：测试 8090 与生产 8088 均已更新。备注：图例显示范围这个点本轮反复了三次（补状态 → 去掉暂停/等待 → 全去掉），已向用户提议把约定写进 CONTEXT.md「监控状态」词条（图例只解释订场圆点与不可用标记，监控状态只在格子上呈现），待其确认后补一行。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ebd6afd` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
