@@ -13,7 +13,7 @@
  */
 import { ref, computed } from 'vue'
 import { ChevronLeft, ChevronRight, X } from 'lucide-vue-next'
-import { MONITOR_CELL_LABELS, BADGE_PRIORITY } from '@/stores/intent'
+import { MONITOR_CELL_LABELS } from '@/stores/intent'
 
 const props = defineProps({
   records: { type: Array, default: () => [] },
@@ -108,19 +108,8 @@ const monthTotalHours = computed(() => {
   return total
 })
 
-// 图例：只列出“当月真正出现”且值得解释的监控状态（按聚合优先级排序，与格子折叠规则同源），
-// 不堆静态长列表；过去日不渲染徽标 → 不计入，保证图例与格子实际所见一致。
-// 已暂停/等待放票 是“安静的”状态（没有即将发生的动作），不进图例——图例只解释需要留意的状态。
-const LEGEND_HIDDEN_STATES = ['paused', 'waiting']
-
-const monthMonitorStates = computed(() => {
-  const present = new Set(days.value.filter(c => c && !c.isPast && c.monitor).map(c => c.monitor.status))
-  return BADGE_PRIORITY.filter(s => present.has(s) && !LEGEND_HIDDEN_STATES.includes(s))
-})
-
-const legendVisible = computed(() =>
-  bookingMap.value.size > 0 || props.unavailableDateSet.size > 0 || monthMonitorStates.value.length > 0
-)
+// 图例只解释两个**日期维度**的标记（订场圆点 / 不可用 X）；监控状态不列进来
+// （2026-09-17 用户定：格子上的监控徽标自己会说话，图例里堆状态只是噪音）
 </script>
 
 <template>
@@ -196,14 +185,13 @@ const legendVisible = computed(() =>
       </div>
     </div>
 
-    <!-- Info bar / 图例：订场圆点、不可用 X、监控徽标（只列当月出现的状态）+ 当月总时长 -->
-    <div v-if="legendVisible" class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-muted px-1">
-      <span v-if="bookingMap.size" class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-accent" /> 有订场</span>
-      <span v-if="unavailableDateSet.size" class="flex items-center gap-1.5"><X :size="10" class="text-danger" /> 不可用</span>
-      <span v-for="s in monthMonitorStates" :key="s" class="flex items-center gap-1.5">
-        <span class="monitor-pill legend-pill" :class="MONITOR_PILL_CLASS[s]">{{ MONITOR_CELL_LABELS[s] }}</span>
-      </span>
-      <span v-if="monthTotalHours" class="ml-auto font-medium text-fg-secondary">{{ monthTotalHours }}h</span>
+    <!-- Info bar：只列日期维度的标记（订场圆点 / 不可用）+ 当月总时长 -->
+    <div v-if="bookingMap.size || unavailableDateSet.size" class="flex items-center justify-between text-xs text-fg-muted px-1">
+      <div class="flex items-center gap-3">
+        <span v-if="bookingMap.size" class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-accent" /> 有订场</span>
+        <span v-if="unavailableDateSet.size" class="flex items-center gap-1.5"><X :size="10" class="text-danger" /> 不可用</span>
+      </div>
+      <span v-if="monthTotalHours" class="font-medium text-fg-secondary">{{ monthTotalHours }}h</span>
     </div>
   </div>
 </template>
@@ -240,11 +228,6 @@ const legendVisible = computed(() =>
 .day-num.muted {
   @apply text-sm;
   color: oklch(0.55 0.22 25 / 0.4);
-}
-
-/* 图例里的徽标：跟格子同一套配色，但字号提到 11px 保证可读（格子只有 40px 上下） */
-.legend-pill {
-  @apply mt-0 px-1.5 text-[11px] leading-4;
 }
 
 /* 监控徽标：格子只有 40px 上下，用 9px 字 + 紧凑内边距；超长时省略而不是撑破格子 */
