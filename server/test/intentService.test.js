@@ -293,6 +293,27 @@ test('updateIntent：date 与普通字段补丁；deleteIntent 删除', () => {
   assert.equal(intentService.getIntentById(created.id), null);
 });
 
+test('findByWindow：同日同窗口命中；改窗口/换日/排除自身则不命中', () => {
+  resetIntents();
+  const date = today();
+  const a = intentService.createIntent({
+    date, windowStart: '20:00', windowEnd: '21:00', durationHours: 1
+  });
+  intentService.createIntent({ date, windowStart: '19:00', windowEnd: '21:00', durationHours: 2 });
+
+  // 命中
+  assert.equal(intentService.findByWindow({ date, windowStart: '20:00', windowEnd: '21:00' }).id, a.id);
+  // 排除自身（编辑场景）
+  assert.equal(intentService.findByWindow({
+    date, windowStart: '20:00', windowEnd: '21:00', excludeId: a.id
+  }), null);
+  // 窗口不同 / 日期不同 → 不命中（部分重叠也算不重复）
+  assert.equal(intentService.findByWindow({ date, windowStart: '20:00', windowEnd: '22:00' }), null);
+  assert.equal(intentService.findByWindow({ date: datePlus(1), windowStart: '20:00', windowEnd: '21:00' }), null);
+  // 参数不全 → null（不误报）
+  assert.equal(intentService.findByWindow({ date }), null);
+});
+
 test('listIntents：全量按创建时间排序，from/to 按日期区间过滤', () => {
   resetIntents();
   makeIntent({ date: today(), windowStart: '08:00' });

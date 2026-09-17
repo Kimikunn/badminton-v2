@@ -67,6 +67,16 @@ function crossFieldRules({ partial }) {
         const windowMinutes = hhmmToMinutes(windowEnd) - hhmmToMinutes(windowStart);
         if (durationHours * 60 > windowMinutes) throw new Error('打球时长不能超过时间窗口');
       }
+      // 同一天同一时间段不重复建监控（UI 会先拦一次，这里是绕过 UI 的兜底）
+      if (date) {
+        const clash = intentService.findByWindow({
+          date,
+          windowStart,
+          windowEnd,
+          excludeId: partial ? req.params.id : null
+        });
+        if (clash) throw new Error('该时段已有监控');
+      }
     }
     return true;
   });

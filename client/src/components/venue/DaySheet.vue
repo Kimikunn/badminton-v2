@@ -94,6 +94,10 @@ function closeForm() {
 async function saveMonitor() {
   if (!windowValid.value) { toast.show('窗口结束时间必须晚于开始时间', 'error'); return }
   if (!durationValid.value) { toast.show('打球时长不能超过时间窗口', 'error'); return }
+  // 同一天同一时间段不重复建监控（服务端有同样的兜底校验）
+  const clash = props.monitors.some(m => m.id !== editingId.value
+    && m.windowStart === form.value.windowStart && m.windowEnd === form.value.windowEnd)
+  if (clash) { toast.show('该时段已有监控', 'error'); return }
 
   const payload = {
     windowStart: form.value.windowStart,
@@ -275,10 +279,10 @@ async function handleMarkUnavailable() {
         <div class="flex items-center gap-2">
           <span class="text-2xs font-semibold text-fg-muted uppercase tracking-wide">监控</span>
           <span v-if="monitors.length" class="text-2xs text-fg-muted">{{ monitors.length }} 条</span>
-          <Button v-if="!showForm" variant="ghost" size="sm" class="ml-auto" @click="openForm()">+ 开启这天监控</Button>
+          <Button v-if="!showForm" variant="ghost" size="sm" class="ml-auto" @click="openForm()">+ 新增监控</Button>
         </div>
 
-        <p v-if="!monitors.length && !showForm" class="py-2 text-xs text-fg-muted">这天还没有监控，开启后到放票时间会自动抢</p>
+        <p v-if="!monitors.length && !showForm" class="py-2 text-xs text-fg-muted">这天还没有监控，新增后到放票时间会自动抢</p>
 
         <div v-for="m in monitors" :key="m.id" class="py-2 border-b border-line-light last:border-b-0">
           <div class="flex items-center gap-2">

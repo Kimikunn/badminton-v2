@@ -182,6 +182,39 @@ test('过期意图：status=expired、PUT 合并现有日期后 422，显式新�
   await api.delete(`/api/intents/${expired.id}`).set(ADMIN).expect(200);
 });
 
+test('创建校验：同一天同一时间段不可重复建监控（编辑排除自身，重叠窗口允许）', async () => {
+  resetIntents();
+  const date = today();
+  const base = { date, windowStart: '20:00', windowEnd: '21:00', durationHours: 1 };
+
+  const first = await api.post('/api/intents').set(ADMIN).send(base).expect(201);
+
+  // 完全相同窗口（含不同时长/模式）→ 422
+  const dup = await api.post('/api/intents').set(ADMIN).send(base).expect(422);
+  assert.equal(dup.body.error.message, '该时段已有监控');
+  const dupOtherMode = await api.post('/api/intents').set(ADMIN)
+    .send({ ...base, mode: 'notify' }).expect(422);
+  assert.equal(dupOtherMode.body.error.message, '该时段已有监控');
+
+  // 同一小时但窗口不同 / 部分重叠 → 允许
+  await api.post('/api/intents').set(ADMIN)
+    .send({ date, windowStart: '19:00', windowEnd: '21:00', durationHours: 2 }).expect(201);
+  await api.post('/api/intents').set(ADMIN)
+    .send({ date, windowStart: '20:00', windowEnd: '22:00', durationHours: 2 }).expect(201);
+
+  // 编辑自身（窗口不改）→ 200；改到与另一条完全相同的窗口 → 422
+  const self = await api.put(`/api/intents/${first.body.data.id}`).set(ADMIN)
+    .send({ durationHours: 1 }).expect(200);
+  assert.equal(self.body.data.windowStart, '20:00');
+  const clash = await api.put(`/api/intents/${first.body.data.id}`).set(ADMIN)
+    .send({ windowStart: '19:00', windowEnd: '21:00' }).expect(422);
+  assert.equal(clash.body.error.message, '该时段已有监控');
+
+  // 另一天的同一窗口不受影响
+  await api.post('/api/intents').set(ADMIN)
+    .send({ ...base, date: kit.datePlus(1) }).expect(201);
+});
+
 test('创建校验：日期必填/格式/不早于今天、weekdays 拒绝、窗口先后、时长超窗口', async () => {
   resetIntents();
   const date = today();

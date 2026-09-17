@@ -323,6 +323,17 @@ function getIntentById(id) {
   return prepare('SELECT * FROM booking_intents WHERE id = ?').get(id);
 }
 
+/**
+ * 同一天同一时间窗口是否已有监控（编辑时用 excludeId 排除自身）。
+ * 判定为“日期 + 窗口起 + 窗口止”完全相同；部分重叠不算重复。
+ */
+function findByWindow({ date, windowStart, windowEnd, excludeId = null } = {}) {
+  if (!date || !windowStart || !windowEnd) return null;
+  return prepare(`SELECT * FROM booking_intents
+    WHERE date = ? AND window_start = ? AND window_end = ? AND id != COALESCE(?, '')
+    LIMIT 1`).get(date, windowStart, windowEnd, excludeId) || null;
+}
+
 function createIntent(data, statusCtxFor = null) {
   const id = intentId();
   prepare(`INSERT INTO booking_intents (id, mode, date, window_start, window_end, duration_hours, courts_needed, preferred_area_ids, enabled)
@@ -437,6 +448,7 @@ module.exports = {
   sweepExpiredIntents,
   expandIntentDates,
   listIntents,
+  findByWindow,
   getIntentById,
   createIntent,
   updateIntent,
