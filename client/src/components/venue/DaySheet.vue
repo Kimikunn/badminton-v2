@@ -53,8 +53,11 @@ const monitors = computed(() => store.monitorsForDate(props.date))
 // 场馆可订时段 09:00-21:00（见 CONTEXT.md 可订时段）：开始 09:00-20:00，结束 10:00-21:00
 const START_HOUR_OPTIONS = Array.from({ length: 12 }, (_, i) => `${String(i + 9).padStart(2, '0')}:00`)
 const END_HOUR_OPTIONS = Array.from({ length: 12 }, (_, i) => `${String(i + 10).padStart(2, '0')}:00`)
-const DURATION_OPTIONS = ['1', '2', '3', '4'].map(h => ({ key: h, label: `${h} 小时` }))
-const COURTS_OPTIONS = ['1', '2', '3'].map(n => ({ key: n, label: `${n} 片` }))
+// 场馆每天只给 2 个片次（场地×小时，退订返还，见 CONTEXT.md 每日限订）：
+// 因此时长只给 1-2 小时、片场只给 1-2 片，且两者乘积不能超过 2（选 2 小时就锁 1 片、选 2 片就锁 1 小时）
+const DAILY_SLOT_LIMIT = 2
+const DURATION_OPTIONS = ['1', '2'].map(h => ({ key: h, label: `${h} 小时` }))
+const COURTS_OPTIONS = ['1', '2'].map(n => ({ key: n, label: `${n} 片` }))
 const MODE_OPTIONS = [
   { key: 'auto_lock', label: '自动锁场' },
   { key: 'notify', label: '仅提醒' }
@@ -73,6 +76,17 @@ const windowMinutes = computed(() => {
 
 const windowValid = computed(() => windowMinutes.value > 0)
 const durationValid = computed(() => windowValid.value && Number(form.value.duration) * 60 <= windowMinutes.value)
+
+// 组合约束：时长 × 片场 ≤ 2 片次；谁最后被改就以谁为准，另一侧自动收敛（SegmentedControl 不支持禁选项，
+// 所以用“最后一次选择生效”而不是把选项置灰，避免用户点不动还得猜原因）
+const slotCount = computed(() => Number(form.value.duration) * Number(form.value.courts))
+
+watch(() => form.value.duration, (d) => {
+  if (Number(d) * Number(form.value.courts) > DAILY_SLOT_LIMIT) form.value.courts = '1'
+})
+watch(() => form.value.courts, (c) => {
+  if (Number(c) * Number(form.value.duration) > DAILY_SLOT_LIMIT) form.value.duration = '1'
+})
 
 // 场馆可订时段 09:00-21:00（见 CONTEXT.md）：自动扩窗口不能超出这个范围
 const VENUE_OPEN_MIN = 9 * 60
@@ -127,6 +141,10 @@ function closeForm() {
 async function saveMonitor() {
   if (!windowValid.value) { toast.show('窗口结束时间必须晚于开始时间', 'error'); return }
   if (!durationValid.value) { toast.show('打球时长不能超过时间窗口', 'error'); return }
+  if (slotCount.value > DAILY_SLOT_LIMIT) {
+    toast.show(`场馆每天最多 ${DAILY_SLOT_LIMIT} 个片次（场地×小时），当前组合需要 ${slotCount.value} 个`, 'error')
+    return
+  }
   if (duplicateMonitor.value) {
     toast.show('该时段已有监控，点那一条的铅笔图标改时长即可', 'error')
     return
@@ -385,6 +403,11 @@ async function handleMarkUnavailable() {
           <div class="flex flex-col gap-1">
             <label class="text-xs font-semibold text-fg-secondary uppercase tracking-wide">同一小时几片场</label>
             <SegmentedControl v-model="form.courts" :options="COURTS_OPTIONS" size="sm" />
+            <p class="text-2xs text-fg-muted">
+              场馆每天只给 {{ DAILY_SLOT_LIMIT }} 个片次（场地×小时）：{{ slotCount }} 片次
+              <template v-if="slotCount > 1">· 一次下单、一次支付</template>
+              <template v-else-if="Number(form.duration) === 2 || Number(form.courts) === 2"><br>选 2 小时会自动把片场收为 1 片，反之也一样</template>
+            </p>
           </div>
 
           <div class="flex flex-col gap-1">
@@ -414,6 +437,7 @@ async function handleMarkUnavailable() {
                 <span class="text-fg-muted">{{ l.areaName }}</span>
                 <Badge v-if="l.status === 'failed'" size="sm" variant="danger">失败</Badge>
                 <Badge v-else size="sm" variant="success">成功</Badge>
+                <span v-if="l.expireAt" class="text-fg-muted">支付截止 {{ fmtTime(l.expireAt) }}</span>
                 <span class="ml-auto text-fg-muted">{{ fmtTime(l.createdAt) }}</span>
               </div>
               <p v-for="msg in uniqueErrors(history.locks)" :key="'le' + msg" class="text-2xs text-danger mt-0.5">{{ msg }}</p>
