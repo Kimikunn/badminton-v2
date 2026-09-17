@@ -154,6 +154,12 @@ test('tryFulfill：17-19 连续两小时可订 → 锁这两个小时，发已�
   assert.match(kit.PUSH_CALLS[0].body.content, /订单号 ORD-123/);
   assert.match(kit.PUSH_CALLS[0].body.content, /5 分钟/);
 
+  // 锁齐通知落库：每个锁到的时段一条，uniq_no 与 locked 行一一对应、结果与推送一致
+  const notes = prepare('SELECT * FROM watch_notifications ORDER BY start_time').all();
+  assert.equal(notes.length, 2);
+  assert.deepEqual(notes.map(n => n.uniq_no), rows.map(r => r.uniq_no));
+  assert.ok(notes.every(n => n.intent_id === intent.id && n.success === 1 && n.error === null));
+
   // 幂等：已满足的发生直接跳过
   const again = await bookingLockService.tryFulfill(intent, date, windowSlots(date), env);
   assert.equal(again.skipped, 'fulfilled');
@@ -361,13 +367,11 @@ test('tryFulfill：风控（图形验证）fail-fast——不再尝试其他场�
   // 只试了第一片：check + create 各一次，第二片不再尝试
   assert.deepEqual(fetchStub.orderCalls.map(c => c.kind), ['check', 'create']);
 
-  // 锁场失败推送：含手动预订引导，且落通知记录（带 intentId）
-  assert.equal(kit.PUSH_CALLS.length, 1);
-  assert.match(kit.PUSH_CALLS[0].body.title, /【锁场失败】/);
-  assert.match(kit.PUSH_CALLS[0].body.content, /手动进小程序预订/);
-  const note = prepare('SELECT * FROM watch_notifications WHERE intent_id = ?').get(intent.id);
-  assert.ok(note, '失败推送应落 watch_notifications');
-  assert.equal(note.uniq_no, `41_${date}_17:00`);
+  // 风控中止时 tryFulfill 不推送（引擎的重试窗口接管消息）：无推送，但失败记录落库
+  assert.equal(kit.PUSH_CALLS.length, 0);
+  const failedRow = prepare(`SELECT * FROM booking_intent_locks WHERE uniq_no = ?`).get(`41_${date}_17:00`);
+  assert.equal(failedRow.status, 'failed');
+  assert.match(failedRow.error, /风控/);
 });
 
 test('tryFulfill：普通失败（被抢）可递补下一片；最终锁齐只发已锁场推送', async () => {

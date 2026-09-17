@@ -31,6 +31,22 @@ Harness facts:
 
 - Creates a temp dir and sets `process.env.DB_PATH` + `NODE_ENV=test`
   **before** requiring `src/app` — env must be set prior to any `src/` require.
+- Also sets `process.env.GYM_RUNTIME_DIR=<tempdir>/runtime`. Runtime "live files"
+  (`gym-token`, `token-update-key`, written by the token capture proxy) must
+  therefore be resolved **per call**, never cached in a module-level constant:
+
+  ```js
+  // server/src/services/intentService.js — correct
+  function runtimeFile(name) {
+    const dir = process.env.GYM_RUNTIME_DIR || path.join(__dirname, '..', '..', 'runtime');
+    return path.join(dir, name);
+  }
+  ```
+
+  Why: a module-level path constant is frozen at require time, so tests would
+  read/write the real `server/runtime/gym-token` and concurrent test files
+  would clobber each other's token. Check after a full run that
+  `server/runtime/` mtimes are unchanged.
 - `setupTestDb({ players })` runs schema + migrations on a fresh DB.
 - Seed helpers insert rows directly: `insertPlayers`, `insertSeason`,
   `insertS5Season`, `insertRound`, `insertMatch`; DB read helpers:
@@ -45,6 +61,18 @@ Harness facts:
 - Verify persisted state with the `getDb*` helpers, not only the HTTP response
   (see `matchStateMachine.test.js`, `transaction.test.js`).
 - `assert` is `node:assert/strict`.
+
+### Testing background timers / in-memory loops
+
+`watchEngine` keeps process-level state (retry sets, tuning config). Two rules
+learned from the risk-control retry tests (`watchEngine.test.js`):
+
+- Export tuning knobs as a mutable object (e.g. `watchEngine.rcRetryConfig`)
+  so tests can shrink `intervalMs` / `windowMs` to tens of ms instead of
+  sleeping for real minutes.
+- Restore every mutated knob inside `resetEngineState()` (`RC_RETRY_DEFAULTS` +
+  `Object.assign`) — otherwise a test's 20 ms interval leaks into the rest of
+  the suite and turns it flaky.
 
 ## E2E — Playwright (repo root)
 

@@ -321,7 +321,7 @@ test('POST /token：缺/错密钥 403，正确密钥写入运行时 token 文件
   resetIntents();
   const fs = require('fs');
   const path = require('path');
-  const tokenFile = path.join(__dirname, '..', 'runtime', 'gym-token');
+  const tokenFile = path.join(process.env.GYM_RUNTIME_DIR, 'gym-token');
 
   await api.post('/api/intents/token').set(ADMIN).send({ token: 'x'.repeat(32) }).expect(403);
   await api.post('/api/intents/token').set({ ...ADMIN, 'x-token-key': 'wrong' })
@@ -340,7 +340,7 @@ test('POST /token：缺/错密钥 403，正确密钥写入运行时 token 文件
   // 即时生效：getEnvConfig 优先读文件
   assert.equal(intentService.getEnvConfig().tokenUser, token);
 
-  fs.rmSync(tokenFile); // 不污染真实运行目录
+  fs.rmSync(tokenFile); // 清理，避免影响本文件后续用例（目录是 harness 隔离的临时目录）
 });
 
 // === GET /availability ===

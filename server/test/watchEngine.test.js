@@ -562,6 +562,134 @@ test('锁到即停：整段锁齐意图自动停用；格子回流仅记账 expi
   assert.equal(intentService.getIntentById(intent.id).enabled, 0);
 });
 
+// === 风控重试：图形验证引导 + 窗口期自动重试 ===
+
+test('风控重试：429 后推验证引导；窗口期内"验证通过"（createOrder 恢复）则自动锁到', async () => {
+  resetEngine();
+  kit.configureEnv({ withKey: true });
+  watchEngine.rcRetryConfig.intervalMs = 30;
+  watchEngine.rcRetryConfig.windowMs = 800;
+  const date = kit.datePlus(1);
+  const intent = makeIntent({ mode: 'auto_lock', date, windowStart: '19:00', windowEnd: '20:00', durationHours: 1 });
+  const uniqNo = `41_${date}_19:00_20:00`;
+  const lease = (available) => (url) => {
+    const d = new URL(String(url)).searchParams.get('date');
+    return d === date ? kit.leaseResponse([kit.slot(uniqNo, '19:00', '20:00', { available })]) : kit.emptyLease(d);
+  };
+
+  // 前 3 次 createOrder 返回 429（用户尚未过验证），第 4 次起成功（验证已过）
+  let createCount = 0;
+  const createBody = () => (++createCount <= 3
+    ? { code: 429, msg: 'captcha required' }
+    : { code: 200, data: { areaOrderId: 'ORD-RC' } });
+
+  kit.stubFetch(kit.lockFlowFetch({ leaseHandler: lease(false), createBody }));
+  await watchEngine.pollOnce(); // 播种基线（不可订）
+  kit.stubFetch(kit.lockFlowFetch({ leaseHandler: lease(true), createBody })); // 放票：格子变可订
+  kit.PUSH_CALLS.length = 0;
+  await watchEngine.pollOnce(); // 0→1 → 429 → 引导推送 + 重试窗口启动
+  await new Promise(r => setTimeout(r, 80)); // 重试循环是异步启动的，等引导推送落库
+
+  assert.ok(kit.PUSH_CALLS.some(c => /需要过验证/.test(c.body.title)), '应有验证引导推送');
+  assert.equal(kit.PUSH_CALLS.filter(c => /需要过验证/.test(c.body.title)).length, 1, '重试期间引导推送只发一次');
+  assert.match(kit.PUSH_CALLS[0].body.content, /验证成功.*即可退出/);
+  assert.equal(intentService.getIntentById(intent.id).enabled, 1); // 尚未锁到，保持启用
+
+  // 重试窗口内第 4 次 createOrder 成功 → 锁到即停 + 已锁场推送
+  await new Promise(r => setTimeout(r, 900));
+  assert.equal(intentService.getIntentById(intent.id).enabled, 0);
+  assert.ok(kit.PUSH_CALLS.some(c => /已锁场/.test(c.body.title)), '验证通过后应自动锁到并推送');
+  assert.ok(createCount >= 4, `应重试到验证通过（实际 create 调用 ${createCount} 次）`);
+
+  // 引导与锁齐都落通知记录（引导无 uniq_no；锁齐按每个时段落，带订单号）
+  const notes = prepare('SELECT * FROM watch_notifications').all();
+  assert.equal(notes.length, 2, '引导 + 锁齐各一条通知');
+  assert.ok(notes.some(n => n.uniq_no === null && n.success === 1), '引导推送应落通知记录');
+  assert.ok(notes.some(n => n.uniq_no === uniqNo && n.success === 1), '锁齐应按时段落通知记录');
+});
+
+test('风控重试：窗口超时仍未通过验证 → 锁场失败推送', async () => {
+  resetEngine();
+  kit.configureEnv({ withKey: true });
+  watchEngine.rcRetryConfig.intervalMs = 30;
+  watchEngine.rcRetryConfig.windowMs = 200;
+  const date = kit.datePlus(1);
+  makeIntent({ mode: 'auto_lock', date, windowStart: '19:00', windowEnd: '20:00', durationHours: 1 });
+  const uniqNo = `41_${date}_19:00_20:00`;
+  const lease = (available) => (url) => {
+    const d = new URL(String(url)).searchParams.get('date');
+    return d === date ? kit.leaseResponse([kit.slot(uniqNo, '19:00', '20:00', { available })]) : kit.emptyLease(d);
+  };
+  kit.stubFetch(kit.lockFlowFetch({ leaseHandler: lease(false), createBody: { code: 429, msg: 'captcha required' } }));
+  await watchEngine.pollOnce();
+  // 放票：格子可订（一直过不了验证）
+  kit.stubFetch(kit.lockFlowFetch({ leaseHandler: lease(true), createBody: { code: 429, msg: 'captcha required' } }));
+  kit.PUSH_CALLS.length = 0;
+  await watchEngine.pollOnce();
+  await new Promise(r => setTimeout(r, 80)); // 等异步重试循环的引导推送
+  assert.ok(kit.PUSH_CALLS.some(c => /需要过验证/.test(c.body.title)));
+  assert.equal(kit.PUSH_CALLS.filter(c => /需要过验证/.test(c.body.title)).length, 1, '重试期间引导推送只发一次');
+
+  await new Promise(r => setTimeout(r, 500));
+  assert.ok(kit.PUSH_CALLS.some(c => /【锁场失败】/.test(c.body.title) && /重试窗口/.test(c.body.content)), '超时应有失败推送');
+  const nullNotes = prepare('SELECT * FROM watch_notifications WHERE uniq_no IS NULL').all();
+  assert.equal(nullNotes.length, 2, '验证引导与超时失败各落一条通知');
+  assert.ok(nullNotes.every(n => n.success === 1));
+});
+
+test('风控重试：窗口内意图被停用 → 立即停止，不再推送锁场失败', async () => {
+  resetEngine();
+  kit.configureEnv({ withKey: true });
+  watchEngine.rcRetryConfig.intervalMs = 20;
+  watchEngine.rcRetryConfig.windowMs = 600;
+  const date = kit.datePlus(1);
+  const intent = makeIntent({ mode: 'auto_lock', date, windowStart: '19:00', windowEnd: '20:00', durationHours: 1 });
+  const uniqNo = `41_${date}_19:00_20:00`;
+  const lease = (available) => (url) => {
+    const d = new URL(String(url)).searchParams.get('date');
+    return d === date ? kit.leaseResponse([kit.slot(uniqNo, '19:00', '20:00', { available })]) : kit.emptyLease(d);
+  };
+  kit.stubFetch(kit.lockFlowFetch({ leaseHandler: lease(false), createBody: { code: 429, msg: 'captcha required' } }));
+  await watchEngine.pollOnce(); // 基线
+  kit.stubFetch(kit.lockFlowFetch({ leaseHandler: lease(true), createBody: { code: 429, msg: 'captcha required' } }));
+  await watchEngine.pollOnce(); // 429 → 引导推送 + 重试窗口启动
+  await new Promise(r => setTimeout(r, 80));
+  assert.ok(kit.PUSH_CALLS.some(c => /需要过验证/.test(c.body.title)));
+
+  // 用户关掉意图 → 窗口立即退出，不再锁场也不再推失败
+  intentService.updateIntent(intent.id, { enabled: false });
+  const pushesAfterDisable = kit.PUSH_CALLS.length;
+  await new Promise(r => setTimeout(r, 700));
+  assert.equal(kit.PUSH_CALLS.length, pushesAfterDisable);
+  assert.equal(prepare(`SELECT COUNT(*) AS cnt FROM booking_intent_locks WHERE status = 'locked'`).get().cnt, 0); // 全 429，不可能锁到
+});
+
+test('风控重试：重试期间 token 失效（401）→ 静默退出，无锁场失败推送', async () => {
+  resetEngine();
+  kit.configureEnv({ withKey: true });
+  watchEngine.rcRetryConfig.intervalMs = 20;
+  watchEngine.rcRetryConfig.windowMs = 400;
+  const date = kit.datePlus(1);
+  makeIntent({ mode: 'auto_lock', date, windowStart: '19:00', windowEnd: '20:00', durationHours: 1 });
+  const uniqNo = `41_${date}_19:00_20:00`;
+  const lease = (available) => (url) => {
+    const d = new URL(String(url)).searchParams.get('date');
+    return d === date ? kit.leaseResponse([kit.slot(uniqNo, '19:00', '20:00', { available })]) : kit.emptyLease(d);
+  };
+  kit.stubFetch(kit.lockFlowFetch({ leaseHandler: lease(false), createBody: { code: 429, msg: 'captcha required' } }));
+  await watchEngine.pollOnce(); // 基线
+  kit.stubFetch(kit.lockFlowFetch({ leaseHandler: lease(true), createBody: { code: 429, msg: 'captcha required' } }));
+  await watchEngine.pollOnce(); // 429 → 引导推送 + 重试窗口启动
+
+  // 窗口内 token 失效：listAreaLease 返回 401 → 循环静默退出（告警交主流程下一 tick）
+  kit.stubFetch(kit.lockFlowFetch({ leaseHandler: () => kit.mockJsonResponse({ code: 401, msg: 'unauthorized' }) }));
+  await new Promise(r => setTimeout(r, 80));
+  const pushesAfter401 = kit.PUSH_CALLS.length;
+  await new Promise(r => setTimeout(r, 500));
+  assert.equal(kit.PUSH_CALLS.length, pushesAfter401, '401 退出后不应再推锁场失败');
+  assert.equal(kit.PUSH_CALLS.filter(c => /【锁场失败】/.test(c.body.title)).length, 0);
+});
+
 // === watchDigest：标题排版 ===
 
 test('courtShort：去掉括号及内容', () => {

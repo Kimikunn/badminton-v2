@@ -77,19 +77,24 @@ test('getEnvConfig：runtime/gym-token 文件优先于 GYM_TOKEN_USER env', () =
   resetIntents();
   const fs = require('fs');
   const path = require('path');
-  const tokenFile = path.join(__dirname, '..', 'runtime', 'gym-token');
+  // 在 harness 给的隔离目录里再开独立子目录，结束恢复 harness 值
+  const prevDir = process.env.GYM_RUNTIME_DIR;
+  process.env.GYM_RUNTIME_DIR = path.join(prevDir, 'token-priority');
+  fs.mkdirSync(process.env.GYM_RUNTIME_DIR, { recursive: true });
+  const tokenFile = path.join(process.env.GYM_RUNTIME_DIR, 'gym-token');
 
   process.env.GYM_TOKEN_USER = 'env-token';
   assert.equal(intentService.getEnvConfig().tokenUser, 'env-token');
 
   // 写入运行时文件 → 优先于 env（token 捕获代理的热更新通道）
-  fs.mkdirSync(path.dirname(tokenFile), { recursive: true });
   fs.writeFileSync(tokenFile, 'file-token\n');
   assert.equal(intentService.getEnvConfig().tokenUser, 'file-token');
 
   // 删除文件 → 回退 env
   fs.rmSync(tokenFile);
   assert.equal(intentService.getEnvConfig().tokenUser, 'env-token');
+
+  process.env.GYM_RUNTIME_DIR = prevDir;
 });
 
 // === 配置读写 ===

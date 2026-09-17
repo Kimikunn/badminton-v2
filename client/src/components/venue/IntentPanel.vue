@@ -72,9 +72,10 @@ function intentScheduleLabel(t) {
   return `${d.getMonth() + 1}/${d.getDate()} 周${WEEKDAYS[d.getDay()]?.label ?? ''}`
 }
 
-// 最近的下一个发生日（每周模式：今天起 14 天内第一个匹配日；单次模式：date 本身）
+// 最近的下一个发生日（每周模式：今天起 14 天内第一个匹配日；单次模式：date 本身，
+// 已过期返回 null = 沉底）
 function nextOccurrenceDate(t) {
-  if (!isWeekly(t)) return t.date
+  if (!isWeekly(t)) return t.expired ? null : t.date
   const set = new Set(t.weekdays)
   const now = new Date()
   for (let i = 0; i < 14; i++) {
@@ -97,6 +98,18 @@ function nextOccurrenceUnavailable(t) {
   const date = nextOccurrenceDate(t)
   return !!date && props.unavailableDateSet.has(date)
 }
+
+// 卡片排序：按最近发生日从近到远；无发生日（已过期/无匹配）沉底
+const sortedIntents = computed(() =>
+  [...store.intents].sort((a, b) => {
+    const da = nextOccurrenceDate(a)
+    const db = nextOccurrenceDate(b)
+    if (!da && !db) return 0
+    if (!da) return 1
+    if (!db) return -1
+    return da < db ? -1 : da > db ? 1 : 0
+  })
+)
 
 function intentSummary(t) {
   return `${t.windowStart}-${t.windowEnd} · 连打${t.durationHours}小时 · ${t.courtsNeeded}片场`
@@ -332,7 +345,7 @@ async function deleteIntent(t) {
       </EmptyState>
       <div v-else class="flex flex-col">
         <div
-          v-for="t in store.intents" :key="t.id"
+          v-for="t in sortedIntents" :key="t.id"
           class="py-1.5 border-b border-line-light last:border-b-0"
           :class="{ 'opacity-50': t.expired }"
         >

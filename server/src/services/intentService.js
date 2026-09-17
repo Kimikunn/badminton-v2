@@ -47,12 +47,16 @@ function isPushConfigured(type, token, url, topic) {
  * 新 token 时写入，见 tools/tokenproxy/），文件不存在才回退 GYM_TOKEN_USER
  * 环境变量——token 是短期凭证会过期，活文件让它免重启热更新。
  */
-const TOKEN_FILE = path.join(__dirname, '..', '..', 'runtime', 'gym-token');
-const TOKEN_UPDATE_KEY_FILE = path.join(__dirname, '..', '..', 'runtime', 'token-update-key');
+// 运行时目录每次调用实时解析：测试用 GYM_RUNTIME_DIR 隔离，避免并发测试文件互相污染
+// （gym-token 由 token 捕获代理 / token 更新接口写入，模块级常量会锁死生产目录）
+function runtimeFile(name) {
+  const dir = process.env.GYM_RUNTIME_DIR || path.join(__dirname, '..', '..', 'runtime');
+  return path.join(dir, name);
+}
 
 function readTokenUser() {
   try {
-    const t = fs.readFileSync(TOKEN_FILE, 'utf-8').trim();
+    const t = fs.readFileSync(runtimeFile('gym-token'), 'utf-8').trim();
     if (t) return t;
   } catch (_) { /* 文件不存在属常态，回退 env */ }
   return process.env.GYM_TOKEN_USER || '';
@@ -60,20 +64,22 @@ function readTokenUser() {
 
 /** token 更新接口的密钥：runtime/token-update-key，首次使用时生成（gitignored） */
 function getTokenUpdateKey() {
+  const keyFile = runtimeFile('token-update-key');
   try {
-    const k = fs.readFileSync(TOKEN_UPDATE_KEY_FILE, 'utf-8').trim();
+    const k = fs.readFileSync(keyFile, 'utf-8').trim();
     if (k) return k;
   } catch (_) { /* 首次，往下生成 */ }
   const key = crypto.randomBytes(24).toString('hex');
-  fs.mkdirSync(path.dirname(TOKEN_UPDATE_KEY_FILE), { recursive: true });
-  fs.writeFileSync(TOKEN_UPDATE_KEY_FILE, key, { mode: 0o600 });
+  fs.mkdirSync(path.dirname(keyFile), { recursive: true });
+  fs.writeFileSync(keyFile, key, { mode: 0o600 });
   return key;
 }
 
 /** 写入运行时 token（token 更新接口 / 捕获代理共用通道） */
 function setRuntimeToken(token) {
-  fs.mkdirSync(path.dirname(TOKEN_FILE), { recursive: true });
-  fs.writeFileSync(TOKEN_FILE, token.trim());
+  const file = runtimeFile('gym-token');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, token.trim());
 }
 
 function getEnvConfig() {

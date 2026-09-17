@@ -86,6 +86,11 @@ function notify(env, title, content) {
     topic: env.pushTopic,
     title,
     content
+  }).then(result => {
+    // 全量推送审计日志（同引擎侧约定）
+    if (result.success) logger.info(`push ok - ${title}`);
+    else logger.error(`push fail - ${title}: ${result.error}`);
+    return result;
   });
 }
 
@@ -333,22 +338,19 @@ async function tryFulfill(intent, date, daySlots, env) {
     await notifyFulfilled(intent, date, env);
     return { fulfilled: true, locked, failed: failedList.length };
   }
-  // 锁不齐：已锁的保留，剩余等格子回流后由后续触发续锁；失败即时推送（用户需要知情）
-  if (failedList.length) {
+  // 锁不齐：已锁的保留，剩余等格子回流后由后续触发续锁；失败即时推送（用户需要知情）。
+  // 风控中止时不在这里推——引擎会进入重试窗口并推"需要人工验证"引导
+  if (failedList.length && !aborted) {
     await notifyLockFailed(intent, date, failedList, env);
   }
   return { fulfilled: false, locked, failed: failedList.length, ...(aborted ? { aborted: 'risk_control' } : {}) };
 }
 
-/** 锁场失败即时推送：失败明细 + 风控时引导手动预订 */
+/** 锁场失败即时推送：失败明细 + 回流提示（风控中止不走这里，由引擎重试窗口接管） */
 async function notifyLockFailed(intent, date, failedList, env) {
   const lines = failedList.map(f =>
     `- ${f.slot.areaName || '场地'} ${f.slot.startTime}-${f.slot.endTime}：${f.error}`);
-  const hasRiskControl = failedList.some(f => f.riskControl);
-  const content = `**${date} 自动锁场失败**\n\n${lines.join('\n')}\n\n`
-    + (hasRiskControl
-      ? '触发放票图形验证，自动下单被拦截。**请立即手动进小程序预订**目标时段；系统会继续盯回流场次自动重试。'
-      : '格子可能刚被他人抢先，回流可订时系统会自动重试。');
+  const content = `**${date} 自动锁场失败**\n\n${lines.join('\n')}\n\n格子可能刚被他人抢先，回流可订时系统会自动重试。`;
   const result = await notify(env, `【锁场失败】${date}`, content);
   if (!result.success) {
     logger.error(`bookingLock.failedNotify - ${result.error}`);
@@ -385,7 +387,7 @@ async function notifyDailyLimit(intent, date, held, need, limit, env) {
   }
 }
 
-/** 整段锁齐：一条醒目推送（含订单号、5 分钟支付提醒、意图已自动暂停说明） */
+/** 整段锁齐：一条醒目推送（含订单号、5 分钟支付提醒、意图已自动暂停说明），落通知记录 */
 async function notifyFulfilled(intent, date, env) {
   const rows = lockedRowsFor(intent.id, date);
   const lines = rows.map(r =>
@@ -393,8 +395,17 @@ async function notifyFulfilled(intent, date, env) {
   const result = await notify(env,
     `【已锁场】${date} ${rows.length} 个时段`,
     `**${date} 自动锁场成功**\n\n${lines.join('\n')}\n\n请 5 分钟内在小程序完成支付，超时订单自动释放。本意图已自动暂停；不支付的话，在订场页重新打开开关即可继续监控。`);
-  if (!result.success) {
-    logger.error(`bookingLock.fulfilledNotify - ${result.error}`);
+  for (const r of rows) {
+    intentService.recordNotification({
+      intentId: intent.id,
+      uniqNo: r.uniq_no,
+      areaName: r.area_name,
+      date,
+      startTime: r.start_time,
+      endTime: r.end_time,
+      success: result.success,
+      error: result.success ? null : result.error
+    });
   }
 }
 

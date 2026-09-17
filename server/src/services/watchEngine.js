@@ -53,6 +53,14 @@ const plan = new Map();
 // 可订格子不产生 0→1，需要绕过 diff 直接评估一次（见 requestEvaluation）
 const pendingEvaluation = new Set();
 
+// 风控重试：09:00 放票高峰 createOrder 必过图形验证（账号级拦截），
+// 引导用户在小程序里过一次验证（服务端按会话免验证，我们与小程序共用
+// token-user），随后在窗口期内自动重试。key = `${intentId}|${date}`
+const rcRetrying = new Set();
+// 重试时序配置（测试可调小；resetEngineState 时恢复默认值，避免用例间互相污染）
+const RC_RETRY_DEFAULTS = { intervalMs: 12000, windowMs: 4 * 60 * 1000 };
+const rcRetryConfig = { ...RC_RETRY_DEFAULTS };
+
 // 告警状态：拉取连败计数（进程内）与"签名未配置"一次性提醒（进程内）
 let consecutivePollFailures = 0;
 let signerWarned = false;
@@ -128,6 +136,68 @@ function loadActiveIntents() {
     .filter(t => t.dates.size > 0);
 }
 
+// === 风控重试：图形验证引导 + 窗口期自动重试 ===
+
+/** tryFulfill 的引擎侧包装：风控中止时进入重试窗口 */
+async function fulfillWithRiskRetry(intent, date, slots, env) {
+  const result = await bookingLockService.tryFulfill(intent.row, date, slots, env);
+  if (result.aborted === 'risk_control') {
+    scheduleRiskControlRetry(intent.row, date, env);
+  }
+  return result;
+}
+
+function scheduleRiskControlRetry(intentRow, date, env, opts = {}) {
+  riskControlRetryLoop(intentRow, date, env, opts)
+    .catch(err => logger.error(`watchEngine.rcRetry - ${intentRow.id} ${date}: ${err.message}`));
+}
+
+/**
+ * 风控重试循环：先推验证引导（小程序过一次图形验证，服务端按会话免验证，
+ * 我们与小程序共用 token-user），然后窗口期内每隔 intervalMs 重新拉取并
+ * 直接评估该意图，直到锁到、意图被停用或窗口超时。同意图同日重入直接跳过。
+ */
+async function riskControlRetryLoop(intentRow, date, env, { intervalMs = rcRetryConfig.intervalMs, windowMs = rcRetryConfig.windowMs } = {}) {
+  const key = `${intentRow.id}|${date}`;
+  if (rcRetrying.has(key)) return;
+  rcRetrying.add(key);
+  try {
+    const guide = await notifyWith(env, `【需要过验证】${date}`,
+      `**放票高峰触发了场馆的图形验证**，自动下单被拦。\n\n请打开小程序：任意选一个时段点「预订」→ 完成图形验证 → 看到「验证成功」即可退出（不用真的下单）。\n\n验证过后，系统会在 ${Math.round(windowMs / 60000)} 分钟内自动重试锁场，锁到会再通知你。`);
+    intentService.recordNotification({
+      intentId: intentRow.id, uniqNo: null, date,
+      startTime: intentRow.window_start, endTime: intentRow.window_end,
+      success: guide.success, error: guide.success ? null : guide.error
+    });
+
+    const deadline = Date.now() + windowMs;
+    while (Date.now() < deadline) {
+      await sleep(intervalMs);
+      const current = intentService.getIntentById(intentRow.id);
+      if (!current || !current.enabled) return; // 意图被关/删，停止
+      if (!intentService.getFlags().enabled) return; // 总开关关闭，停止（与主流程一致）
+      let resp;
+      try {
+        resp = await fetchAreaLease(date, env.tokenUser);
+      } catch { continue; }
+      if (resp.status === 401 || (resp.body && resp.body.code === 401)) return; // token 失效，告警走主流程
+      if (!resp.httpOk || !resp.body || !resp.body.data) continue;
+      pendingEvaluation.add(intentRow.id); // 绕过 diff 直接评估
+      await processFetch(date, resp.body.data, env, loadActiveIntents(), { baseline: false });
+      if (bookingLockService.occurrenceFulfilled(current, date)) return; // 成功推送由 tryFulfill 发出
+    }
+    const failResult = await notifyWith(env, `【锁场失败】${date}`,
+      `**${date} 自动锁场未成功**：重试窗口内未能锁到（可能验证未完成或场地已抢光）。可在小程序手动订；格子回流时系统仍会照常尝试。`);
+    intentService.recordNotification({
+      intentId: intentRow.id, uniqNo: null, date,
+      startTime: intentRow.window_start, endTime: intentRow.window_end,
+      success: failResult.success, error: failResult.success ? null : failResult.error
+    });
+  } finally {
+    rcRetrying.delete(key);
+  }
+}
+
 /** slot 是否命中意图：日期 + 窗口覆盖（slot 完整落在窗口内）+ 场地过滤 */
 function matchesIntent(slot, intent) {
   if (!intent.dates.has(slot.date)) return false;
@@ -159,8 +229,8 @@ function refreshPlan() {
 
 // === 推送 ===
 
-function notifyWith(env, title, content) {
-  return notifier.notify({
+async function notifyWith(env, title, content) {
+  const result = await notifier.notify({
     type: env.pushType,
     url: env.pushUrl,
     token: env.pushToken,
@@ -168,6 +238,10 @@ function notifyWith(env, title, content) {
     title,
     content
   });
+  // 全量推送审计日志：9/13 出现过"接口成功但用户没收到"的悬案，每条推送留痕
+  if (result.success) logger.info(`push ok - ${title}`);
+  else logger.error(`push fail - ${title}: ${result.error}`);
+  return result;
 }
 
 async function notifyTokenInvalid(env) {
@@ -248,7 +322,7 @@ async function processFetch(date, data, env, intents, { baseline } = {}) {
     if (intent.row.mode !== 'auto_lock' || !intent.dates.has(date)) continue;
     pendingEvaluation.delete(intent.row.id);
     try {
-      await bookingLockService.tryFulfill(intent.row, date, slots, env);
+      await fulfillWithRiskRetry(intent, date, slots, env);
     } catch (err) {
       logger.error(`watchEngine.reevaluate - intent ${intent.row.id} ${date}: ${err.message}`);
     }
@@ -278,7 +352,7 @@ async function processFetch(date, data, env, intents, { baseline } = {}) {
   // auto_lock 意图：满足判定以"整天"为单位（连续时长可能跨多个变化 slot）
   for (const intent of fulfillIntents.values()) {
     try {
-      await bookingLockService.tryFulfill(intent.row, date, slots, env);
+      await fulfillWithRiskRetry(intent, date, slots, env);
     } catch (err) {
       logger.error(`watchEngine.tryFulfill - intent ${intent.row.id} ${date}: ${err.message}`);
     }
@@ -523,6 +597,8 @@ function resetEngineState() {
   signerWarned = false;
   plan.clear();
   pendingEvaluation.clear();
+  rcRetrying.clear();
+  Object.assign(rcRetryConfig, RC_RETRY_DEFAULTS);
 }
 
 /**
@@ -544,6 +620,7 @@ module.exports = {
   loadActiveIntents,
   resetEngineState,
   requestEvaluation,
+  rcRetryConfig,
   RUSH_HOUR,
   BURST_MAX_ATTEMPTS,
   BURST_INTERVAL_MS

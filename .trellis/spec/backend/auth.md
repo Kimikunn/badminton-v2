@@ -43,6 +43,11 @@ of `process.env.GYM_TOKEN_USER` elsewhere; always go through
 `getEnvConfig()`. `server/runtime/` is gitignored and mounted into both
 app containers via compose.
 
+Runtime paths are resolved **per call** through `runtimeFile(name)` in
+`intentService.js`, honoring `GYM_RUNTIME_DIR` when set. Do not reintroduce
+module-level path constants: they freeze the prod path at require time and
+make tests read/write the real token (see backend `testing.md`).
+
 ## Client counterpart — `client/src/api/client.js`
 
 - Request interceptor attaches `x-admin-token` automatically on write methods;

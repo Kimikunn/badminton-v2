@@ -29,6 +29,7 @@ server/runtime/
 .agents/
 .claude/
 .pi/
+.codex/
 
 # Playwright
 e2e/screenshots/

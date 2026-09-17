@@ -15,6 +15,9 @@ function createTestHarness(prefix) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   process.env.DB_PATH = path.join(tempDir, 'test.db');
   process.env.NODE_ENV = 'test';
+  // 每个测试文件独立的运行时目录（gym-token 等活文件），
+  // 避免读到真实 server/runtime/ 里的生产 token 或并发互相污染
+  process.env.GYM_RUNTIME_DIR = path.join(tempDir, 'runtime');
 
   const app = require('../../src/app');
   const { initDatabase, closeDatabase, prepare } = require('../../src/config/db');
