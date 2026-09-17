@@ -482,3 +482,39 @@ standard/s2/s3 的 calcRankings 只按大分排序的 bug 修复：新增共享�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: 按天监控收尾：默认值、同段不重复、图例校准与生产上线
+
+**Date**: 2026-09-17
+**Task**: 按天监控收尾：默认值、同段不重复、图例校准与生产上线
+**Branch**: `master`
+
+### Summary
+
+承按天监控上线后的实测反馈做四处收尾并上生产。① 新增监控默认改 20:00-21:00 / 1 小时（编辑已有监控仍读自身值）。② 同一天同一时间段不可重复建监控：服务端 intentService.findByWindow() + validators 跨字段校验返回 422「该时段已有监控」（绕过 UI 的兜底），前端保存前本地先拦一次；部分重叠允许、编辑排除自身、跨天不受影响；按钮文案「+ 开启这天监控」改「+ 新增监控」。③ 日历网格下方图例补齐监控状态：按聚合优先级动态列出「当月真正出现」的状态（复用 MONITOR_PILL_CLASS / BADGE_PRIORITY，与格子同源），过去日不计入；随后按反馈把「已暂停 / 等待」这类安静状态移出图例（LEGEND_HIDDEN_STATES 常量），图例恢复原样但仍能解释需验证/已锁到/监控中/待放票。验证手段从代码推理升级为实际观测：Playwright DOM 断言（不可用日 unavail=true 且 pill=null，确认 X 与徽标二选一；同日两条聚合出 ×2 角标）、390×844 实拍截图核对图例、smoke e2e 20/20（light/dark × 390 与 360 宽，断言无横向滚动）、服务端 208/208（新增 findByWindow 与同日同时段 API 用例）、client build。部署：测试 8090 与生产 8088 均重建镜像并校验前端产物 hash 与本地 dist 一致；生产用已有日期+时段重放验证重复校验返回 422 且未写入（意图数仍 7）；无迁移、无 DB 改动、容器 RestartCount=0。教训（已记）：测试环境与生产共用同一个场馆 token，在 8090 建 enabled 的 auto_lock 监控会真下订单——验收监控功能必须用 enabled:false 或 mode:notify，本轮误建 3 条后立即删除，未产生订单。遗留观察：生产 3 条承接自旧 weekly 的 auto_lock 监控被手动启用（09-21/22/23，状态 waiting），将在各自进放票窗口那天 09:00 开抢（09-21→9/18、09-22→9/19、09-23→9/20），受每日限订 2 笔约束；8090 留有 3 条演示数据（含一条启用中的仅提醒监控）。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e8df3a6` | (see git log) |
+| `0b0bb96` | (see git log) |
+| `2e3494c` | (see git log) |
+| `5419770` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
