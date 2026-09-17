@@ -151,8 +151,7 @@ CREATE TABLE IF NOT EXISTS watch_config (
 CREATE TABLE IF NOT EXISTS booking_intents (
   id TEXT PRIMARY KEY,
   mode TEXT NOT NULL DEFAULT 'auto_lock',  -- auto_lock 自动锁场 / notify 仅提醒
-  date TEXT,                 -- YYYY-MM-DD，单次日期；NULL = 每周模式
-  weekdays TEXT,             -- JSON 数组 0-6（0=周日）；NULL = 单次模式
+  date TEXT,                 -- YYYY-MM-DD，必填（单模型：一天一条，可多条并存）；列保留可空以兼容旧数据，校验层强制必有值
   window_start TEXT NOT NULL,  -- HH:MM，可订窗口起
   window_end TEXT NOT NULL,    -- HH:MM，可订窗口止
   duration_hours INTEGER NOT NULL DEFAULT 1,  -- 打球时长：窗口内需连续的小时数（允许跨场地，不接受断开）
@@ -173,8 +172,9 @@ CREATE TABLE IF NOT EXISTS booking_intent_locks (
   area_id INTEGER,
   area_name TEXT,
   order_id TEXT,                -- 外部订单号；失败时为空
-  status TEXT NOT NULL,         -- locked | failed
+  status TEXT NOT NULL,         -- locked | failed | expired
   error TEXT,                   -- 失败原因；成功时为空
+  error_code TEXT,              -- 失败原因结构化码：RISK_CONTROL | SOLDOUT | LIMIT | UNPAID | OTHER（历史行为 NULL）
   created_at TEXT DEFAULT (datetime('now'))
 );
 

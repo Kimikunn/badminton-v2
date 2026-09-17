@@ -1,0 +1,31 @@
+-- 018: 订场监控收敛为单日模型 + 锁场失败结构化错误码
+--
+-- 行为变更（2026-09-17 用户决策 D1/D2/D6）：
+--
+-- 1) booking_intent_locks 新增 error_code TEXT，枚举：
+--    RISK_CONTROL（429/403004 风控图形验证）
+--    SOLDOUT      （下单前校验未通过 / 时段已被抢）
+--    LIMIT        （场馆限订，如 LIMITED_BY_START_TIME）
+--    UNPAID       （存在未支付订单）
+--    OTHER        （网络异常、签名未配置、上游异常等）
+--    并按历史中文 error 文案回填能可靠判定的失败记录：'%风控%' → RISK_CONTROL、
+--    '%未支付%' → UNPAID、'%限订%' → LIMIT，其余留 NULL（无法可靠判定就不猜）。
+--
+-- 2) booking_intents.weekdays 列删除：每周重复语义整体移除，一天一条（可多条并存）。
+--    删除前把 weekly 行按当前放票窗口（today ~ today+3）展开为具体 date 意图，复制
+--    mode/window_start/window_end/duration_hours/courts_needed/preferred_area_ids/
+--    enabled/created_at/updated_at；原行删除。窗口内无匹配日期时该行整体删除并在
+--    迁移日志中记名单（用户已停用；凭"下一周"猜日期属于臆造）。
+--
+-- 3) 日期不再限制在放票窗口内：任意未来日期都能设监控，进窗口后自动生效
+--    （校验层改为"不早于今天"）。
+--
+-- 本文件仅作迁移内容记录，实际逻辑由 db.js 的 migrateSingleDateIntents() 执行
+-- （需要放票窗口日期计算与 hasColumn 幂等判断，纯 SQL 无法表达），此处 SQL 不会被原样执行。
+--
+-- ALTER TABLE booking_intent_locks ADD COLUMN error_code TEXT;
+-- UPDATE booking_intent_locks SET error_code = 'RISK_CONTROL' WHERE error IS NOT NULL AND error LIKE '%风控%';
+-- UPDATE booking_intent_locks SET error_code = 'UNPAID'      WHERE error IS NOT NULL AND error LIKE '%未支付%';
+-- UPDATE booking_intent_locks SET error_code = 'LIMIT'       WHERE error IS NOT NULL AND error LIKE '%限订%';
+-- -- weekly 展开为窗口内 date 意图后 DELETE 原行
+-- ALTER TABLE booking_intents DROP COLUMN weekdays;

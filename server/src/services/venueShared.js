@@ -7,6 +7,9 @@
 // 场馆放票窗口：今天起 4 天（今天~第 4 天，每天 09:00 滚动放第 4 天的票，见 CONTEXT.md）
 const BOOKING_WINDOW_DAYS = 4;
 
+// 每天 09:00:00 放新放票日的票（引擎 burst 与意图状态派生的 pending_release 共用同一常量）
+const RUSH_HOUR = 9;
+
 /** Date → 'YYYY-MM-DD'（本地时区） */
 function dateStr(d) {
   const y = d.getFullYear();
@@ -36,4 +39,4 @@ function isSlotAvailable(item) {
   return !!(item && item.status === 'NORMAL' && item.showStatus === 'AVAILABLE');
 }
 
-module.exports = { BOOKING_WINDOW_DAYS, dateStr, today, yesterday, hhmmToMinutes, isSlotAvailable };
+module.exports = { BOOKING_WINDOW_DAYS, RUSH_HOUR, dateStr, today, yesterday, hhmmToMinutes, isSlotAvailable };

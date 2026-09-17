@@ -6,7 +6,8 @@ const { createTestHarness } = require('./helpers/backendTestHarness');
 const { api, setupTestDb, closeTestDb, prepare } = createTestHarness('badminton-intent-api-test-');
 
 const intentService = require('../src/services/intentService');
-const { today } = require('../src/services/venueShared');
+const watchEngine = require('../src/services/watchEngine');
+const { BOOKING_WINDOW_DAYS, today } = require('../src/services/venueShared');
 const kit = require('./helpers/watchTestKit');
 
 const ADMIN = { 'x-admin-token': 'test-admin-token' };
@@ -21,6 +22,7 @@ function resetIntents() {
   kit.clearEnv();
   kit.PUSH_CALLS.length = 0;
   kit.stubFetch(null);
+  watchEngine.resetEngineState();
 }
 
 test.before(async () => {
@@ -106,40 +108,39 @@ test('GET /areas 返回引擎记录的场地列表', async () => {
 
 // === 意图 CRUD ===
 
-test('意图 CRUD：单次/每周双模式、更新切换模式、404', async () => {
+test('意图 CRUD：单日模型（不再有 weekdays）、同一天可多条、更新日期、404 与写权限', async () => {
   resetIntents();
   const date = today();
 
-  // 单次模式
   const single = await api.post('/api/intents').set(ADMIN)
     .send({ date, windowStart: '17:00', windowEnd: '20:00', durationHours: 2, preferredAreaIds: [41, 42] }).expect(201);
   assert.match(single.body.data.id, /^int-/);
   assert.equal(single.body.data.mode, 'auto_lock'); // 缺省
   assert.equal(single.body.data.date, date);
-  assert.equal(single.body.data.weekdays, null);
+  assert.equal('weekdays' in single.body.data, false); // 单模型：不再输出 weekdays
+  assert.equal(single.body.data.status, 'watching');
   assert.equal(single.body.data.durationHours, 2);
   assert.equal(single.body.data.courtsNeeded, 1);
   assert.deepEqual(single.body.data.preferredAreaIds, [41, 42]);
   assert.deepEqual(single.body.data.preferredAreaNames, []); // 尚未拉取过，允许为空
   assert.equal(single.body.data.enabled, true);
   assert.equal(single.body.data.expired, false);
-  assert.equal('status' in single.body.data, false); // 无实时状态字段：锁场结果以锁场记录为准
+  assert.equal(single.body.data.verifyDeadline, null);
+  assert.equal(single.body.data.lastAttempt, null);
 
-  // 每周模式
-  const weekly = await api.post('/api/intents').set(ADMIN)
-    .send({ weekdays: [6, 0], windowStart: '19:00', windowEnd: '21:00', durationHours: 2, mode: 'notify' }).expect(201);
-  assert.equal(weekly.body.data.date, null);
-  assert.deepEqual(weekly.body.data.weekdays, [6, 0]);
-  assert.equal(weekly.body.data.mode, 'notify');
+  // 同一天可多条（多时段）
+  const second = await api.post('/api/intents').set(ADMIN)
+    .send({ date, windowStart: '19:00', windowEnd: '21:00', durationHours: 1, mode: 'notify', enabled: false }).expect(201);
+  assert.equal(second.body.data.mode, 'notify');
+  assert.equal(second.body.data.status, 'paused');
 
   const list = await api.get('/api/intents').expect(200);
   assert.equal(list.body.data.length, 2);
 
-  // 更新：切换为每周模式（date 被清空）
+  // 更新：改日期与普通字段
   const updated = await api.put(`/api/intents/${single.body.data.id}`).set(ADMIN)
-    .send({ weekdays: [1], windowEnd: '22:00', preferredAreaIds: [] }).expect(200);
-  assert.equal(updated.body.data.date, null);
-  assert.deepEqual(updated.body.data.weekdays, [1]);
+    .send({ date: kit.datePlus(1), windowEnd: '22:00', preferredAreaIds: [] }).expect(200);
+  assert.equal(updated.body.data.date, kit.datePlus(1));
   assert.equal(updated.body.data.windowEnd, '22:00');
   assert.deepEqual(updated.body.data.preferredAreaIds, []);
 
@@ -150,45 +151,61 @@ test('意图 CRUD：单次/每周双模式、更新切换模式、404', async ()
 
   await api.put('/api/intents/int-nonexistent').set(ADMIN).send({ windowEnd: '15:00' }).expect(404);
 
-  const removed = await api.delete(`/api/intents/${weekly.body.data.id}`).set(ADMIN).expect(200);
+  const removed = await api.delete(`/api/intents/${second.body.data.id}`).set(ADMIN).expect(200);
   assert.equal(removed.body.data, null);
-  await api.delete(`/api/intents/${weekly.body.data.id}`).set(ADMIN).expect(404);
+  await api.delete(`/api/intents/${second.body.data.id}`).set(ADMIN).expect(404);
 });
 
-test('过期单次意图可切换为每周模式（过期日期不参与合并校验）', async () => {
+test('过期意图：status=expired、PUT 合并现有日期后 422，显式新日期可救回', async () => {
   resetIntents();
-  // 窗口外日期无法通过 API 创建，直接写库模拟历史遗留意图
+  // 过期日期无法通过 API 创建，直接写库模拟历史遗留意图
   const expired = intentService.createIntent({
-    mode: 'notify', date: kit.datePlus(-1), weekdays: null,
+    mode: 'notify', date: kit.datePlus(-1),
     windowStart: '08:00', windowEnd: '12:00', durationHours: 2
   });
-  assert.equal(expired.expired, true);
 
-  const updated = await api.put(`/api/intents/${expired.id}`).set(ADMIN)
-    .send({ weekdays: [1, 2] }).expect(200);
-  assert.equal(updated.body.data.date, null);
-  assert.deepEqual(updated.body.data.weekdays, [1, 2]);
-  assert.equal(updated.body.data.expired, false);
+  const list = await api.get('/api/intents').expect(200);
+  const row = list.body.data.find(i => i.id === expired.id);
+  assert.equal(row.status, 'expired');
+  assert.equal(row.expired, true);
+
+  // 跨字段校验合并现有行：过期日期不满足"不早于今天" → 普通 PUT 422
+  const put = await api.put(`/api/intents/${expired.id}`).set(ADMIN).send({ windowEnd: '13:00' }).expect(422);
+  assert.match(put.body.error.message, /不能给过去的日期设置监控/);
+  assert.equal(intentService.getIntentById(expired.id).window_end, '12:00'); // 未落库
+
+  // 显式改到今天 → 通过
+  const rescued = await api.put(`/api/intents/${expired.id}`).set(ADMIN).send({ date: today() }).expect(200);
+  assert.equal(rescued.body.data.date, today());
+  assert.equal(rescued.body.data.status, 'watching');
+
+  await api.delete(`/api/intents/${expired.id}`).set(ADMIN).expect(200);
 });
 
-test('创建校验：date/weekdays 二选一、窗口先后、时长超窗口、字段格式', async () => {
+test('创建校验：日期必填/格式/不早于今天、weekdays 拒绝、窗口先后、时长超窗口', async () => {
   resetIntents();
   const date = today();
   const mk = (payload) => api.post('/api/intents').set(ADMIN)
     .send({ windowStart: '17:00', windowEnd: '20:00', durationHours: 2, ...payload });
 
-  const both = await mk({ date, weekdays: [6, 0] }).expect(422);
-  assert.match(both.body.error.message, /二选一/);
-
-  const neither = await api.post('/api/intents').set(ADMIN)
+  const missing = await api.post('/api/intents').set(ADMIN)
     .send({ windowStart: '17:00', windowEnd: '20:00', durationHours: 2 }).expect(422);
-  assert.match(neither.body.error.message, /单次日期.*每周重复/);
+  assert.match(missing.body.error.message, /请选择日期/);
 
-  const badWeekdays = await mk({ weekdays: [7] }).expect(422);
-  assert.match(badWeekdays.body.error.message, /0-6/);
+  const nullDate = await mk({ date: null }).expect(422);
+  assert.match(nullDate.body.error.message, /请选择日期/);
 
-  const dupWeekdays = await mk({ weekdays: [1, 1] }).expect(422);
-  assert.match(dupWeekdays.body.error.message, /不能重复/);
+  const badDate = await mk({ date: '2026/01/01' }).expect(422);
+  assert.match(badDate.body.error.message, /YYYY-MM-DD/);
+
+  const past = await mk({ date: kit.datePlus(-1) }).expect(422);
+  assert.match(past.body.error.message, /不能给过去的日期设置监控/);
+
+  // 单模型：任何形态的 weekdays 都不再接受
+  for (const weekdays of [[1], [6, 0], [], null, 'weekly']) {
+    const res = await mk({ date, weekdays }).expect(422);
+    assert.match(res.body.error.message, /不再支持每周重复，请按日期设置/);
+  }
 
   const reversed = await mk({ date, windowStart: '20:00', windowEnd: '17:00' }).expect(422);
   assert.match(reversed.body.error.message, /结束时间必须晚于开始时间/);
@@ -208,29 +225,101 @@ test('创建校验：date/weekdays 二选一、窗口先后、时长超窗口、
   for (const bad of [0, 4]) {
     await mk({ date, courtsNeeded: bad }).expect(422);
   }
-
-  const badDate = await mk({ date: '2026/01/01' }).expect(422);
-  assert.match(badDate.body.error.message, /YYYY-MM-DD/);
 });
 
-test('单次日期限制在放票窗口内（今天起 4 天）', async () => {
+test('提前设置：窗口外任意未来日期可创建（waiting），过去日期 422', async () => {
   resetIntents();
   const mk = (date) => api.post('/api/intents').set(ADMIN)
     .send({ date, windowStart: '17:00', windowEnd: '20:00', durationHours: 2 });
 
-  // 窗口外：昨天（已过期）与今天+4（尚未放票）都拒绝
-  const yesterday = await mk(kit.datePlus(-1)).expect(422);
-  assert.match(yesterday.body.error.message, /4 天/);
+  await mk(kit.datePlus(-1)).expect(422);
 
-  const tooFar = await mk(kit.datePlus(4)).expect(422);
-  assert.match(tooFar.body.error.message, /场馆只放 4 天的票/);
+  const todayOk = await mk(today()).expect(201);
+  assert.equal(todayOk.body.data.status, 'watching');
 
-  // 窗口内：今天与今天+3（窗口最后一天）都接受
-  const okToday = await mk(today()).expect(201);
-  assert.equal(okToday.body.data.date, today());
+  // 窗口最后一天：09:00 前「待放票」，09:00 起「监控中」（精确分界由 intentService 用例锁定）
+  const last = await mk(kit.datePlus(BOOKING_WINDOW_DAYS - 1)).expect(201);
+  assert.ok(['pending_release', 'watching'].includes(last.body.data.status));
 
-  const last = await mk(kit.datePlus(3)).expect(201);
-  assert.equal(last.body.data.date, kit.datePlus(3));
+  // 窗口之外：提前设置，显示「等待放票」
+  const farDate = kit.datePlus(BOOKING_WINDOW_DAYS + 10);
+  const far = await mk(farDate).expect(201);
+  assert.equal(far.body.data.status, 'waiting');
+  // 窗口外照样展开：进窗口后自动生效
+  assert.deepEqual(intentService.expandIntentDates(intentService.getIntentById(far.body.data.id)), [farDate]);
+});
+
+test('GET /intents：status 逐条正确（expired/fulfilled/paused/watching/waiting）+ lastAttempt + from/to 过滤', async () => {
+  resetIntents();
+  const todayIntent = await api.post('/api/intents').set(ADMIN)
+    .send({ date: today(), windowStart: '19:00', windowEnd: '20:00', durationHours: 1, mode: 'auto_lock' }).expect(201);
+  const disabled = await api.post('/api/intents').set(ADMIN)
+    .send({ date: today(), windowStart: '20:00', windowEnd: '21:00', durationHours: 1, enabled: false }).expect(201);
+  const far = await api.post('/api/intents').set(ADMIN)
+    .send({ date: kit.datePlus(BOOKING_WINDOW_DAYS + 2), windowStart: '20:00', windowEnd: '21:00', durationHours: 1 }).expect(201);
+  const expired = intentService.createIntent({
+    mode: 'notify', date: kit.datePlus(-1), windowStart: '08:00', windowEnd: '12:00', durationHours: 1
+  });
+
+  // 已锁到：locked 记录凑齐整段
+  prepare(`INSERT INTO booking_intent_locks (id, intent_id, uniq_no, date, start_time, end_time, status, error_code)
+    VALUES ('bil-api-1', ?, 'u-api-1', ?, '19:00', '20:00', 'locked', NULL)`).run(todayIntent.body.data.id, today());
+
+  const list = await api.get('/api/intents').expect(200);
+  const byId = new Map(list.body.data.map(i => [i.id, i]));
+  assert.equal(byId.get(todayIntent.body.data.id).status, 'fulfilled');
+  assert.equal(byId.get(todayIntent.body.data.id).lastAttempt.status, 'locked');
+  assert.equal(byId.get(todayIntent.body.data.id).lastAttempt.attempts, 0);
+  assert.equal(byId.get(todayIntent.body.data.id).verifyDeadline, null);
+  assert.equal(byId.get(disabled.body.data.id).status, 'paused');
+  assert.equal(byId.get(far.body.data.id).status, 'waiting');
+  assert.equal(byId.get(expired.id).status, 'expired');
+  assert.ok(!list.body.data.some(i => 'weekdays' in i));
+
+  // from/to 过滤
+  const range = await api.get(`/api/intents?from=${today()}&to=${today()}`).expect(200);
+  assert.deepEqual(range.body.data.map(i => i.id).sort(), [todayIntent.body.data.id, disabled.body.data.id].sort());
+  const none = await api.get(`/api/intents?from=${kit.datePlus(30)}`).expect(200);
+  assert.deepEqual(none.body.data, []);
+
+  // 非法查询参数 422
+  const bad = await api.get('/api/intents?from=2026/01/01').expect(422);
+  assert.match(bad.body.error.message, /YYYY-MM-DD/);
+});
+
+test('GET /intents：风控重试窗口内 status=awaiting_verify 且带 verifyDeadline，窗口结束回落', async () => {
+  resetIntents();
+  kit.configureEnv({ withKey: true });
+  watchEngine.rcRetryConfig.intervalMs = 30;
+  watchEngine.rcRetryConfig.windowMs = 400;
+  const date = kit.datePlus(1);
+  const created = await api.post('/api/intents').set(ADMIN)
+    .send({ date, mode: 'auto_lock', windowStart: '19:00', windowEnd: '20:00', durationHours: 1 }).expect(201);
+  const uniqNo = `41_${date}_19:00_20:00`;
+  const lease = (available) => (url) => {
+    const d = new URL(String(url)).searchParams.get('date');
+    return d === date ? kit.leaseResponse([kit.slot(uniqNo, '19:00', '20:00', { available })]) : kit.emptyLease(d);
+  };
+
+  kit.stubFetch(kit.lockFlowFetch({ leaseHandler: lease(false), createBody: { code: 429, msg: 'captcha required' } }));
+  await watchEngine.pollOnce(); // 播种基线（不可订）
+  kit.stubFetch(kit.lockFlowFetch({ leaseHandler: lease(true), createBody: { code: 429, msg: 'captcha required' } }));
+  await watchEngine.pollOnce(); // 0→1 → 429 风控 → 重试窗口启动
+  await new Promise(r => setTimeout(r, 80));
+
+  const during = await api.get('/api/intents').expect(200);
+  const retrying = during.body.data.find(i => i.id === created.body.data.id);
+  assert.equal(retrying.status, 'awaiting_verify');
+  assert.ok(retrying.verifyDeadline, '需验证状态应带重试截止时间');
+  assert.ok(new Date(retrying.verifyDeadline).getTime() > Date.now());
+  assert.equal(retrying.lastAttempt.errorCode, 'RISK_CONTROL');
+
+  // 窗口结束 → 状态自然回落 watching（进程内状态清空，重启边界同）
+  await new Promise(r => setTimeout(r, 700));
+  const after = await api.get('/api/intents').expect(200);
+  const reverted = after.body.data.find(i => i.id === created.body.data.id);
+  assert.equal(reverted.status, 'watching');
+  assert.equal(reverted.verifyDeadline, null);
 });
 
 test('更新校验：合并已有行做跨字段校验（缩窗口不能小于时长）', async () => {
@@ -256,12 +345,12 @@ test('更新校验：合并已有行做跨字段校验（缩窗口不能小于�
   assert.match(reversed.body.error.message, /结束时间必须晚于开始时间/);
 });
 
-// === 推送历史与锁场记录（intentId 过滤） ===
+// === 推送历史与锁场记录（intentId / date 过滤） ===
 
-test('GET /notifications 倒序分页 + ?intentId= 过滤', async () => {
+test('GET /notifications 倒序分页 + ?intentId= / ?date= 过滤', async () => {
   resetIntents();
-  const a = intentService.createIntent({ date: today(), weekdays: null, windowStart: '08:00', windowEnd: '12:00', durationHours: 1 });
-  const b = intentService.createIntent({ date: today(), weekdays: null, windowStart: '13:00', windowEnd: '15:00', durationHours: 1 });
+  const a = intentService.createIntent({ date: today(), windowStart: '08:00', windowEnd: '12:00', durationHours: 1 });
+  const b = intentService.createIntent({ date: today(), windowStart: '13:00', windowEnd: '15:00', durationHours: 1 });
 
   for (let i = 0; i < 3; i++) {
     intentService.recordNotification({
@@ -270,7 +359,8 @@ test('GET /notifications 倒序分页 + ?intentId= 过滤', async () => {
     });
   }
   intentService.recordNotification({
-    intentId: b.id, uniqNo: 'u-b-0', areaName: '2号场', date: today(), startTime: '13:00', endTime: '14:00', success: true
+    intentId: b.id, uniqNo: 'u-b-0', areaName: '2号场', date: kit.datePlus(1),
+    startTime: '13:00', endTime: '14:00', success: true
   });
 
   const page1 = await api.get('/api/intents/notifications?pageNo=1&pageSize=2').expect(200);
@@ -286,20 +376,28 @@ test('GET /notifications 倒序分页 + ?intentId= 过滤', async () => {
   assert.equal(filtered.body.data.total, 1);
   assert.equal(filtered.body.data.list[0].uniqNo, 'u-b-0');
   assert.equal(filtered.body.data.list[0].intentId, b.id);
+
+  // 按天查询（历史按天展示）
+  const byDate = await api.get(`/api/intents/notifications?date=${today()}`).expect(200);
+  assert.equal(byDate.body.data.total, 3);
+  assert.ok(byDate.body.data.list.every(n => n.date === today()));
+  assert.equal((await api.get(`/api/intents/notifications?date=${kit.datePlus(9)}`).expect(200)).body.data.total, 0);
+  const badDate = await api.get('/api/intents/notifications?date=2026/09/17').expect(422);
+  assert.match(badDate.body.error.message, /YYYY-MM-DD/);
 });
 
-test('GET /locks 倒序分页 + ?intentId= 过滤，只读无需写权限', async () => {
+test('GET /locks 倒序分页 + ?intentId= / ?date= 过滤，只读无需写权限', async () => {
   resetIntents();
-  const a = intentService.createIntent({ date: today(), weekdays: null, windowStart: '08:00', windowEnd: '12:00', durationHours: 1 });
-  const b = intentService.createIntent({ date: today(), weekdays: null, windowStart: '13:00', windowEnd: '15:00', durationHours: 1 });
+  const a = intentService.createIntent({ date: today(), windowStart: '08:00', windowEnd: '12:00', durationHours: 1 });
+  const b = intentService.createIntent({ date: today(), windowStart: '13:00', windowEnd: '15:00', durationHours: 1 });
 
-  const insertLock = (id, intentId, uniqNo, status = 'locked') => prepare(
-    `INSERT INTO booking_intent_locks (id, intent_id, uniq_no, date, start_time, end_time, area_id, area_name, order_id, status)
-     VALUES (?, ?, ?, ?, '09:00', '10:00', 41, '1号场', 'ORD-1', ?)`)
-    .run(id, intentId, uniqNo, today(), status);
-  insertLock('bil-1', a.id, 'u-1');
-  insertLock('bil-2', a.id, 'u-2', 'failed');
-  insertLock('bil-3', b.id, 'u-3');
+  const insertLock = (id, intentId, uniqNo, date, status = 'locked', errorCode = null) => prepare(
+    `INSERT INTO booking_intent_locks (id, intent_id, uniq_no, date, start_time, end_time, area_id, area_name, order_id, status, error_code)
+     VALUES (?, ?, ?, ?, '09:00', '10:00', 41, '1号场', 'ORD-1', ?, ?)`)
+    .run(id, intentId, uniqNo, date, status, errorCode);
+  insertLock('bil-1', a.id, 'u-1', today());
+  insertLock('bil-2', a.id, 'u-2', today(), 'failed', 'RISK_CONTROL');
+  insertLock('bil-3', b.id, 'u-3', kit.datePlus(1));
 
   const page1 = await api.get('/api/intents/locks?pageNo=1&pageSize=2').expect(200);
   assert.equal(page1.body.data.total, 3);
@@ -313,6 +411,15 @@ test('GET /locks 倒序分页 + ?intentId= 过滤，只读无需写权限', asyn
   assert.equal(filtered.body.data.total, 1);
   assert.equal(filtered.body.data.list[0].uniqNo, 'u-3');
   assert.equal(filtered.body.data.list[0].intentId, b.id);
+
+  // 按天查询（历史按天展示）+ error_code 对外暴露
+  const byDate = await api.get(`/api/intents/locks?date=${today()}`).expect(200);
+  assert.equal(byDate.body.data.total, 2);
+  assert.ok(byDate.body.data.list.every(l => l.date === today()));
+  assert.ok(byDate.body.data.list.some(l => l.errorCode === 'RISK_CONTROL'));
+  assert.equal((await api.get(`/api/intents/locks?date=${kit.datePlus(9)}`).expect(200)).body.data.total, 0);
+  const badDate = await api.get('/api/intents/locks?date=2026/09/17').expect(422);
+  assert.match(badDate.body.error.message, /YYYY-MM-DD/);
 });
 
 // === 更新小程序 token（专用密钥通道） ===

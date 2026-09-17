@@ -48,7 +48,6 @@ function makeIntent(overrides = {}) {
   const created = intentService.createIntent({
     mode: 'notify',
     date: kit.datePlus(2),
-    weekdays: null,
     windowStart: '08:00',
     windowEnd: '22:00',
     durationHours: 1,
@@ -119,9 +118,9 @@ test('env 缺失时跳过轮询：缺 GYM_TOKEN_USER / 缺推送配置 / 总开�
 test('过期单次意图被 loadActiveIntents 过滤：pollOnce 报 no_intents', async () => {
   resetEngine();
   kit.configureEnv();
-  // 过期意图直接写库（窗口外日期无法通过校验创建）
+  // 过期意图直接写库（过去日期无法通过校验创建）
   intentService.createIntent({
-    mode: 'notify', date: kit.datePlus(-1), weekdays: null,
+    mode: 'notify', date: kit.datePlus(-1),
     windowStart: '08:00', windowEnd: '12:00', durationHours: 1
   });
 
@@ -688,6 +687,66 @@ test('风控重试：重试期间 token 失效（401）→ 静默退出，无锁
   await new Promise(r => setTimeout(r, 500));
   assert.equal(kit.PUSH_CALLS.length, pushesAfter401, '401 退出后不应再推锁场失败');
   assert.equal(kit.PUSH_CALLS.filter(c => /【锁场失败】/.test(c.body.title)).length, 0);
+});
+
+// === 风控重试状态暴露（供 API 派生 awaiting_verify） ===
+
+test('getRiskRetries：窗口内暴露 intentId/date/startedAt/deadline，窗口结束后清空', async () => {
+  resetEngine();
+  kit.configureEnv({ withKey: true });
+  watchEngine.rcRetryConfig.intervalMs = 30;
+  watchEngine.rcRetryConfig.windowMs = 300;
+  const date = kit.datePlus(1);
+  const intent = makeIntent({ mode: 'auto_lock', date, windowStart: '19:00', windowEnd: '20:00', durationHours: 1 });
+  const uniqNo = `41_${date}_19:00_20:00`;
+  const lease = (available) => (url) => {
+    const d = new URL(String(url)).searchParams.get('date');
+    return d === date ? kit.leaseResponse([kit.slot(uniqNo, '19:00', '20:00', { available })]) : kit.emptyLease(d);
+  };
+  kit.stubFetch(kit.lockFlowFetch({ leaseHandler: lease(false), createBody: { code: 429, msg: 'captcha required' } }));
+  await watchEngine.pollOnce(); // 基线
+  assert.deepEqual(watchEngine.getRiskRetries(), []);
+
+  kit.stubFetch(kit.lockFlowFetch({ leaseHandler: lease(true), createBody: { code: 429, msg: 'captcha required' } }));
+  await watchEngine.pollOnce(); // 429 → 重试窗口启动（异步）
+  await new Promise(r => setTimeout(r, 60));
+
+  const retries = watchEngine.getRiskRetries();
+  assert.equal(retries.length, 1);
+  assert.equal(retries[0].intentId, intent.id);
+  assert.equal(retries[0].date, date);
+  // deadline 从“引导推送完成”起算（与推送文案「N 分钟内自动重试」一致），
+  // 所以 deadline - startedAt = windowMs + 推送耗时；而剩余时间不应超过 windowMs
+  assert.ok(retries[0].deadline - retries[0].startedAt >= 300);
+  assert.ok(retries[0].deadline > Date.now());
+  assert.ok(retries[0].deadline - Date.now() <= 300);
+
+  // 窗口结束后清空（进程重启边界同样为空 → 状态自然回落 watching）
+  await new Promise(r => setTimeout(r, 600));
+  assert.deepEqual(watchEngine.getRiskRetries(), []);
+});
+
+// === 每日清扫过期意图 ===
+
+test('每日清扫：过期意图置为停用；同一进程内每天只扫一次，复位后重扫', async () => {
+  resetEngine();
+  const expired = makeIntent({ date: kit.datePlus(-1) });
+  assert.equal(prepare('SELECT enabled FROM booking_intents WHERE id = ?').get(expired.id).enabled, 1);
+
+  // 总开关关闭也照样清扫（数据卫生与监控行为无关）
+  intentService.updateConfig({ enabled: false });
+  await watchEngine.tick();
+  assert.equal(prepare('SELECT enabled FROM booking_intents WHERE id = ?').get(expired.id).enabled, 0);
+
+  // 当天再冒出一条过期意图：已扫过 → 不重复扫
+  const second = makeIntent({ date: kit.datePlus(-2) });
+  await watchEngine.tick();
+  assert.equal(prepare('SELECT enabled FROM booking_intents WHERE id = ?').get(second.id).enabled, 1);
+
+  // 进程状态复位（等价重启/新的一天）→ 再扫一次
+  watchEngine.resetEngineState();
+  await watchEngine.tick();
+  assert.equal(prepare('SELECT enabled FROM booking_intents WHERE id = ?').get(second.id).enabled, 0);
 });
 
 // === watchDigest：标题排版 ===

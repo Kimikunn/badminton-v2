@@ -7,7 +7,7 @@
  *     随后并入常规节奏；09:00 前仍按常规节奏试探
  *   - 其余日期：常规 POLL_INTERVAL_SEC 节奏（含抖动）
  * - 下游只有一条管道：取数 → 更新 watch_slot_state 快照得 0→1 变化 →
- *   匹配启用中的意图（日期/星期 + 窗口覆盖 + 场地过滤）→
+ *   匹配启用中的意图（日期 + 窗口覆盖 + 场地过滤）→
  *   auto_lock 意图走 bookingLockService.tryFulfill；notify 意图走推送
  * - 快照 diff 只用于通知去重；锁场去重独立（booking_intent_locks 部分唯一索引）
  * - 我锁过的格子再次 0→1 = 订单已释放（超时未支付或手动取消），交
@@ -30,14 +30,13 @@ const venueLockSigner = require('./venueLockSigner');
 const bookingLockService = require('./bookingLockService');
 const digest = require('./watchDigest');
 const { GYM_API_BASE } = require('./gymOrderClient');
-const { BOOKING_WINDOW_DAYS, dateStr, today, yesterday, isSlotAvailable } = require('./venueShared');
+const { BOOKING_WINDOW_DAYS, RUSH_HOUR, dateStr, today, yesterday, isSlotAvailable } = require('./venueShared');
 const { parseJson } = require('../utils/json');
 
 const LIST_AREA_LEASE_URL = `${GYM_API_BASE}/venue/listAreaLease`;
 const FETCH_TIMEOUT_MS = 15000;
 const JITTER_MAX_MS = 15000;
 
-const RUSH_HOUR = 9;              // 每天 09:00:00 放新放票日的票
 const BURST_MAX_ATTEMPTS = 10;    // burst：1s × ≤10 次，出数即止
 const BURST_INTERVAL_MS = 1000;
 
@@ -55,8 +54,9 @@ const pendingEvaluation = new Set();
 
 // 风控重试：09:00 放票高峰 createOrder 必过图形验证（账号级拦截），
 // 引导用户在小程序里过一次验证（服务端按会话免验证，我们与小程序共用
-// token-user），随后在窗口期内自动重试。key = `${intentId}|${date}`
-const rcRetrying = new Set();
+// token-user），随后在窗口期内自动重试。key = `${intentId}|${date}`，
+// value = { intentId, date, startedAt, deadline }（getRiskRetries 只读暴露）
+const rcRetrying = new Map();
 // 重试时序配置（测试可调小；resetEngineState 时恢复默认值，避免用例间互相污染）
 const RC_RETRY_DEFAULTS = { intervalMs: 12000, windowMs: 4 * 60 * 1000 };
 const rcRetryConfig = { ...RC_RETRY_DEFAULTS };
@@ -65,6 +65,9 @@ const rcRetryConfig = { ...RC_RETRY_DEFAULTS };
 let consecutivePollFailures = 0;
 let signerWarned = false;
 const POLL_FAILURE_ALERT_THRESHOLD = 2;
+
+// 过期意图清扫的日期去重（本地日期串；每天最多扫一次，resetEngineState 复位）
+let lastSweepDate = null;
 
 /** 今天 + offset 天的日期串 */
 function todayPlus(offset) {
@@ -124,7 +127,7 @@ function flattenSlots(date, data) {
   return slots;
 }
 
-/** 启用意图 → 展开日期集合（单次过期 / 每周无匹配日期的意图被过滤掉） */
+/** 启用意图 → 展开日期集合（过期意图被过滤掉） */
 function loadActiveIntents() {
   const rows = prepare('SELECT * FROM booking_intents WHERE enabled = 1').all();
   return rows
@@ -160,7 +163,9 @@ function scheduleRiskControlRetry(intentRow, date, env, opts = {}) {
 async function riskControlRetryLoop(intentRow, date, env, { intervalMs = rcRetryConfig.intervalMs, windowMs = rcRetryConfig.windowMs } = {}) {
   const key = `${intentRow.id}|${date}`;
   if (rcRetrying.has(key)) return;
-  rcRetrying.add(key);
+  const startedAt = Date.now();
+  // 先登记占位：必须在首个 await 之前，防重入；deadline 在推送引导后按“用户可见时刻”重算
+  rcRetrying.set(key, { intentId: intentRow.id, date, startedAt, deadline: startedAt + windowMs });
   try {
     const guide = await notifyWith(env, `【需要过验证】${date}`,
       `**放票高峰触发了场馆的图形验证**，自动下单被拦。\n\n请打开小程序：任意选一个时段点「预订」→ 完成图形验证 → 看到「验证成功」即可退出（不用真的下单）。\n\n验证过后，系统会在 ${Math.round(windowMs / 60000)} 分钟内自动重试锁场，锁到会再通知你。`);
@@ -170,7 +175,10 @@ async function riskControlRetryLoop(intentRow, date, env, { intervalMs = rcRetry
       success: guide.success, error: guide.success ? null : guide.error
     });
 
+    // 窗口从“引导推送完成”起算，与推送文案「N 分钟内自动重试」一致（保持 990bd1f 原语义）
     const deadline = Date.now() + windowMs;
+    rcRetrying.set(key, { intentId: intentRow.id, date, startedAt, deadline });
+
     while (Date.now() < deadline) {
       await sleep(intervalMs);
       const current = intentService.getIntentById(intentRow.id);
@@ -196,6 +204,15 @@ async function riskControlRetryLoop(intentRow, date, env, { intervalMs = rcRetry
   } finally {
     rcRetrying.delete(key);
   }
+}
+
+/**
+ * 只读：当前处于风控重试窗口内的意图（供 API 派生 awaiting_verify 与截止时间）。
+ * deadline / startedAt 均为 epoch 毫秒（不改变重试逻辑）。
+ * @returns {{intentId: string, date: string, startedAt: number, deadline: number}[]}
+ */
+function getRiskRetries() {
+  return [...rcRetrying.values()].map(entry => ({ ...entry }));
 }
 
 /** slot 是否命中意图：日期 + 窗口覆盖（slot 完整落在窗口内）+ 场地过滤 */
@@ -440,7 +457,25 @@ async function maybeStartBurst(env, intents) {
 
 // === 主流程 ===
 
+/**
+ * 每日清扫过期意图（数据卫生，与总开关、token、推送配置均无关）：
+ * date < today 的意图置为 enabled=0（保留行与历史），进程内按本地日期去重，
+ * 每天最多一次；resetEngineState() 会复位该标记。
+ * @returns {number} 被停用的行数
+ */
+function sweepExpiredOnce() {
+  const todayStr = today();
+  if (lastSweepDate === todayStr) return 0;
+  lastSweepDate = todayStr;
+  const changes = intentService.sweepExpiredIntents(todayStr);
+  if (changes) logger.info(`watchEngine.sweepExpired - ${changes} 条过期意图已置为停用`);
+  return changes;
+}
+
 async function runTick() {
+  // 清扫必须在任何早退之前（与总开关无关的数据卫生）
+  sweepExpiredOnce();
+
   const env = intentService.getEnvConfig();
 
   const flags = intentService.getFlags();
@@ -591,13 +626,14 @@ function stop() {
   // 进行中的 tick 不等待，其 DB 写入由自身事务保证一致性
 }
 
-/** 测试用：重置进程内状态（连败计数、签名提醒、取数计划、待评估意图） */
+/** 测试用：重置进程内状态（连败计数、签名提醒、取数计划、待评估意图、每日清扫标记） */
 function resetEngineState() {
   consecutivePollFailures = 0;
   signerWarned = false;
   plan.clear();
   pendingEvaluation.clear();
   rcRetrying.clear();
+  lastSweepDate = null;
   Object.assign(rcRetryConfig, RC_RETRY_DEFAULTS);
 }
 
@@ -620,6 +656,7 @@ module.exports = {
   loadActiveIntents,
   resetEngineState,
   requestEvaluation,
+  getRiskRetries,
   rcRetryConfig,
   RUSH_HOUR,
   BURST_MAX_ATTEMPTS,

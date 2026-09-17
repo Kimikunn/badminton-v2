@@ -28,6 +28,7 @@ const logger = require('../utils/logger');
 const { prefixedId } = require('../utils/id');
 const { parseJson } = require('../utils/json');
 const intentService = require('./intentService');
+const lockRun = require('./lockRun');
 const gymOrderClient = require('./gymOrderClient');
 const venueLockSigner = require('./venueLockSigner');
 const notifier = require('./watchNotifier');
@@ -61,9 +62,23 @@ function bizError(prefix, resp) {
   return msg ? `${prefix}：${msg}` : `${prefix}（HTTP ${resp ? resp.status : '无响应'}）`;
 }
 
-function insertLockRecord({ intentId, slot, status, orderId = null, error = null }) {
-  prepare(`INSERT INTO booking_intent_locks (id, intent_id, uniq_no, date, start_time, end_time, area_id, area_name, order_id, status, error)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+/**
+ * 失败原因 → 结构化错误码（RISK_CONTROL | SOLDOUT | LIMIT | UNPAID | OTHER）。
+ * 判定顺序：风控 → 未支付 → 限订 → 下单前校验失败/已被预订 → 其他；
+ * 优先用上游业务码（如 LIMITED_BY_START_TIME），中文文案仅作兜底，UI 不靠文案匹配。
+ */
+function classifyErrorCode({ stage, code, message, riskControl = false } = {}) {
+  if (riskControl) return 'RISK_CONTROL';
+  const text = `${code || ''} ${message || ''}`.toUpperCase();
+  if (/UNPAID|未支付/.test(text)) return 'UNPAID';
+  if (/LIMIT|限订|限购/.test(text)) return 'LIMIT';
+  if (stage === 'check' || /SOLDOUT|SOLD_OUT|已被预订|已预订/.test(text)) return 'SOLDOUT';
+  return 'OTHER';
+}
+
+function insertLockRecord({ intentId, slot, status, orderId = null, error = null, errorCode = null }) {
+  prepare(`INSERT INTO booking_intent_locks (id, intent_id, uniq_no, date, start_time, end_time, area_id, area_name, order_id, status, error, error_code)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     lockId(),
     intentId,
     slot.uniqNo,
@@ -74,7 +89,8 @@ function insertLockRecord({ intentId, slot, status, orderId = null, error = null
     slot.areaName || '',
     orderId,
     status,
-    error
+    error,
+    errorCode
   );
 }
 
@@ -110,7 +126,11 @@ async function placeOrder(slot) {
     if (!check.httpOk || !check.body || !check.body.data || check.body.data.success !== 'Y') {
       const reason = (check.body && check.body.data && check.body.data.code)
         || (check.body && (check.body.msg || check.body.message));
-      return { success: false, error: `下单前校验未通过：${reason || `HTTP ${check.status}`}` };
+      return {
+        success: false,
+        errorCode: classifyErrorCode({ stage: 'check', code: reason }),
+        error: `下单前校验未通过：${reason || `HTTP ${check.status}`}`
+      };
     }
 
     const created = await gymOrderClient.createOrder(areaItems);
@@ -118,9 +138,14 @@ async function placeOrder(slot) {
     if (!created.httpOk || !created.body || created.body.code !== 200) {
       const code = created.body && created.body.code;
       if (code === 429 || code === 403004) {
-        return { success: false, riskControl: true, error: '自动锁场触发风控，需在小程序内完成验证码后重试' };
+        return { success: false, riskControl: true, errorCode: 'RISK_CONTROL', error: '自动锁场触发风控，需在小程序内完成验证码后重试' };
       }
-      return { success: false, error: bizError('自动锁场下单失败', created) };
+      const message = created.body && (created.body.msg || created.body.message);
+      return {
+        success: false,
+        errorCode: classifyErrorCode({ stage: 'create', code, message }),
+        error: bizError('自动锁场下单失败', created)
+      };
     }
 
     // 订单号字段【已反编译确认】：列表/支付页使用 areaOrderId，兜底 orderId/id
@@ -129,7 +154,7 @@ async function placeOrder(slot) {
     return { success: true, orderId };
   } catch (err) {
     logger.error(`bookingLock.placeOrder - ${slot.uniqNo}: ${err.message}`);
-    return { success: false, error: `自动锁场异常：${err.message}` };
+    return { success: false, errorCode: 'OTHER', error: `自动锁场异常：${err.message}` };
   }
 }
 
@@ -152,7 +177,8 @@ async function attemptLock({ intent, slot, date }) {
       slot: lockSlot,
       status: result.success ? 'locked' : 'failed',
       orderId: result.orderId || null,
-      error: result.success ? null : result.error
+      error: result.success ? null : result.error,
+      errorCode: result.success ? null : (result.errorCode || 'OTHER')
     });
   } catch (insertErr) {
     // 部分唯一索引兜底并发双锁等极端情况：落库失败只记日志，不再抛出
@@ -174,9 +200,10 @@ function lockedRowsFor(intentId, date) {
 /**
  * 该次发生是否已满足：窗口内存在一段连续 duration_hours 小时、
  * 每小时 locked 数 ≥ courts_needed 的小时段。
+ * 判定实现在 lockRun（纯函数，与 intentService 状态派生共用同一份）。
  */
 function occurrenceFulfilled(intent, date) {
-  return !!findRun(buildHourMap(intent, date, []), intent);
+  return lockRun.isOccurrenceFulfilled(intent, lockedRowsFor(intent.id, date));
 }
 
 /**
@@ -245,24 +272,6 @@ function buildHourMap(intent, date, daySlots) {
 }
 
 /**
- * 在 hourMap 中找一段连续 duration_hours 小时、每小时可锁数
- * （当前可订 + 我已锁）≥ courts_needed 的小时段。
- * 多候选时按最早开始取一段；返回按开始时间排序的小时数组或 null。
- */
-function findRun(hourMap, intent) {
-  const hours = [...hourMap.values()].sort((a, b) => a.startMin - b.startMin);
-  let run = [];
-  for (const hour of hours) {
-    const prev = run[run.length - 1];
-    const consecutive = prev && prev.endMin === hour.startMin;
-    const enough = (hour.available.length + hour.lockedCount) >= intent.courts_needed;
-    run = consecutive && enough ? [...run, hour] : (enough ? [hour] : []);
-    if (run.length >= intent.duration_hours) return run.slice(0, intent.duration_hours);
-  }
-  return null;
-}
-
-/**
  * 尝试满足该意图在某日的订场需求。引擎在每次 diff 后对命中的
  * auto_lock 意图调用；幂等：已满足/无可行段时直接返回。
  * 整段锁齐后意图自动停用（锁到即停），由用户决定是否支付、是否重开。
@@ -288,7 +297,7 @@ async function tryFulfill(intent, date, daySlots, env) {
   const priorityIds = preferenceIds.length ? preferenceIds : intentService.getAreaPriority();
   const preference = new Map(priorityIds.map((id, i) => [id, i]));
 
-  const run = findRun(hourMap, intent);
+  const run = lockRun.findRun(hourMap, intent);
   if (!run) return { fulfilled: false, locked: 0, failed: 0, skipped: 'no_run' };
 
   // 每日限订闸门：本地预估当前持有数 + 本次需要的新订单数，超额当天停手并告知
@@ -424,15 +433,38 @@ function formatLockRecord(row) {
     orderId: row.order_id,
     status: row.status, // locked=成功持有中 / failed=失败 / expired=成功但已释放（超时未支付或手动取消）
     error: row.error,
+    errorCode: row.error_code || null, // RISK_CONTROL | SOLDOUT | LIMIT | UNPAID | OTHER（失败原因结构化）
     createdAt: row.created_at
   };
 }
 
-function listLockRecords({ pageNo = 1, pageSize = 20, intentId: filterIntentId } = {}) {
-  const where = filterIntentId ? 'WHERE intent_id = ?' : '';
-  const args = filterIntentId ? [filterIntentId] : [];
-  const total = prepare(`SELECT COUNT(*) AS cnt FROM booking_intent_locks ${where}`).get(...args).cnt;
-  const rows = prepare(`SELECT * FROM booking_intent_locks ${where}
+/**
+ * 某意图某天的最近一次尝试（status 与 error_code）与当日失败次数。
+ * 供意图列表的 lastAttempt 输出（状态派生的 UI 补充信息）。
+ */
+function lastAttemptFor(intentId, date) {
+  const row = prepare(`SELECT status, error, error_code, created_at FROM booking_intent_locks
+    WHERE intent_id = ? AND date = ? ORDER BY created_at DESC, rowid DESC LIMIT 1`).get(intentId, date);
+  if (!row) return null;
+  const attempts = prepare(`SELECT COUNT(*) AS cnt FROM booking_intent_locks
+    WHERE intent_id = ? AND date = ? AND status = 'failed'`).get(intentId, date).cnt;
+  return {
+    status: row.status,
+    errorCode: row.error_code || null,
+    error: row.error,
+    createdAt: row.created_at,
+    attempts
+  };
+}
+
+function listLockRecords({ pageNo = 1, pageSize = 20, intentId: filterIntentId, date: filterDate } = {}) {
+  const where = [];
+  const args = [];
+  if (filterIntentId) { where.push('intent_id = ?'); args.push(filterIntentId); }
+  if (filterDate) { where.push('date = ?'); args.push(filterDate); }
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const total = prepare(`SELECT COUNT(*) AS cnt FROM booking_intent_locks ${whereSql}`).get(...args).cnt;
+  const rows = prepare(`SELECT * FROM booking_intent_locks ${whereSql}
     ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`)
     .all(...args, pageSize, (pageNo - 1) * pageSize);
   return { list: rows.map(formatLockRecord), total, pageNo, pageSize };
@@ -440,6 +472,7 @@ function listLockRecords({ pageNo = 1, pageSize = 20, intentId: filterIntentId }
 
 module.exports = {
   buildAreaItems,
+  classifyErrorCode,
   attemptLock,
   tryFulfill,
   markExpiredOnReturn,
@@ -447,5 +480,6 @@ module.exports = {
   heldOrdersToday,
   lockedRowsFor,
   listLockRecords,
+  lastAttemptFor,
   formatLockRecord
 };

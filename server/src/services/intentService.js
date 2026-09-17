@@ -1,8 +1,13 @@
 /**
  * 订场意图 — 配置 / 意图 / 推送记录的 CRUD 与查询
  *
- * 意图（booking intent）是长期有效的站位指令：启用期间每逢设定时间就监控
- * 并锁场（或仅提醒），没有"完成后自动结束"；不想要了就关闭或删除。
+ * 单模型（2026-09-17 用户决策 D6）：一条意图绑定一个具体日期（date），一天可有
+ * 多条（多时段）；不再有每周重复。启用期间到了放票时间就监控并锁场（或仅提醒），
+ * 锁到即停（成功后意图自动 enabled=0）。提前设置（窗口外的未来日期）允许，进窗口
+ * 后自动生效。
+ *
+ * 每条意图的对外 `status` 由 deriveIntentStatus() 纯函数派生（唯一事实来源，顺序即
+ * 契约），外部事实（引擎风控重试集、锁场满足事实）由 controller 注入。
  *
  * 凭证与推送参数全部来自服务器环境变量（GYM_TOKEN_USER / PUSH_TYPE /
  * PUSH_TOKEN / PUSH_TOPIC / PUSH_URL / POLL_INTERVAL_SEC），每次调用实时读
@@ -13,7 +18,7 @@ const { prepare } = require('../config/db');
 const { buildUpdate } = require('../utils/updateBuilder');
 const { prefixedId } = require('../utils/id');
 const { parseJson, stringifyJson } = require('../utils/json');
-const { BOOKING_WINDOW_DAYS, dateStr, today, hhmmToMinutes } = require('./venueShared');
+const { BOOKING_WINDOW_DAYS, RUSH_HOUR, dateStr, today, hhmmToMinutes } = require('./venueShared');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -22,6 +27,9 @@ const PUSH_TYPES = ['wxpusher', 'pushplus', 'wecom', 'serverchan'];
 const MIN_POLL_INTERVAL_SEC = 60;
 const DEFAULT_POLL_INTERVAL_SEC = 120;
 const INTENT_MODES = ['auto_lock', 'notify'];
+
+// formatIntent 缺省 ctx 的共享空集合（避免每行新建 Set）
+const EMPTY_RETRY_KEYS = new Set();
 
 function intentId() {
   return prefixedId('int');
@@ -104,39 +112,27 @@ function getEnvConfig() {
   };
 }
 
-// === 日期工具（单次/每周双模式共用） ===
+// === 日期工具（单模型：只有一个具体日期） ===
 
-function isWeeklyRow(row) {
-  return row.weekdays !== null && row.weekdays !== undefined;
+/** 单次模式且 date < 今天 → 过期（引擎跳过，输出 status='expired'，数据保留） */
+function isIntentExpired(row, todayStr = today()) {
+  return !!row.date && row.date < todayStr;
 }
 
-/** 单次模式且 date < 今天 → 过期（引擎跳过，输出 expired=true，数据保留） */
-function isIntentExpired(row, todayStr = today()) {
-  return !isWeeklyRow(row) && !!row.date && row.date < todayStr;
+/** 放票窗口最后一天（今天 + BOOKING_WINDOW_DAYS - 1） */
+function windowEndDate(todayStr = today()) {
+  const d = new Date(`${todayStr}T00:00:00`);
+  d.setDate(d.getDate() + BOOKING_WINDOW_DAYS - 1);
+  return dateStr(d);
 }
 
 /**
- * 意图展开的可订日期集合：
- * - 单次模式：未过期 → [date]；过期 → []
- * - 每周模式：放票窗口（今天起 BOOKING_WINDOW_DAYS 天）内匹配 weekdays 的具体日期
- * - unavailable_days 标记的日期一律排除（场馆不开放，无需监控）
+ * 意图展开的可订日期集合：未过期 → [date]；过期 → []；
+ * unavailable_days 标记的日期排除（场馆不开放，无需监控）。
  */
 function expandIntentDates(row, todayStr = today()) {
-  let dates;
-  if (!isWeeklyRow(row)) {
-    dates = isIntentExpired(row, todayStr) ? [] : [row.date];
-  } else {
-    const weekdays = parseJson(row.weekdays, []);
-    if (!Array.isArray(weekdays) || weekdays.length === 0) return [];
-    const set = new Set(weekdays);
-    dates = [];
-    const base = new Date(`${todayStr}T00:00:00`);
-    for (let i = 0; i < BOOKING_WINDOW_DAYS; i++) {
-      const d = new Date(base);
-      d.setDate(base.getDate() + i);
-      if (set.has(d.getDay())) dates.push(dateStr(d));
-    }
-  }
+  if (!row.date) return [];
+  let dates = isIntentExpired(row, todayStr) ? [] : [row.date];
   if (dates.length) {
     const excluded = new Set(prepare('SELECT date FROM unavailable_days').all().map(r => r.date));
     dates = dates.filter(d => !excluded.has(d));
@@ -144,12 +140,42 @@ function expandIntentDates(row, todayStr = today()) {
   return dates;
 }
 
-/** 日期是否在放票窗口内（今天 ~ 今天+BOOKING_WINDOW_DAYS-1） */
-function isDateBookable(date, todayStr = today()) {
-  const base = new Date(`${todayStr}T00:00:00`);
-  const max = new Date(base);
-  max.setDate(base.getDate() + BOOKING_WINDOW_DAYS - 1);
-  return date >= todayStr && date <= dateStr(max);
+// === 状态派生（唯一事实来源；顺序即契约） ===
+
+/**
+ * 纯函数：不含 IO。ctx 的所有外部事实由调用方注入，便于逐条测试。
+ * 优先级从上往下，首个命中即为准；**顺序即契约，改顺序必须改测试**。
+ *
+ *   1 expired          date < today
+ *   2 awaiting_verify  引擎风控重试窗口内（riskRetryKeys 含 `${id}|${date}`）
+ *   3 fulfilled        该意图当天 locked 记录能凑齐整段
+ *   4 pending_release  date === windowEnd 且当前本地时刻 < RUSH_HOUR(09:00)
+ *   5 waiting          enabled && date > windowEnd
+ *   6 watching         enabled && date ∈ [today, windowEnd]
+ *   7 paused           其余（!enabled && date ∈ 窗口）
+ *
+ * 不可用日（unavailable_days）是正交的日期维度，不参与本状态机。
+ *
+ * @param {object} row booking_intents 行
+ * @param {{today: string, now: Date, windowEnd: string, riskRetryKeys: Set<string>, isFulfilled: boolean}} ctx
+ */
+function deriveIntentStatus(row, ctx) {
+  if (isIntentExpired(row, ctx.today)) return 'expired';
+  if (ctx.riskRetryKeys && ctx.riskRetryKeys.has(`${row.id}|${row.date}`)) return 'awaiting_verify';
+  if (ctx.isFulfilled) return 'fulfilled';
+  if (row.enabled && row.date === ctx.windowEnd && ctx.now.getHours() < RUSH_HOUR) return 'pending_release';
+  if (row.enabled && row.date > ctx.windowEnd) return 'waiting';
+  if (row.enabled && row.date >= ctx.today && row.date <= ctx.windowEnd) return 'watching';
+  return 'paused';
+}
+
+/**
+ * 每日清扫：过期意图（date < today）置为 enabled=0（保留行与历史）。
+ * 读路径不写库，清扫由引擎 tick 触发（每日一次）。
+ * @returns {number} 被停用的行数
+ */
+function sweepExpiredIntents(todayStr = today()) {
+  return prepare('UPDATE booking_intents SET enabled = 0 WHERE date < ? AND enabled = 1').run(todayStr).changes;
 }
 
 // === 格式化输出 ===
@@ -198,13 +224,28 @@ function resolveAreaNames(areaIds) {
   return areaIds.map(id => nameById.get(id)).filter(Boolean);
 }
 
-function formatIntent(row, todayStr = today()) {
+/**
+ * 意图对外输出。status 由 deriveIntentStatus 派生；ctx 缺省时只按时间事实派生
+ * （create/update 响应与单元测试），controller 会注入引擎重试集与锁场事实。
+ *
+ * @param {object} row booking_intents 行
+ * @param {{today?: string, now?: Date, windowEnd?: string, riskRetryKeys?: Set<string>,
+ *   isFulfilled?: boolean, verifyDeadline?: string|null, lastAttempt?: object|null}} [ctx]
+ */
+function formatIntent(row, ctx = {}) {
+  const todayStr = ctx.today || today();
+  const status = deriveIntentStatus(row, {
+    today: todayStr,
+    now: ctx.now || new Date(),
+    windowEnd: ctx.windowEnd || windowEndDate(todayStr),
+    riskRetryKeys: ctx.riskRetryKeys || EMPTY_RETRY_KEYS,
+    isFulfilled: !!ctx.isFulfilled
+  });
   const preferredAreaIds = parseJson(row.preferred_area_ids, []);
   return {
     id: row.id,
     mode: row.mode,
-    date: isWeeklyRow(row) ? null : row.date,
-    weekdays: isWeeklyRow(row) ? parseJson(row.weekdays, []) : null,
+    date: row.date,
     windowStart: row.window_start,
     windowEnd: row.window_end,
     durationHours: row.duration_hours,
@@ -212,7 +253,11 @@ function formatIntent(row, todayStr = today()) {
     preferredAreaIds,
     preferredAreaNames: resolveAreaNames(preferredAreaIds),
     enabled: !!row.enabled,
-    expired: isIntentExpired(row, todayStr),
+    status,
+    // 风控验证截止时间（引擎注入）：只在 awaiting_verify 时对外暴露
+    verifyDeadline: status === 'awaiting_verify' ? (ctx.verifyDeadline || null) : null,
+    lastAttempt: ctx.lastAttempt || null,
+    expired: status === 'expired', // 兼容位，等价 date < today
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -263,24 +308,28 @@ function listAreas() {
 
 // === 订场意图 ===
 
-function listIntents() {
-  return prepare('SELECT * FROM booking_intents ORDER BY created_at ASC, window_start ASC').all()
-    .map(row => formatIntent(row));
+function listIntents({ from, to } = {}, statusCtxFor = null) {
+  const where = [];
+  const args = [];
+  if (from) { where.push('date >= ?'); args.push(from); }
+  if (to) { where.push('date <= ?'); args.push(to); }
+  const rows = prepare(`SELECT * FROM booking_intents ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+    ORDER BY created_at ASC, window_start ASC`).all(...args);
+  // statusCtxFor 由 controller 注入每行的引擎事实（风控重试 / 锁场满足）
+  return rows.map(row => formatIntent(row, statusCtxFor ? statusCtxFor(row) : {}));
 }
 
 function getIntentById(id) {
   return prepare('SELECT * FROM booking_intents WHERE id = ?').get(id);
 }
 
-function createIntent(data) {
+function createIntent(data, statusCtxFor = null) {
   const id = intentId();
-  const weekly = Array.isArray(data.weekdays);
-  prepare(`INSERT INTO booking_intents (id, mode, date, weekdays, window_start, window_end, duration_hours, courts_needed, preferred_area_ids, enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+  prepare(`INSERT INTO booking_intents (id, mode, date, window_start, window_end, duration_hours, courts_needed, preferred_area_ids, enabled)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     id,
     data.mode || 'auto_lock',
-    weekly ? null : data.date,
-    weekly ? stringifyJson(data.weekdays) : null,
+    data.date,
     data.windowStart,
     data.windowEnd,
     data.durationHours,
@@ -288,27 +337,20 @@ function createIntent(data) {
     stringifyJson(Array.isArray(data.preferredAreaIds) ? data.preferredAreaIds : []),
     data.enabled === undefined ? 1 : (data.enabled ? 1 : 0)
   );
-  return formatIntent(getIntentById(id));
+  const row = getIntentById(id);
+  return formatIntent(row, statusCtxFor ? statusCtxFor(row) : {});
 }
 
-function updateIntent(id, patch) {
+function updateIntent(id, patch, statusCtxFor = null) {
   const { sets, params } = buildUpdate(patch, {
     mode: 'mode',
+    date: 'date',
     windowStart: 'window_start',
     windowEnd: 'window_end',
     durationHours: 'duration_hours',
     courtsNeeded: 'courts_needed',
     enabled: { column: 'enabled', transform: (v) => (v ? 1 : 0) }
   });
-
-  // date / weekdays 二选一：传其一即切换模式，另一列清空
-  if (patch.weekdays !== undefined) {
-    sets.push('weekdays = ?', 'date = NULL');
-    params.push(patch.weekdays === null ? null : stringifyJson(patch.weekdays));
-  } else if (patch.date !== undefined) {
-    sets.push('date = ?', 'weekdays = NULL');
-    params.push(patch.date);
-  }
 
   if (patch.preferredAreaIds !== undefined) {
     sets.push('preferred_area_ids = ?');
@@ -320,7 +362,8 @@ function updateIntent(id, patch) {
     params.push(id);
     prepare(`UPDATE booking_intents SET ${sets.join(', ')} WHERE id = ?`).run(...params);
   }
-  return formatIntent(getIntentById(id));
+  const row = getIntentById(id);
+  return formatIntent(row, statusCtxFor ? statusCtxFor(row) : {});
 }
 
 function deleteIntent(id) {
@@ -342,11 +385,14 @@ function recordAreaNames(areas) {
 
 // === 推送记录 ===
 
-function listNotifications({ pageNo = 1, pageSize = 20, intentId: filterIntentId } = {}) {
-  const where = filterIntentId ? 'WHERE intent_id = ?' : '';
-  const args = filterIntentId ? [filterIntentId] : [];
-  const total = prepare(`SELECT COUNT(*) AS cnt FROM watch_notifications ${where}`).get(...args).cnt;
-  const rows = prepare(`SELECT * FROM watch_notifications ${where}
+function listNotifications({ pageNo = 1, pageSize = 20, intentId: filterIntentId, date: filterDate } = {}) {
+  const where = [];
+  const args = [];
+  if (filterIntentId) { where.push('intent_id = ?'); args.push(filterIntentId); }
+  if (filterDate) { where.push('date = ?'); args.push(filterDate); }
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const total = prepare(`SELECT COUNT(*) AS cnt FROM watch_notifications ${whereSql}`).get(...args).cnt;
+  const rows = prepare(`SELECT * FROM watch_notifications ${whereSql}
     ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`)
     .all(...args, pageSize, (pageNo - 1) * pageSize);
   return { list: rows.map(formatNotification), total, pageNo, pageSize };
@@ -386,7 +432,9 @@ module.exports = {
   getAreaPriority,
   listAreas,
   isIntentExpired,
-  isDateBookable,
+  windowEndDate,
+  deriveIntentStatus,
+  sweepExpiredIntents,
   expandIntentDates,
   listIntents,
   getIntentById,

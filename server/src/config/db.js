@@ -7,6 +7,9 @@
 const initSqlJs = require('sql.js');
 const path = require('path');
 const fs = require('fs');
+const { prefixedId } = require('../utils/id');
+// venueShared 是无依赖的纯 helper（日期串 / 放票窗口常量），迁移展开 weekly 行时需要
+const { BOOKING_WINDOW_DAYS, dateStr, today } = require('../services/venueShared');
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', '..', 'database', 'badminton.db');
 
@@ -128,6 +131,10 @@ function runMigrationFile(migrationsDir, file) {
     migrateDropUnpaidExpired();
     return;
   }
+  if (file === '018_single_date_intents.sql') {
+    migrateSingleDateIntents();
+    return;
+  }
 
   const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf-8');
   db.run(sql);
@@ -220,6 +227,55 @@ function hhmmToMinutes(t) {
   return h * 60 + (m || 0);
 }
 
+/** 放票窗口内的日期串（todayStr 起 BOOKING_WINDOW_DAYS 天） */
+function windowDates(todayStr) {
+  const [y, m, d] = todayStr.split('-').map(Number);
+  const dates = [];
+  for (let i = 0; i < BOOKING_WINDOW_DAYS; i++) {
+    dates.push(dateStr(new Date(y, m - 1, d + i)));
+  }
+  return dates;
+}
+
+/**
+ * weekdays（JSON 0-6 数组）→ 放票窗口内匹配的具体日期（迁移展开用）。
+ * 解析失败 / 空数组 / 窗口内无匹配 → []（调用方按"无匹配"处置）。
+ */
+function weeklyDatesInWindow(weekdaysJson, todayStr) {
+  let weekdays = null;
+  try { weekdays = weekdaysJson ? JSON.parse(weekdaysJson) : null; } catch (_) { weekdays = null; }
+  if (!Array.isArray(weekdays) || weekdays.length === 0) return [];
+  const set = new Set(weekdays);
+  return windowDates(todayStr).filter(d => set.has(new Date(`${d}T00:00:00`).getDay()));
+}
+
+/**
+ * 每周意图在窗口内无匹配时，取“下一个发生日”（今天起 7 天内首个匹配星期）。
+ * 这样迁移不丢配置：单日模型允许任意未来日期（D2 提前设置），该日进放票窗口后自动生效。
+ * 非法/空 weekdays 返回 null（调用方删行）。
+ */
+function nextOccurrenceDate(weekdaysJson, todayStr) {
+  let weekdays = null;
+  try { weekdays = weekdaysJson ? JSON.parse(weekdaysJson) : null; } catch (_) { weekdays = null; }
+  if (!Array.isArray(weekdays) || weekdays.length === 0) return null;
+  const set = new Set(weekdays);
+  const [y, m, d] = todayStr.split('-').map(Number);
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(y, m - 1, d + i);
+    if (set.has(date.getDay())) return dateStr(date);
+  }
+  return null;
+}
+
+/** booking_intents 单行插入（迁移共用；调用方保证单日模型字段完整） */
+function insertDateIntent({ id, mode, date, windowStart, windowEnd, durationHours, courtsNeeded, preferredAreaIds, enabled, createdAt, updatedAt }) {
+  prepare(`INSERT INTO booking_intents
+    (id, mode, date, window_start, window_end, duration_hours, courts_needed, preferred_area_ids, enabled, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    id, mode, date, windowStart, windowEnd, durationHours, courtsNeeded, preferredAreaIds, enabled, createdAt, updatedAt
+  );
+}
+
 /**
  * 016: venue_watch_* / venue_lock_orders → 订场意图模型新表（见 migrations/016_intent_refactor.sql）。
  * 新库（schema.sql 已建新表、旧表不存在）与已迁移库直接跳过；整体事务保证原子性。
@@ -230,6 +286,10 @@ function migrateIntentRefactor() {
   transaction(() => {
     // venue_watch_targets → booking_intents
     // 注意：db.js 的 prepare() 包装每次 run() 后即 free，语句对象不可跨行复用，循环内逐行 prepare。
+    // schema.sql 已是单日模型（无 weekdays 列）：v1 的 weekly 目标在导入时即按放票窗口
+    // 展开为 date 意图（与 018 同规则），窗口内无匹配则整条丢弃并记名单。
+    const droppedTargets = [];
+    const todayStr = today();
     for (const t of prepare('SELECT * FROM venue_watch_targets').all()) {
       let windowStart = t.start_time;
       let windowEnd = t.end_time;
@@ -241,22 +301,30 @@ function migrateIntentRefactor() {
         windowEnd = slots.map(s => s.endTime).sort().slice(-1)[0];
         durationHours = slots.length;
       }
-      prepare(`INSERT INTO booking_intents
-        (id, mode, date, weekdays, window_start, window_end, duration_hours, courts_needed, preferred_area_ids, enabled, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-        t.id,
-        t.auto_lock ? 'auto_lock' : 'notify',
-        t.date,
-        t.weekdays,
-        windowStart,
-        windowEnd,
-        durationHours,
-        Math.min(3, Math.max(1, t.max_locks_per_slot || 1)),
-        t.area_ids || '[]',
-        t.enabled,
-        t.created_at,
-        t.updated_at
-      );
+      const dates = t.weekdays ? weeklyDatesInWindow(t.weekdays, todayStr) : [t.date];
+      if (!dates.length || !dates[0]) {
+        droppedTargets.push(t.id);
+        continue;
+      }
+      for (const date of dates) {
+        insertDateIntent({
+          // 单日目标沿用原 id（锁场记录仍可关联）；weekly 展开的多个日期各自新 id
+          id: dates.length === 1 ? t.id : prefixedId('int'),
+          mode: t.auto_lock ? 'auto_lock' : 'notify',
+          date,
+          windowStart,
+          windowEnd,
+          durationHours,
+          courtsNeeded: Math.min(3, Math.max(1, t.max_locks_per_slot || 1)),
+          preferredAreaIds: t.area_ids || '[]',
+          enabled: t.enabled,
+          createdAt: t.created_at,
+          updatedAt: t.updated_at
+        });
+      }
+    }
+    if (droppedTargets.length) {
+      console.log(`[DB] migration 016: ${droppedTargets.length} 条每周意图在放票窗口（${todayStr} 起 ${BOOKING_WINDOW_DAYS} 天）内无匹配日期，已删除: ${droppedTargets.join(', ')}`);
     }
 
     // venue_lock_orders → booking_intent_locks
@@ -335,6 +403,76 @@ function migrateDropUnpaidExpired() {
   if (hasColumn('booking_intent_locks', 'unpaid_expired_count')) {
     db.run('ALTER TABLE booking_intent_locks DROP COLUMN unpaid_expired_count');
   }
+}
+
+/**
+ * 018: 单日模型 + 锁场失败结构化错误码（见 migrations/018_single_date_intents.sql）。
+ *
+ * 1) booking_intent_locks 加 error_code 列（hasColumn 幂等），并按历史中文 error 文本
+ *    回填能可靠判定的记录（风控 / 未支付 / 限订），其余留 NULL（不猜）。
+ * 2) 若 booking_intents 仍有 weekdays 列：weekly 行按当前放票窗口展开为 date 意图
+ *    （字段复制 + enabled 继承），原行删除；窗口内无匹配的行整体删除并在日志记名单。
+ * 3) 删 booking_intents.weekdays 列（列已不存在 = 已迁移 / 新库，自然跳过）。
+ *
+ * 整体事务保证原子性；仅在 weekdays 列存在时展开，保证重复启动不重复展开。
+ */
+function migrateSingleDateIntents() {
+  transaction(() => {
+    if (!hasColumn('booking_intent_locks', 'error_code')) {
+      db.run('ALTER TABLE booking_intent_locks ADD COLUMN error_code TEXT');
+    }
+    // 回填：只认能可靠判定的文案（error_code IS NULL 保证幂等）
+    db.run(`UPDATE booking_intent_locks SET error_code = 'RISK_CONTROL' WHERE error_code IS NULL AND error LIKE '%风控%'`);
+    db.run(`UPDATE booking_intent_locks SET error_code = 'UNPAID' WHERE error_code IS NULL AND error LIKE '%未支付%'`);
+    db.run(`UPDATE booking_intent_locks SET error_code = 'LIMIT' WHERE error_code IS NULL AND error LIKE '%限订%'`);
+    db.run(`UPDATE booking_intent_locks SET error_code = 'SOLDOUT' WHERE error_code IS NULL AND (error LIKE '%已被预订%' OR error LIKE '%已预订%')`);
+
+    if (!hasColumn('booking_intents', 'weekdays')) return; // 已迁移 / 新库：无 weekly 行可展开
+
+    const todayStr = today();
+    const dropped = [];
+    const carried = [];
+    for (const row of prepare('SELECT * FROM booking_intents WHERE weekdays IS NOT NULL').all()) {
+      let dates = weeklyDatesInWindow(row.weekdays, todayStr);
+      // 窗口内无匹配：不删配置，展开为“下一个发生日”（D2：任意未来日期可提前设置）
+      if (!dates.length) {
+        const next = nextOccurrenceDate(row.weekdays, todayStr);
+        if (next) {
+          dates = [next];
+          carried.push(`${row.id}→${next}`);
+        }
+      }
+      if (!dates.length) { // 非法/空 weekdays：无法展开，删行记名单
+        dropped.push(row.id);
+        prepare('DELETE FROM booking_intents WHERE id = ?').run(row.id);
+        continue;
+      }
+      for (const date of dates) {
+        insertDateIntent({
+          id: prefixedId('int'),
+          mode: row.mode,
+          date,
+          windowStart: row.window_start,
+          windowEnd: row.window_end,
+          durationHours: row.duration_hours,
+          courtsNeeded: row.courts_needed,
+          preferredAreaIds: row.preferred_area_ids,
+          enabled: row.enabled,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at
+        });
+      }
+      prepare('DELETE FROM booking_intents WHERE id = ?').run(row.id);
+    }
+    if (carried.length) {
+      console.log(`[DB] migration 018: ${carried.length} 条每周意图在放票窗口（${todayStr} 起 ${BOOKING_WINDOW_DAYS} 天）内无匹配，已展开为下一个发生日: ${carried.join(', ')}`);
+    }
+    if (dropped.length) {
+      console.log(`[DB] migration 018: ${dropped.length} 条每周意图 weekdays 非法或为空，无法展开，已删除: ${dropped.join(', ')}`);
+    }
+
+    db.run('ALTER TABLE booking_intents DROP COLUMN weekdays');
+  });
 }
 
 /**

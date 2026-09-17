@@ -345,6 +345,65 @@ test('attemptLock：createOrder 返回 429/403004 → failed 记录提示风控�
   assert.match(row.error, /风控/);
 });
 
+test('失败记录落结构化 error_code：RISK_CONTROL / SOLDOUT / LIMIT / UNPAID / OTHER', async () => {
+  resetLock();
+  kit.configureEnv({ withKey: true });
+  const date = kit.datePlus(1);
+  const intent = makeIntentRow();
+  const failWith = async (uniq, fetchStub) => {
+    kit.stubFetch(fetchStub);
+    const result = await bookingLockService.attemptLock({ intent, slot: flatSlot(uniq, '17:00', '18:00'), date });
+    assert.equal(result.success, false);
+    const row = prepare(`SELECT * FROM booking_intent_locks WHERE uniq_no = ?`).get(uniq);
+    assert.equal(row.status, 'failed');
+    return { result, row };
+  };
+
+  // 风控（429 图形验证）
+  const rc = await failWith(`41_${date}_rc`, kit.lockFlowFetch({ createBody: { code: 429, msg: 'too many requests' } }));
+  assert.equal(rc.result.errorCode, 'RISK_CONTROL');
+  assert.equal(rc.row.error_code, 'RISK_CONTROL');
+
+  // 被抢 / 下单前校验未通过（非限订类业务码）
+  const soldout = await failWith(`41_${date}_soldout`, kit.lockFlowFetch({
+    checkBody: { code: 200, data: { success: 'N', code: 'BOOKING_CONFLICT' }, message: 'success' }
+  }));
+  assert.equal(soldout.row.error_code, 'SOLDOUT');
+
+  // 场馆限订：上游业务码 LIMITED_BY_START_TIME
+  const limit = await failWith(`41_${date}_limit`, kit.lockFlowFetch({
+    checkBody: { code: 200, data: { success: 'N', code: 'LIMITED_BY_START_TIME' }, message: 'success' }
+  }));
+  assert.equal(limit.row.error_code, 'LIMIT');
+
+  // 下单阶段被抢（createOrder 返回“该时段已被预订”）→ SOLDOUT（非 check 阶段路径）
+  const createSoldout = await failWith(`41_${date}_createsold`, kit.lockFlowFetch({
+    createBody: { code: 1001, msg: '该时段已被预订' }
+  }));
+  assert.equal(createSoldout.row.error_code, 'SOLDOUT');
+
+  // 存在未支付订单（createOrder 业务失败）
+  const unpaid = await failWith(`41_${date}_unpaid`, kit.lockFlowFetch({
+    createBody: { code: 1002, msg: '存在未支付订单，请先支付' }
+  }));
+  assert.equal(unpaid.row.error_code, 'UNPAID');
+
+  // 其余（上游异常 / 未知业务码）
+  const other = await failWith(`41_${date}_other`, kit.lockFlowFetch({
+    createBody: { code: 500, msg: '系统繁忙' }
+  }));
+  assert.equal(other.row.error_code, 'OTHER');
+
+  // 成功锁到：error_code 为空；formatLockRecord 对外暴露 errorCode
+  kit.stubFetch(kit.lockFlowFetch());
+  const ok = await bookingLockService.attemptLock({ intent, slot: flatSlot(`41_${date}_ok`, '17:00', '18:00'), date });
+  assert.equal(ok.success, true);
+  const row = prepare(`SELECT * FROM booking_intent_locks WHERE uniq_no = ?`).get(`41_${date}_ok`);
+  assert.equal(row.error_code, null);
+  assert.equal(bookingLockService.formatLockRecord(row).errorCode, null);
+  assert.equal(bookingLockService.formatLockRecord(rc.row).errorCode, 'RISK_CONTROL');
+});
+
 test('tryFulfill：风控（图形验证）fail-fast——不再尝试其他场地，立即推锁场失败', async () => {
   resetLock();
   kit.configureEnv({ withKey: true });

@@ -30,7 +30,6 @@ function makeIntent(overrides = {}) {
   return intentService.createIntent({
     mode: 'notify',
     date: datePlus(1),
-    weekdays: null,
     windowStart: '17:00',
     windowEnd: '20:00',
     durationHours: 2,
@@ -40,8 +39,125 @@ function makeIntent(overrides = {}) {
   });
 }
 
+// === 状态派生（纯函数，逐状态 + 优先级边界） ===
+
 test.before(async () => { await setupTestDb(); });
 test.after(() => { clearEnv(); closeTestDb(); });
+
+/** 手工构造 booking_intents 行 */
+function intentRow(overrides = {}) {
+  return {
+    id: 'int-test',
+    mode: 'auto_lock',
+    date: today(),
+    window_start: '17:00',
+    window_end: '20:00',
+    duration_hours: 1,
+    courts_needed: 1,
+    preferred_area_ids: '[]',
+    enabled: 1,
+    ...overrides
+  };
+}
+
+/** 手工构造 ctx（now 用本地时间串构造，保证 getHours() 可预期） */
+function statusCtx(overrides = {}) {
+  const todayStr = overrides.today || today();
+  return {
+    today: todayStr,
+    now: new Date(`${todayStr}T${overrides.at || '08:00'}:00`),
+    windowEnd: datePlus(BOOKING_WINDOW_DAYS - 1),
+    riskRetryKeys: new Set(),
+    isFulfilled: false,
+    ...overrides
+  };
+}
+
+test('deriveIntentStatus：7 种状态逐条判定', () => {
+  const base = statusCtx();
+  // 1 过期
+  assert.equal(intentService.deriveIntentStatus(intentRow({ date: datePlus(-1) }), base), 'expired');
+  // 2 风控验证中
+  assert.equal(intentService.deriveIntentStatus(intentRow({ id: 'int-rc' }), statusCtx({
+    riskRetryKeys: new Set([`int-rc|${today()}`])
+  })), 'awaiting_verify');
+  // 3 已锁到（整段满足）
+  assert.equal(intentService.deriveIntentStatus(intentRow(), statusCtx({ isFulfilled: true })), 'fulfilled');
+  // 4 待放票：窗口最后一天且 09:00 前
+  assert.equal(intentService.deriveIntentStatus(intentRow({ date: datePlus(3) }), base), 'pending_release');
+  // 5 等待放票：窗口之外
+  assert.equal(intentService.deriveIntentStatus(intentRow({ date: datePlus(BOOKING_WINDOW_DAYS) }), base), 'waiting');
+  // 6 监控中：窗口内（今天与窗口最后一天都算）
+  assert.equal(intentService.deriveIntentStatus(intentRow({ date: today() }), base), 'watching');
+  assert.equal(intentService.deriveIntentStatus(intentRow({ date: datePlus(3) }), statusCtx({ at: '09:00' })), 'watching');
+  // 7 已暂停：窗口内但停用
+  assert.equal(intentService.deriveIntentStatus(intentRow({ enabled: 0 }), base), 'paused');
+});
+
+test('deriveIntentStatus：优先级边界（顺序即契约）', () => {
+  // 过期压过风控重试（重试键存在也不改变）
+  assert.equal(intentService.deriveIntentStatus(intentRow({ id: 'int-x', date: datePlus(-1) }), statusCtx({
+    riskRetryKeys: new Set([`int-x|${datePlus(-1)}`])
+  })), 'expired');
+
+  // 风控重试压过 fulfilled / watching / paused
+  const retryKeys = new Set(['int-x|' + today()]);
+  assert.equal(intentService.deriveIntentStatus(intentRow({ id: 'int-x' }), statusCtx({ riskRetryKeys: retryKeys, isFulfilled: true })), 'awaiting_verify');
+  assert.equal(intentService.deriveIntentStatus(intentRow({ id: 'int-x', enabled: 0 }), statusCtx({ riskRetryKeys: retryKeys })), 'awaiting_verify');
+
+  // fulfilled 压过 paused 与 waiting（锁到即停后 enabled=0 仍显示已锁到）
+  assert.equal(intentService.deriveIntentStatus(intentRow({ enabled: 0 }), statusCtx({ isFulfilled: true })), 'fulfilled');
+  assert.equal(intentService.deriveIntentStatus(intentRow({ date: datePlus(5) }), statusCtx({ isFulfilled: true })), 'fulfilled');
+
+  // 开关关闭的监控一律落 paused，不做"等待放票"——未武装的监控没有即将发生的动作
+  assert.equal(intentService.deriveIntentStatus(intentRow({ date: datePlus(3), enabled: 0 }), statusCtx()), 'paused');
+
+  // 08:59 是待放票、09:00 起按 enabled 落到监控中 / 已暂停
+  const lastDay = intentRow({ date: datePlus(3) });
+  assert.equal(intentService.deriveIntentStatus(lastDay, statusCtx({ at: '08:59' })), 'pending_release');
+  assert.equal(intentService.deriveIntentStatus(lastDay, statusCtx({ at: '09:00' })), 'watching');
+  assert.equal(intentService.deriveIntentStatus({ ...lastDay, enabled: 0 }, statusCtx({ at: '09:00' })), 'paused');
+
+  // waiting 只在窗口之外：窗口最后一天 +1 天起
+  assert.equal(intentService.deriveIntentStatus(intentRow({ date: datePlus(4) }), statusCtx({ at: '08:00' })), 'waiting');
+  assert.equal(intentService.deriveIntentStatus(intentRow({ date: datePlus(4) }), statusCtx({ at: '09:00' })), 'waiting');
+});
+
+test('formatIntent：status 与 verifyDeadline / lastAttempt / expired 兼容位', () => {
+  resetIntents();
+  const active = makeIntent({ date: today() });
+  const row = intentService.getIntentById(active.id);
+
+  const watching = intentService.formatIntent(row);
+  assert.equal(watching.status, 'watching');
+  assert.equal(watching.verifyDeadline, null);
+  assert.equal(watching.lastAttempt, null);
+  assert.equal(watching.expired, false);
+  assert.equal('weekdays' in watching, false);
+
+  // 引擎注入风控事实 → awaiting_verify + 截止时间
+  const key = `${active.id}|${today()}`;
+  const retrying = intentService.formatIntent(row, {
+    riskRetryKeys: new Set([key]),
+    verifyDeadline: '2026-09-17T01:04:00.000Z',
+    lastAttempt: { status: 'failed', errorCode: 'RISK_CONTROL', error: '触发风控', createdAt: '2026-09-17 01:00:00', attempts: 2 }
+  });
+  assert.equal(retrying.status, 'awaiting_verify');
+  assert.equal(retrying.verifyDeadline, '2026-09-17T01:04:00.000Z');
+  assert.equal(retrying.lastAttempt.errorCode, 'RISK_CONTROL');
+  assert.equal(retrying.lastAttempt.attempts, 2);
+
+  // 非 awaiting_verify 时 verifyDeadline 归零（只透传 lastAttempt）
+  const fulfilled = intentService.formatIntent(row, { isFulfilled: true, verifyDeadline: '2026-09-17T01:04:00.000Z' });
+  assert.equal(fulfilled.status, 'fulfilled');
+  assert.equal(fulfilled.verifyDeadline, null);
+
+  // 过期：expired 兼容位与 status 同步
+  const expired = makeIntent({ date: datePlus(-1) });
+  const formatted = intentService.formatIntent(intentService.getIntentById(expired.id));
+  assert.equal(formatted.status, 'expired');
+  assert.equal(formatted.expired, true);
+});
 
 // === 环境变量配置 ===
 
@@ -133,46 +249,41 @@ test('listAreas：按 areaId 升序输出，recordAreaNames 幂等更新', () =>
   ]);
 });
 
-// === 意图 CRUD（服务层） ===
+// === 意图 CRUD（服务层，单模型） ===
 
-test('createIntent：缺省 mode=auto_lock、courtsNeeded=1、enabled=true，单次/每周分列存储', () => {
+test('createIntent：缺省 mode=auto_lock、courtsNeeded=1、enabled=true，date 必填单列存储', () => {
   resetIntents();
-  const single = intentService.createIntent({
-    date: datePlus(1), weekdays: null, windowStart: '17:00', windowEnd: '20:00', durationHours: 2
+  const created = intentService.createIntent({
+    date: datePlus(1), windowStart: '17:00', windowEnd: '20:00', durationHours: 2
   });
-  assert.match(single.id, /^int-/);
-  assert.equal(single.mode, 'auto_lock');
-  assert.equal(single.courtsNeeded, 1);
-  assert.equal(single.enabled, true);
-  assert.equal(single.date, datePlus(1));
-  assert.equal(single.weekdays, null);
+  assert.match(created.id, /^int-/);
+  assert.equal(created.mode, 'auto_lock');
+  assert.equal(created.courtsNeeded, 1);
+  assert.equal(created.enabled, true);
+  assert.equal(created.date, datePlus(1));
 
-  const weekly = intentService.createIntent({
-    date: null, weekdays: [6, 0], windowStart: '19:00', windowEnd: '21:00', durationHours: 1,
+  const second = intentService.createIntent({
+    date: datePlus(1), windowStart: '19:00', windowEnd: '21:00', durationHours: 1,
     courtsNeeded: 2, preferredAreaIds: [41], enabled: false, mode: 'notify'
   });
-  assert.equal(weekly.date, null);
-  assert.deepEqual(weekly.weekdays, [6, 0]);
-  assert.equal(weekly.enabled, false);
+  assert.equal(second.date, datePlus(1));
+  assert.equal(second.enabled, false);
+  assert.equal(second.mode, 'notify');
 
-  const row = intentService.getIntentById(weekly.id);
-  assert.equal(row.date, null);
-  assert.equal(row.weekdays, '[6,0]');
+  // 一天可多条：同一日期两行并存，weekdays 列已不存在（彻底单模型）
+  const rows = prepare('SELECT * FROM booking_intents WHERE date = ?').all(datePlus(1));
+  assert.equal(rows.length, 2);
+  const columns = prepare('PRAGMA table_info(booking_intents)').all().map(c => c.name);
+  assert.ok(!columns.includes('weekdays'), 'weekdays 列应已删除');
 });
 
-test('updateIntent：date/weekdays 传其一即切换模式，另一列清空', () => {
+test('updateIntent：date 与普通字段补丁；deleteIntent 删除', () => {
   resetIntents();
   const created = makeIntent();
 
-  const toWeekly = intentService.updateIntent(created.id, { weekdays: [1, 2] });
-  assert.equal(toWeekly.date, null);
-  assert.deepEqual(toWeekly.weekdays, [1, 2]);
+  const moved = intentService.updateIntent(created.id, { date: datePlus(2) });
+  assert.equal(moved.date, datePlus(2));
 
-  const backToSingle = intentService.updateIntent(created.id, { date: datePlus(2) });
-  assert.equal(backToSingle.date, datePlus(2));
-  assert.equal(backToSingle.weekdays, null);
-
-  // 普通字段补丁不影响模式列
   const patched = intentService.updateIntent(created.id, { windowEnd: '22:00', courtsNeeded: 3 });
   assert.equal(patched.windowEnd, '22:00');
   assert.equal(patched.courtsNeeded, 3);
@@ -182,16 +293,30 @@ test('updateIntent：date/weekdays 传其一即切换模式，另一列清空', 
   assert.equal(intentService.getIntentById(created.id), null);
 });
 
-// === 日期展开与可订窗口 ===
+test('listIntents：全量按创建时间排序，from/to 按日期区间过滤', () => {
+  resetIntents();
+  makeIntent({ date: today(), windowStart: '08:00' });
+  makeIntent({ date: datePlus(2), windowStart: '09:00' });
+  makeIntent({ date: datePlus(5), windowStart: '10:00' });
 
-test('isDateBookable：今天 ~ 今天+3 可订，昨天与今天+4 不可订', () => {
-  assert.equal(intentService.isDateBookable(today()), true);
-  assert.equal(intentService.isDateBookable(datePlus(BOOKING_WINDOW_DAYS - 1)), true);
-  assert.equal(intentService.isDateBookable(datePlus(BOOKING_WINDOW_DAYS)), false);
-  assert.equal(intentService.isDateBookable(datePlus(-1)), false);
+  assert.equal(intentService.listIntents().length, 3);
+  assert.deepEqual(intentService.listIntents({ from: today(), to: datePlus(2) }).map(i => i.date), [today(), datePlus(2)]);
+  assert.deepEqual(intentService.listIntents({ from: datePlus(2) }).map(i => i.date), [datePlus(2), datePlus(5)]);
+  assert.deepEqual(intentService.listIntents({ to: today() }).map(i => i.date), [today()]);
+  assert.deepEqual(intentService.listIntents({ from: datePlus(9) }).map(i => i.date), []);
+
+  // statusCtxFor 注入：每行拿到引擎事实（这里用风控重试集演示）
+  const id = intentService.listIntents().find(i => i.date === today()).id;
+  const list = intentService.listIntents({ from: today(), to: today() }, (row) => ({
+    riskRetryKeys: new Set([`${row.id}|${row.date}`])
+  }));
+  assert.equal(list[0].id, id);
+  assert.equal(list[0].status, 'awaiting_verify');
 });
 
-test('expandIntentDates：单次过期展开为空、未过期展开为自身', () => {
+// === 日期展开与清扫 ===
+
+test('expandIntentDates：过期展开为空、未过期展开为自身日期', () => {
   resetIntents();
   const expired = makeIntent({ date: datePlus(-1) });
   assert.equal(intentService.isIntentExpired(intentService.getIntentById(expired.id)), true);
@@ -199,56 +324,43 @@ test('expandIntentDates：单次过期展开为空、未过期展开为自身', 
 
   const future = makeIntent({ date: datePlus(2) });
   assert.deepEqual(intentService.expandIntentDates(intentService.getIntentById(future.id)), [datePlus(2)]);
+
+  // 窗口外（提前设置）也展开：进窗口后自然生效
+  const far = makeIntent({ date: datePlus(BOOKING_WINDOW_DAYS + 3) });
+  assert.deepEqual(intentService.expandIntentDates(intentService.getIntentById(far.id)), [datePlus(BOOKING_WINDOW_DAYS + 3)]);
 });
 
-test('expandIntentDates：每周模式展开 4 天窗口内匹配的星期，窗口外不展开', () => {
-  resetIntents();
-  // d1/d2 在 4 天放票窗口内；dOut(+4) 在窗口外，用于断言不展开
-  const { daysFromToday } = require('./helpers/watchTestKit');
-  const d1 = daysFromToday(1);
-  const d2 = daysFromToday(3);
-  const dOut = daysFromToday(BOOKING_WINDOW_DAYS);
-  const weekly = makeIntent({ date: null, weekdays: [d1.getDay(), d2.getDay(), dOut.getDay()] });
-
-  const dates = intentService.expandIntentDates(intentService.getIntentById(weekly.id));
-  const expected = [datePlus(1), datePlus(3)].filter((_, i) => [d1, d2][i]);
-  assert.deepEqual(dates.sort(), expected.sort());
-  assert.ok(!dates.includes(datePlus(BOOKING_WINDOW_DAYS)));
-
-  // 每周模式永不过期
-  assert.equal(intentService.isIntentExpired(intentService.getIntentById(weekly.id)), false);
-});
-
-test('expandIntentDates：unavailable_days 标记的日期一律排除', () => {
+test('expandIntentDates：unavailable_days 标记的日期排除', () => {
   resetIntents();
   const date = datePlus(1);
   insertUnavailableDay(date);
-
-  const single = makeIntent({ date });
-  assert.deepEqual(intentService.expandIntentDates(intentService.getIntentById(single.id)), []);
-
-  const { daysFromToday } = require('./helpers/watchTestKit');
-  const weekly = makeIntent({ date: null, weekdays: [daysFromToday(1).getDay(), daysFromToday(2).getDay()] });
-  assert.deepEqual(intentService.expandIntentDates(intentService.getIntentById(weekly.id)), [datePlus(2)]);
+  const intent = makeIntent({ date });
+  assert.deepEqual(intentService.expandIntentDates(intentService.getIntentById(intent.id)), []);
 });
 
-// === 意图过期标记 ===
-
-test('formatIntent：单次日期过期标记（无实时状态字段——锁场状态以锁场记录为准）', () => {
+test('sweepExpiredIntents：只把过期且启用的意图置为停用，锁场记录不动', () => {
   resetIntents();
-  const active = makeIntent({ date: today() });
-  const formattedActive = intentService.formatIntent(intentService.getIntentById(active.id));
-  assert.equal(formattedActive.expired, false);
-  assert.equal('status' in formattedActive, false);
-
   const expired = makeIntent({ date: datePlus(-1) });
-  const formatted = intentService.formatIntent(intentService.getIntentById(expired.id));
-  assert.equal(formatted.expired, true);
+  const expiredOff = makeIntent({ date: datePlus(-2), enabled: false });
+  const todayIntent = makeIntent({ date: today() });
+  const future = makeIntent({ date: datePlus(BOOKING_WINDOW_DAYS + 1) });
+  prepare(`INSERT INTO booking_intent_locks (id, intent_id, uniq_no, date, start_time, end_time, status)
+    VALUES ('bil-sweep', ?, 'u-sweep', ?, '17:00', '18:00', 'locked')`).run(expired.id, datePlus(-1));
+
+  assert.equal(intentService.sweepExpiredIntents(), 1); // 只动过期且 enabled=1 的那条
+  assert.equal(intentService.getIntentById(expired.id).enabled, 0);
+  assert.equal(intentService.getIntentById(expiredOff.id).enabled, 0);
+  assert.equal(intentService.getIntentById(todayIntent.id).enabled, 1);
+  assert.equal(intentService.getIntentById(future.id).enabled, 1);
+
+  // 幂等：再扫无改动；锁场记录保留
+  assert.equal(intentService.sweepExpiredIntents(), 0);
+  assert.equal(prepare(`SELECT status FROM booking_intent_locks WHERE id = 'bil-sweep'`).get().status, 'locked');
 });
 
 // === 推送记录 ===
 
-test('recordNotification/listNotifications：intentId 过滤 + 倒序分页', () => {
+test('recordNotification/listNotifications：intentId 与 date 过滤 + 倒序分页', () => {
   resetIntents();
   const a = makeIntent({ date: today() });
   const b = makeIntent({ date: today(), windowStart: '20:00', windowEnd: '22:00' });
@@ -260,8 +372,8 @@ test('recordNotification/listNotifications：intentId 过滤 + 倒序分页', ()
     });
   }
   intentService.recordNotification({
-    intentId: b.id, uniqNo: 'u-b-0', areaName: '2号场', date: today(),
-    startTime: '20:00', endTime: '21:00', success: false, error: '推送失败：x'
+    intentId: b.id, uniqNo: 'u-b-0', areaName: '2号场', date: datePlus(1), startTime: '20:00', endTime: '21:00',
+    success: false, error: '推送失败：x'
   });
 
   const all = intentService.listNotifications({ pageNo: 1, pageSize: 3 });
@@ -273,6 +385,15 @@ test('recordNotification/listNotifications：intentId 过滤 + 倒序分页', ()
   assert.equal(filtered.list[0].uniqNo, 'u-b-0');
   assert.equal(filtered.list[0].success, false);
   assert.equal(filtered.list[0].error, '推送失败：x');
+
+  // 按日期过滤（历史仍可按天查询）
+  const byDate = intentService.listNotifications({ date: datePlus(1) });
+  assert.equal(byDate.total, 1);
+  assert.equal(byDate.list[0].date, datePlus(1));
+  assert.equal(intentService.listNotifications({ date: datePlus(9) }).total, 0);
+
+  // intentId + date 并用
+  assert.equal(intentService.listNotifications({ intentId: a.id, date: today() }).total, 3);
 
   // 旧数据兼容：intent_id 允许 NULL
   intentService.recordNotification({ uniqNo: 'u-legacy', date: today(), startTime: '08:00', endTime: '09:00', success: true });
