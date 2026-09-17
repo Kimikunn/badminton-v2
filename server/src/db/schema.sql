@@ -175,6 +175,7 @@ CREATE TABLE IF NOT EXISTS booking_intent_locks (
   status TEXT NOT NULL,         -- locked | failed | expired
   error TEXT,                   -- 失败原因；成功时为空
   error_code TEXT,              -- 失败原因结构化码：RISK_CONTROL | SOLDOUT | LIMIT | UNPAID | OTHER（历史行为 NULL）
+  expire_at TEXT,               -- 未支付订单自动释放时刻（UTC；下单响应 expireTime 为北京时间，转换后落库）
   created_at TEXT DEFAULT (datetime('now'))
 );
 

@@ -13,7 +13,9 @@
  *     listAreaLease 返回的原始 item 对象（小程序就是这么干的，
  *     见 bookingLockService.buildAreaItems）。
  *   - 成功判定：createOrder body.code === 200（429/403004 = 触发风控需验证码）；
- *     createOrderCheck 看 body.data.success === 'Y'（'N' = 冲突/不可订）。
+ *     createOrderCheck 看 body.data.success === 'Y'（'N' = 冲突/不可订）；例外：
+ *     data.success='N' 且 code=LIMITED_BY_START_TIME 是“距开场不足 12 小时不可退款”软提示，
+ *     由 bookingLockService 决定不阻断下单。
  *
  * 凭证与 listAreaLease 一致：token-user 头来自 GYM_TOKEN_USER env
  * （经 intentService.getEnvConfig 实时读取）。token 只出现在请求头，

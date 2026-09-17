@@ -243,8 +243,13 @@ test('创建校验：日期必填/格式/不早于今天、weekdays 拒绝、窗
   const reversed = await mk({ date, windowStart: '20:00', windowEnd: '17:00' }).expect(422);
   assert.match(reversed.body.error.message, /结束时间必须晚于开始时间/);
 
-  const tooLong = await mk({ date, durationHours: 4 }).expect(422);
-  assert.match(tooLong.body.error.message, /打球时长不能超过时间窗口/);
+  // 时长上限 2 小时（暂不支持连打 2 小时以上）
+  const tooLong = await mk({ date, durationHours: 3 }).expect(422);
+  assert.match(tooLong.body.error.message, /暂不支持连打 2 小时以上/);
+
+  // 窗口小于时长（合法时长 2 小时 + 1.5 小时窗口）
+  const tooLongForWindow = await mk({ date, windowStart: '17:00', windowEnd: '18:30', durationHours: 2 }).expect(422);
+  assert.match(tooLongForWindow.body.error.message, /打球时长不能超过时间窗口/);
 
   const badTime = await mk({ date, windowStart: '17点' }).expect(422);
   assert.match(badTime.body.error.message, /HH:MM/);
@@ -258,6 +263,38 @@ test('创建校验：日期必填/格式/不早于今天、weekdays 拒绝、窗
   for (const bad of [0, 4]) {
     await mk({ date, courtsNeeded: bad }).expect(422);
   }
+});
+
+test('创建校验：时长/片场上限与组合约束（每天最多 2 个片次）', async () => {
+  resetIntents();
+  const date = today();
+  const mk = (payload) => api.post('/api/intents').set(ADMIN)
+    .send({ date, windowStart: '17:00', windowEnd: '20:00', durationHours: 1, ...payload });
+
+  const threeHours = await mk({ durationHours: 3 }).expect(422);
+  assert.match(threeHours.body.error.message, /暂不支持连打 2 小时以上/);
+
+  const threeCourts = await mk({ courtsNeeded: 3 }).expect(422);
+  assert.match(threeCourts.body.error.message, /同一天最多 2 片次/);
+
+  const combo = await mk({ durationHours: 2, courtsNeeded: 2 }).expect(422);
+  assert.match(combo.body.error.message, /每天最多 2 个片次（场地×小时），当前组合需要 4 个/);
+
+  // 合法组合：2 小时 × 1 片 / 1 小时 × 2 片
+  const twoHours = await mk({ durationHours: 2, windowStart: '18:00', windowEnd: '20:00' }).expect(201);
+  assert.equal(twoHours.body.data.durationHours, 2);
+  assert.equal(twoHours.body.data.courtsNeeded, 1);
+  const twoCourts = await mk({ durationHours: 1, courtsNeeded: 2, windowStart: '20:00', windowEnd: '21:00' }).expect(201);
+  assert.equal(twoCourts.body.data.courtsNeeded, 2);
+
+  // update 走合并校验：已有 2 小时意图追加“同时 2 片” → 组合超限 422
+  const upd = await api.put(`/api/intents/${twoHours.body.data.id}`).set(ADMIN)
+    .send({ courtsNeeded: 2 }).expect(422);
+  assert.match(upd.body.error.message, /每天最多 2 个片次/);
+  // 撤回为 1 片合法
+  const ok = await api.put(`/api/intents/${twoHours.body.data.id}`).set(ADMIN)
+    .send({ courtsNeeded: 1 }).expect(200);
+  assert.equal(ok.body.data.courtsNeeded, 1);
 });
 
 test('提前设置：窗口外任意未来日期可创建（waiting），过去日期 422', async () => {
@@ -358,19 +395,19 @@ test('GET /intents：风控重试窗口内 status=awaiting_verify 且带 verifyD
 test('更新校验：合并已有行做跨字段校验（缩窗口不能小于时长）', async () => {
   resetIntents();
   const created = await api.post('/api/intents').set(ADMIN)
-    .send({ date: today(), windowStart: '17:00', windowEnd: '21:00', durationHours: 3 }).expect(201);
+    .send({ date: today(), windowStart: '17:00', windowEnd: '20:00', durationHours: 2 }).expect(201);
   const id = created.body.data.id;
 
-  // 缩窗口到 2 小时 < duration 3 → 422
+  // 缩窗口到 1 小时 < duration 2 → 422
   const narrowed = await api.put(`/api/intents/${id}`).set(ADMIN)
-    .send({ windowEnd: '19:00' }).expect(422);
+    .send({ windowEnd: '18:00' }).expect(422);
   assert.match(narrowed.body.error.message, /打球时长不能超过时间窗口/);
 
   // 同时缩时长 → 通过
   const ok = await api.put(`/api/intents/${id}`).set(ADMIN)
-    .send({ windowEnd: '19:00', durationHours: 2 }).expect(200);
-  assert.equal(ok.body.data.windowEnd, '19:00');
-  assert.equal(ok.body.data.durationHours, 2);
+    .send({ windowEnd: '18:00', durationHours: 1 }).expect(200);
+  assert.equal(ok.body.data.windowEnd, '18:00');
+  assert.equal(ok.body.data.durationHours, 1);
 
   // 颠倒窗口 → 422
   const reversed = await api.put(`/api/intents/${id}`).set(ADMIN)
@@ -424,11 +461,11 @@ test('GET /locks 倒序分页 + ?intentId= / ?date= 过滤，只读无需写权�
   const a = intentService.createIntent({ date: today(), windowStart: '08:00', windowEnd: '12:00', durationHours: 1 });
   const b = intentService.createIntent({ date: today(), windowStart: '13:00', windowEnd: '15:00', durationHours: 1 });
 
-  const insertLock = (id, intentId, uniqNo, date, status = 'locked', errorCode = null) => prepare(
-    `INSERT INTO booking_intent_locks (id, intent_id, uniq_no, date, start_time, end_time, area_id, area_name, order_id, status, error_code)
-     VALUES (?, ?, ?, ?, '09:00', '10:00', 41, '1号场', 'ORD-1', ?, ?)`)
-    .run(id, intentId, uniqNo, date, status, errorCode);
-  insertLock('bil-1', a.id, 'u-1', today());
+  const insertLock = (id, intentId, uniqNo, date, status = 'locked', errorCode = null, expireAt = null) => prepare(
+    `INSERT INTO booking_intent_locks (id, intent_id, uniq_no, date, start_time, end_time, area_id, area_name, order_id, expire_at, status, error_code)
+     VALUES (?, ?, ?, ?, '09:00', '10:00', 41, '1号场', 'ORD-1', ?, ?, ?)`)
+    .run(id, intentId, uniqNo, date, expireAt, status, errorCode);
+  insertLock('bil-1', a.id, 'u-1', today(), 'locked', null, '2026-09-17 14:28:28');
   insertLock('bil-2', a.id, 'u-2', today(), 'failed', 'RISK_CONTROL');
   insertLock('bil-3', b.id, 'u-3', kit.datePlus(1));
 
@@ -450,6 +487,8 @@ test('GET /locks 倒序分页 + ?intentId= / ?date= 过滤，只读无需写权�
   assert.equal(byDate.body.data.total, 2);
   assert.ok(byDate.body.data.list.every(l => l.date === today()));
   assert.ok(byDate.body.data.list.some(l => l.errorCode === 'RISK_CONTROL'));
+  // expire_at（UTC）对外输出为 expireAt（前端 +8h 渲染支付截止）
+  assert.ok(byDate.body.data.list.some(l => l.expireAt === '2026-09-17 14:28:28'));
   assert.equal((await api.get(`/api/intents/locks?date=${kit.datePlus(9)}`).expect(200)).body.data.total, 0);
   const badDate = await api.get('/api/intents/locks?date=2026/09/17').expect(422);
   assert.match(badDate.body.error.message, /YYYY-MM-DD/);

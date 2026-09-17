@@ -395,8 +395,45 @@ test('016/018：全新库空跑无副作用（新表齐、weekdays 列不存在�
   }
   assert.ok(!state.intentColumns.includes('weekdays'), '新库 booking_intents 不应有 weekdays 列');
   assert.ok(state.lockColumns.includes('error_code'), '新库 booking_intent_locks 应有 error_code 列');
+  assert.ok(state.lockColumns.includes('expire_at'), '新库 booking_intent_locks 应有 expire_at 列');
   assert.equal(state.config.length, 1); // 默认配置行
   assert.equal(state.config[0].enabled, 1);
+});
+
+// === 019：支付截止时间列 ===
+
+test('019：booking_intent_locks 新增 expire_at 列且幂等（二次启动 / 抹掉标记重跑都不重复加列）', async () => {
+  await writePost017Db();
+  await initDatabase();
+  closeDatabase();
+
+  const columnCount = (columns) => columns.filter(c => c === 'expire_at').length;
+  let columns = await readDb(db => rows(db, 'PRAGMA table_info(booking_intent_locks)').map(r => r.name));
+  assert.ok(columns.includes('expire_at'), '019 后应有 expire_at 列');
+  assert.equal(columnCount(columns), 1);
+
+  // 正常二次启动：迁移标记已存在，直接跳过
+  await initDatabase();
+  closeDatabase();
+  columns = await readDb(db => rows(db, 'PRAGMA table_info(booking_intent_locks)').map(r => r.name));
+  assert.equal(columnCount(columns), 1);
+
+  // 抹掉 019 标记再跑：hasColumn 幂等，不重复加列也不报错
+  {
+    const SQL = await initSqlJs();
+    const db = new SQL.Database(fs.readFileSync(process.env.DB_PATH));
+    db.run(`DELETE FROM _migrations WHERE name = '019_lock_expire_at.sql'`);
+    writeDb(db);
+  }
+  await initDatabase();
+  closeDatabase();
+
+  const state = await readDb(db => ({
+    columns: rows(db, 'PRAGMA table_info(booking_intent_locks)').map(r => r.name),
+    applied: rows(db, `SELECT COUNT(*) AS cnt FROM _migrations WHERE name = '019_lock_expire_at.sql'`)[0].cnt
+  }));
+  assert.equal(columnCount(state.columns), 1);
+  assert.equal(state.applied, 1);
 });
 
 // === 018：单日模型 + 结构化错误码 ===

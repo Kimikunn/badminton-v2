@@ -54,6 +54,12 @@ function crossFieldRules({ partial }) {
     const windowStart = value.windowStart ?? (existing && existing.window_start);
     const windowEnd = value.windowEnd ?? (existing && existing.window_end);
     const durationHours = value.durationHours ?? (existing && existing.duration_hours);
+    const courtsNeeded = value.courtsNeeded ?? (existing && existing.courts_needed) ?? 1;
+
+    // 场馆每天最多 2 个片次（1 片场地 1 小时 = 1 片次，退订返还）：时长 × 片场 不能超过 2
+    if (durationHours !== undefined && durationHours !== null && durationHours * courtsNeeded > 2) {
+      throw new Error(`每天最多 2 个片次（场地×小时），当前组合需要 ${durationHours * courtsNeeded} 个`);
+    }
 
     if (windowStart !== undefined || !partial) {
       if (!windowStart || !TIME_RE.test(windowStart)) throw new Error('窗口开始时间格式必须是 HH:MM');
@@ -88,8 +94,8 @@ const createIntentRules = [
   body('date').isString().withMessage('日期必须是文本'),
   body('windowStart').isString().withMessage('窗口开始时间不能为空'),
   body('windowEnd').isString().withMessage('窗口结束时间不能为空'),
-  body('durationHours').isInt({ min: 1, max: 12 }).withMessage('打球时长必须是 1-12 的整数'),
-  body('courtsNeeded').optional().isInt({ min: 1, max: 3 }).withMessage('同时片数必须是 1-3 的整数'),
+  body('durationHours').isInt({ min: 1, max: 2 }).withMessage('打球时长只能是 1-2 小时（暂不支持连打 2 小时以上）'),
+  body('courtsNeeded').optional().isInt({ min: 1, max: 2 }).withMessage('同时片数只能是 1-2（同一天最多 2 片次）'),
   body('preferredAreaIds').optional({ nullable: true }).isArray().withMessage('场地偏好必须是数组'),
   body('preferredAreaIds.*').isInt({ min: 0 }).withMessage('场地ID必须是非负整数'),
   body('enabled').optional().isBoolean().withMessage('启用状态必须是布尔值'),
@@ -101,8 +107,8 @@ const updateIntentRules = [
   body('date').optional({ nullable: true }).isString().withMessage('日期必须是文本'),
   body('windowStart').optional().isString().withMessage('窗口开始时间必须是文本'),
   body('windowEnd').optional().isString().withMessage('窗口结束时间必须是文本'),
-  body('durationHours').optional().isInt({ min: 1, max: 12 }).withMessage('打球时长必须是 1-12 的整数'),
-  body('courtsNeeded').optional().isInt({ min: 1, max: 3 }).withMessage('同时片数必须是 1-3 的整数'),
+  body('durationHours').optional().isInt({ min: 1, max: 2 }).withMessage('打球时长只能是 1-2 小时（暂不支持连打 2 小时以上）'),
+  body('courtsNeeded').optional().isInt({ min: 1, max: 2 }).withMessage('同时片数只能是 1-2（同一天最多 2 片次）'),
   body('preferredAreaIds').optional({ nullable: true }).isArray().withMessage('场地偏好必须是数组'),
   body('preferredAreaIds.*').isInt({ min: 0 }).withMessage('场地ID必须是非负整数'),
   body('enabled').optional().isBoolean().withMessage('启用状态必须是布尔值'),

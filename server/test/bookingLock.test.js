@@ -131,9 +131,11 @@ test('tryFulfill：17-19 连续两小时可订 → 锁这两个小时，发已�
   assert.equal(result.locked, 2);
   assert.equal(result.failed, 0);
 
-  // 17-18、18-19 各 check + create 一次；create 带签名头与 token
-  assert.deepEqual(fetchStub.orderCalls.map(c => c.kind), ['check', 'create', 'check', 'create']);
+  // 【整单打包】17-18、18-19 两个片次只走一次 check + create（一笔订单）
+  assert.deepEqual(fetchStub.orderCalls.map(c => c.kind), ['check', 'create']);
   const createCall = fetchStub.orderCalls[1];
+  assert.equal(createCall.body.areaItems.length, 2);
+  assert.deepEqual(createCall.body.areaItems.map(i => i.uniqNo), [`41_${date}_17:00`, `41_${date}_18:00`]);
   assert.ok(createCall.headers['X-Ca-Timestamp']);
   assert.ok(createCall.headers['X-Ca-Nonce']);
   assert.ok(createCall.headers['X-Ca-Signature']);
@@ -163,7 +165,7 @@ test('tryFulfill：17-19 连续两小时可订 → 锁这两个小时，发已�
   // 幂等：已满足的发生直接跳过
   const again = await bookingLockService.tryFulfill(intent, date, windowSlots(date), env);
   assert.equal(again.skipped, 'fulfilled');
-  assert.equal(fetchStub.orderCalls.length, 4);
+  assert.equal(fetchStub.orderCalls.length, 2);
 });
 
 test('tryFulfill：17-18 与 19-20 可订但 18-19 断开 → 不满足，不下单', async () => {
@@ -210,12 +212,13 @@ test('tryFulfill：courts_needed=2 时每小时需 2 片，不足则不满足', 
   const intent = makeIntentRow({ courtsNeeded: 2, durationHours: 1, windowStart: '17:00', windowEnd: '18:00' });
 
   // 每小时只有 1 片 → no_run
-  kit.stubFetch(kit.lockFlowFetch());
+  const fetchStub = kit.lockFlowFetch();
+  kit.stubFetch(fetchStub);
   const short = await bookingLockService.tryFulfill(intent, date, windowSlots(date, { only: ['17:00'] }), intentService.getEnvConfig());
   assert.equal(short.skipped, 'no_run');
   assert.equal(lockedRows(intent.id).length, 0);
 
-  // 两片可订 → 同小时锁两片（跨场地）
+  // 两片可订 → 同小时两片打包成一笔订单（跨场地）
   const twoCourts = [
     ...windowSlots(date, { areaId: 41, areaName: '1号场', only: ['17:00'] }),
     ...windowSlots(date, { areaId: 42, areaName: '2号场', only: ['17:00'] })
@@ -223,9 +226,13 @@ test('tryFulfill：courts_needed=2 时每小时需 2 片，不足则不满足', 
   const result = await bookingLockService.tryFulfill(intent, date, twoCourts, intentService.getEnvConfig());
   assert.equal(result.fulfilled, true);
   assert.equal(result.locked, 2);
+  // 两个片次只走一次 check + create，areaItems 2 条且同 order_id
+  assert.deepEqual(fetchStub.orderCalls.map(c => c.kind), ['check', 'create']);
+  assert.equal(fetchStub.orderCalls[1].body.areaItems.length, 2);
   const rows = lockedRows(intent.id);
   assert.equal(rows.length, 2);
   assert.deepEqual(rows.map(r => r.area_id).sort(), [41, 42]);
+  assert.ok(rows.every(r => r.order_id === 'ORD-123'));
 });
 
 test('tryFulfill：候选场地按意图 preferred_area_ids 排序，缺省回退全局 area_priority', async () => {
@@ -268,45 +275,37 @@ test('tryFulfill：签名未配置 → skipped no_signer，不下单不推送', 
   assert.equal(kit.PUSH_CALLS.length, 0);
 });
 
-test('tryFulfill：部分锁不齐时已锁的保留，等回流后续锁', async () => {
+test('tryFulfill：已有部分 locked（1/2 片）时，续锁只补缺口并自动停用', async () => {
   resetLock();
   kit.configureEnv({ withKey: true });
   const date = kit.datePlus(1);
-  const intent = makeIntentRow();
+  const intent = makeIntentRow({ courtsNeeded: 2, durationHours: 1, windowStart: '17:00', windowEnd: '18:00' });
 
-  // 18-19 首次下单被别人抢先：只锁到 17-18
-  const fetchStub = kit.lockFlowFetch({
-    createBody: (body) => body.areaItems[0].uniqNo.endsWith('18:00')
-      ? { code: 1001, msg: '该时段已被预订' }
-      : { code: 200, data: { areaOrderId: 'ORD-FIRST' } }
-  });
+  // 预置 1 片已锁（模拟部分锁齐：更早一轮只锁到一片，未满足判定不停用）
+  prepare(`INSERT INTO booking_intent_locks (id, intent_id, uniq_no, date, start_time, end_time, area_id, area_name, order_id, status)
+    VALUES ('bil-seed', ?, ?, ?, '17:00', '18:00', 41, '1号场', 'ORD-SEED', 'locked')`)
+    .run(intent.id, `41_${date}_17:00`, date);
+
+  // 两片都可订：只对缺口的 42 下单（41 已锁不重复提交），整段满足后自动停用
+  const fetchStub = kit.lockFlowFetch({ createBody: { code: 200, data: { areaOrderId: 'ORD-REFILL' } } });
   kit.stubFetch(fetchStub);
-  const first = await bookingLockService.tryFulfill(intent, date, windowSlots(date, { only: ['17:00', '18:00'] }), intentService.getEnvConfig());
-  assert.equal(first.fulfilled, false);
-  assert.equal(first.locked, 1);
-  assert.equal(first.failed, 1);
-  assert.equal(lockedRows(intent.id).length, 1);
-  const failedRow = prepare(`SELECT * FROM booking_intent_locks WHERE status = 'failed'`).get();
-  assert.match(failedRow.error, /该时段已被预订/);
-  // 锁不齐：不发已锁场推送，但发一条锁场失败推送（用户需要知情）
-  assert.equal(kit.PUSH_CALLS.length, 1);
-  assert.match(kit.PUSH_CALLS[0].body.title, /【锁场失败】/);
-  assert.match(kit.PUSH_CALLS[0].body.content, /回流可订时系统会自动重试/);
-
-  // 18-19 回流后再触发：续锁成功，整段满足
-  kit.stubFetch(kit.lockFlowFetch({ createBody: { code: 200, data: { areaOrderId: 'ORD-SECOND' } } }));
-  const second = await bookingLockService.tryFulfill(intent, date, windowSlots(date, { only: ['18:00'] }), intentService.getEnvConfig());
-  assert.equal(second.fulfilled, true);
-  assert.equal(second.locked, 1);
+  const result = await bookingLockService.tryFulfill(intent, date, [
+    ...windowSlots(date, { areaId: 41, areaName: '1号场', only: ['17:00'] }),
+    ...windowSlots(date, { areaId: 42, areaName: '2号场', only: ['17:00'] })
+  ], intentService.getEnvConfig());
+  assert.equal(result.fulfilled, true);
+  assert.equal(result.locked, 1);
+  assert.deepEqual(fetchStub.orderCalls[1].body.areaItems.map(i => i.areaId), [42]);
   const rows = lockedRows(intent.id);
-  assert.deepEqual(rows.map(r => r.order_id), ['ORD-FIRST', 'ORD-SECOND']);
-  assert.equal(kit.PUSH_CALLS.length, 2);
-  assert.match(kit.PUSH_CALLS[1].body.title, /【已锁场】/);
+  assert.deepEqual(rows.map(r => r.order_id).sort(), ['ORD-REFILL', 'ORD-SEED']);
+  assert.equal(intentService.getIntentById(intent.id).enabled, 0);
+  assert.equal(kit.PUSH_CALLS.length, 1);
+  assert.match(kit.PUSH_CALLS[0].body.title, /【已锁场】/);
 });
 
 // === 下单失败路径 ===
 
-test('attemptLock：check 未通过 → failed 记录，不再调 createOrder', async () => {
+test('attemptLockOrder：check 未通过 → failed 记录，不再调 createOrder', async () => {
   resetLock();
   kit.configureEnv({ withKey: true });
   const date = kit.datePlus(1);
@@ -314,33 +313,37 @@ test('attemptLock：check 未通过 → failed 记录，不再调 createOrder', 
 
   const fetchStub = kit.lockFlowFetch({
     // 真实响应形态：成功信封里 data.success='N'，原因在 data.code
-    checkBody: { code: 200, data: { code: 'LIMITED_BY_START_TIME', success: 'N' }, message: 'success' }
+    checkBody: { code: 200, data: { code: 'BOOKING_CONFLICT', success: 'N' }, message: 'success' }
   });
   kit.stubFetch(fetchStub);
 
-  const result = await bookingLockService.attemptLock({ intent, slot: flatSlot(`41_${date}_17:00`, '17:00', '18:00'), date });
+  const item = flatSlot(`41_${date}_17:00`, '17:00', '18:00');
+  const result = await bookingLockService.attemptLockOrder({ intent, items: [item], date });
   assert.equal(result.success, false);
-  assert.match(result.error, /LIMITED_BY_START_TIME/);
+  assert.equal(result.errorCode, 'SOLDOUT');
+  assert.match(result.error, /BOOKING_CONFLICT/);
   assert.deepEqual(fetchStub.orderCalls.map(c => c.kind), ['check']);
 
-  const row = prepare(`SELECT * FROM booking_intent_locks WHERE uniq_no = ?`).get(`41_${date}_17:00`);
+  const row = prepare(`SELECT * FROM booking_intent_locks WHERE uniq_no = ?`).get(item.uniqNo);
   assert.equal(row.status, 'failed');
   assert.equal(row.order_id, null);
+  assert.equal(row.error_code, 'SOLDOUT');
 });
 
-test('attemptLock：createOrder 返回 429/403004 → failed 记录提示风控验证码', async () => {
+test('attemptLockOrder：createOrder 返回 429/403004 → failed 记录提示风控验证码', async () => {
   resetLock();
   kit.configureEnv({ withKey: true });
   const date = kit.datePlus(1);
   const intent = makeIntentRow();
 
   kit.stubFetch(kit.lockFlowFetch({ createBody: { code: 429, msg: 'too many requests' } }));
-  const result = await bookingLockService.attemptLock({ intent, slot: flatSlot(`41_${date}_17:00`, '17:00', '18:00'), date });
+  const item = flatSlot(`41_${date}_17:00`, '17:00', '18:00');
+  const result = await bookingLockService.attemptLockOrder({ intent, items: [item], date });
   assert.equal(result.success, false);
   assert.equal(result.riskControl, true);
   assert.match(result.error, /触发风控/);
 
-  const row = prepare(`SELECT * FROM booking_intent_locks WHERE uniq_no = ?`).get(`41_${date}_17:00`);
+  const row = prepare(`SELECT * FROM booking_intent_locks WHERE uniq_no = ?`).get(item.uniqNo);
   assert.equal(row.status, 'failed');
   assert.match(row.error, /风控/);
 });
@@ -352,7 +355,7 @@ test('失败记录落结构化 error_code：RISK_CONTROL / SOLDOUT / LIMIT / UNP
   const intent = makeIntentRow();
   const failWith = async (uniq, fetchStub) => {
     kit.stubFetch(fetchStub);
-    const result = await bookingLockService.attemptLock({ intent, slot: flatSlot(uniq, '17:00', '18:00'), date });
+    const result = await bookingLockService.attemptLockOrder({ intent, items: [flatSlot(uniq, '17:00', '18:00')], date });
     assert.equal(result.success, false);
     const row = prepare(`SELECT * FROM booking_intent_locks WHERE uniq_no = ?`).get(uniq);
     assert.equal(row.status, 'failed');
@@ -370,9 +373,9 @@ test('失败记录落结构化 error_code：RISK_CONTROL / SOLDOUT / LIMIT / UNP
   }));
   assert.equal(soldout.row.error_code, 'SOLDOUT');
 
-  // 场馆限订：上游业务码 LIMITED_BY_START_TIME
+  // 场馆限订（createOrder 业务文案，如“每天最多订 2 笔”）
   const limit = await failWith(`41_${date}_limit`, kit.lockFlowFetch({
-    checkBody: { code: 200, data: { success: 'N', code: 'LIMITED_BY_START_TIME' }, message: 'success' }
+    createBody: { code: 1003, msg: '您已超过本场馆限订笔数，限订 2 笔' }
   }));
   assert.equal(limit.row.error_code, 'LIMIT');
 
@@ -396,7 +399,7 @@ test('失败记录落结构化 error_code：RISK_CONTROL / SOLDOUT / LIMIT / UNP
 
   // 成功锁到：error_code 为空；formatLockRecord 对外暴露 errorCode
   kit.stubFetch(kit.lockFlowFetch());
-  const ok = await bookingLockService.attemptLock({ intent, slot: flatSlot(`41_${date}_ok`, '17:00', '18:00'), date });
+  const ok = await bookingLockService.attemptLockOrder({ intent, items: [flatSlot(`41_${date}_ok`, '17:00', '18:00')], date });
   assert.equal(ok.success, true);
   const row = prepare(`SELECT * FROM booking_intent_locks WHERE uniq_no = ?`).get(`41_${date}_ok`);
   assert.equal(row.error_code, null);
@@ -433,37 +436,116 @@ test('tryFulfill：风控（图形验证）fail-fast——不再尝试其他场�
   assert.match(failedRow.error, /风控/);
 });
 
-test('tryFulfill：普通失败（被抢）可递补下一片；最终锁齐只发已锁场推送', async () => {
+test('tryFulfill：整单打包后一个片次被抢 → 整单失败（N 条同原因 failed），不落部分 locked', async () => {
   resetLock();
   kit.configureEnv({ withKey: true });
   const date = kit.datePlus(1);
-  const intent = makeIntentRow({ windowStart: '17:00', windowEnd: '18:00', durationHours: 1 });
+  const intent = makeIntentRow({ windowStart: '17:00', windowEnd: '19:00', durationHours: 2 });
   const env = intentService.getEnvConfig();
-  const daySlots = [
-    flatSlot(`41_${date}_17:00`, '17:00', '18:00', { areaId: 41, areaName: '一号场' }),
-    flatSlot(`42_${date}_17:00`, '17:00', '18:00', { areaId: 42, areaName: '二号场' })
-  ];
 
-  // 一号场被抢（业务失败，非风控），二号场成功
+  // 18-19 被抢：两个片次同属一笔订单，整单失败（不再递补下单）
   const fetchStub = kit.lockFlowFetch({
-    createBody: (body) => body.areaItems[0].uniqNo.startsWith('41_')
+    createBody: (body) => body.areaItems.some(i => i.uniqNo.endsWith('_18:00'))
       ? { code: 1001, msg: '该时段已被预订' }
-      : { code: 200, data: { areaOrderId: 'ORD-2' } }
+      : { code: 200, data: { areaOrderId: 'ORD-OK' } }
   });
   kit.stubFetch(fetchStub);
 
-  const result = await bookingLockService.tryFulfill(intent, date, daySlots, env);
-  assert.equal(result.fulfilled, true);
-  assert.equal(result.locked, 1);
-  assert.equal(result.failed, 1);
-  assert.deepEqual(fetchStub.orderCalls.map(c => c.kind), ['check', 'create', 'check', 'create']);
+  const result = await bookingLockService.tryFulfill(intent, date, windowSlots(date, { only: ['17:00', '18:00'] }), env);
+  assert.equal(result.fulfilled, false);
+  assert.equal(result.locked, 0);
+  assert.equal(result.failed, 2);
+  assert.deepEqual(fetchStub.orderCalls.map(c => c.kind), ['check', 'create']);
+  assert.equal(lockedRows(intent.id).length, 0);
+  const failedRows = prepare(`SELECT * FROM booking_intent_locks
+    WHERE intent_id = ? AND status = 'failed' ORDER BY start_time`).all(intent.id);
+  assert.equal(failedRows.length, 2);
+  assert.ok(failedRows.every(r => r.error_code === 'SOLDOUT' && /该时段已被预订/.test(r.error)));
 
-  // 最终锁齐：只发已锁场推送，不为中途的递补失败刷屏
+  // 失败即时推送（含两个片次明细），提示回流后自动重试
   assert.equal(kit.PUSH_CALLS.length, 1);
-  assert.match(kit.PUSH_CALLS[0].body.title, /【已锁场】/);
+  assert.match(kit.PUSH_CALLS[0].body.title, /【锁场失败】/);
+  assert.match(kit.PUSH_CALLS[0].body.content, /回流可订时系统会自动重试/);
 });
 
-// === 每日限订（默认 2 笔/天，取消返还；GYM_DAILY_ORDER_LIMIT 可调） ===
+// === 场馆反馈：软提示（不可退款）/ UNPAID 停机 / 支付截止时间 ===
+
+test('软提示：LIMITED_BY_START_TIME 不阻断下单，成功推送注明不可退款，不落 LIMIT 记录', async () => {
+  resetLock();
+  kit.configureEnv({ withKey: true });
+  const date = kit.datePlus(1);
+  const intent = makeIntentRow({ durationHours: 1, windowStart: '17:00', windowEnd: '18:00' });
+
+  const fetchStub = kit.lockFlowFetch({
+    checkBody: { code: 200, data: { success: 'N', code: 'LIMITED_BY_START_TIME' }, message: 'success' }
+  });
+  kit.stubFetch(fetchStub);
+
+  const result = await bookingLockService.tryFulfill(intent, date, windowSlots(date, { only: ['17:00'] }), intentService.getEnvConfig());
+  assert.equal(result.fulfilled, true);
+  // 软提示不阻断：仍然提交 createOrder
+  assert.deepEqual(fetchStub.orderCalls.map(c => c.kind), ['check', 'create']);
+  const row = lockedRows(intent.id)[0];
+  assert.equal(row.status, 'locked');
+  assert.equal(row.error_code, null);
+  assert.match(kit.PUSH_CALLS[0].body.content, /不可退款/);
+  // 不产生 LIMIT 失败记录
+  assert.equal(prepare(`SELECT COUNT(*) AS cnt FROM booking_intent_locks WHERE error_code = 'LIMIT'`).get().cnt, 0);
+});
+
+test('UNPAID：存在未支付订单 → 不重试、推「需要先支付」、意图自动停用', async () => {
+  resetLock();
+  kit.configureEnv({ withKey: true });
+  const date = kit.datePlus(1);
+  const intent = makeIntentRow({ durationHours: 1, windowStart: '17:00', windowEnd: '18:00' });
+  const env = intentService.getEnvConfig();
+
+  const fetchStub = kit.lockFlowFetch({
+    createBody: { code: 1002, msg: '您存在未支付的订单，请先完成后再下单！' }
+  });
+  kit.stubFetch(fetchStub);
+  const result = await bookingLockService.tryFulfill(intent, date, windowSlots(date, { only: ['17:00'] }), env);
+  assert.equal(result.fulfilled, false);
+  assert.equal(result.skipped, 'unpaid');
+  // 只尝试一次（check + create），不重试
+  assert.deepEqual(fetchStub.orderCalls.map(c => c.kind), ['check', 'create']);
+  assert.equal(kit.PUSH_CALLS.length, 1);
+  assert.match(kit.PUSH_CALLS[0].body.title, /【需要先支付】/);
+  assert.match(kit.PUSH_CALLS[0].body.content, /未支付/);
+  assert.match(kit.PUSH_CALLS[0].body.content, /重新打开开关/);
+
+  // 失败落库（UNPAID）且意图已停用；重取 DB 行再触发不再下单
+  const failedRow = prepare(`SELECT * FROM booking_intent_locks WHERE intent_id = ?`).get(intent.id);
+  assert.equal(failedRow.status, 'failed');
+  assert.equal(failedRow.error_code, 'UNPAID');
+  assert.equal(intentService.getIntentById(intent.id).enabled, 0);
+  const afterStub = kit.lockFlowFetch();
+  kit.stubFetch(afterStub);
+  const again = await bookingLockService.tryFulfill(intentService.getIntentById(intent.id), date, windowSlots(date, { only: ['17:00'] }), env);
+  assert.equal(again.skipped, 'disabled');
+  assert.equal(afterStub.orderCalls.length, 0);
+});
+
+test('expire_at：下单响应 expireTime（北京时间）转 UTC 落库，推送渲染北京时间', async () => {
+  resetLock();
+  kit.configureEnv({ withKey: true });
+  const date = kit.datePlus(1);
+  const intent = makeIntentRow({ durationHours: 1, windowStart: '17:00', windowEnd: '18:00' });
+
+  kit.stubFetch(kit.lockFlowFetch({
+    createBody: { code: 200, data: { areaOrderId: 'ORD-T', expireTime: '2026-09-17 22:28:28' } }
+  }));
+  const result = await bookingLockService.tryFulfill(intent, date, windowSlots(date, { only: ['17:00'] }), intentService.getEnvConfig());
+  assert.equal(result.fulfilled, true);
+
+  const row = lockedRows(intent.id)[0];
+  assert.equal(row.expire_at, '2026-09-17 14:28:28'); // 北京时间 -8h = UTC
+  assert.equal(bookingLockService.formatLockRecord(row).expireAt, '2026-09-17 14:28:28');
+  assert.match(kit.PUSH_CALLS[0].body.content, /北京时间 22:28/);
+  assert.doesNotMatch(kit.PUSH_CALLS[0].body.content, /5 分钟/);
+});
+
+// === 每日限订（默认 2 片次/天，取消返还；GYM_DAILY_ORDER_LIMIT 可调） ===
 
 /** 造一笔当日持有中的锁场记录（created_at 默认 datetime('now') → 计入当日额度） */
 function seedHeldOrder(uniqNo, date) {
@@ -547,14 +629,14 @@ test('部分唯一索引：failed 记录存在时同 uniq_no 可再锁成功', a
 
   // 第一次下单失败 → failed 记录
   kit.stubFetch(kit.lockFlowFetch({ createBody: { code: 1001, msg: '该时段已被预订' } }));
-  const first = await bookingLockService.attemptLock({ intent, slot: slotData, date });
+  const first = await bookingLockService.attemptLockOrder({ intent, items: [slotData], date });
   assert.equal(first.success, false);
   assert.equal(prepare(`SELECT COUNT(*) AS cnt FROM booking_intent_locks WHERE uniq_no = ?`).get(uniqNo).cnt, 1);
 
   // 格子回流后重试：failed 不阻塞，同 uniq_no 再锁成功
   const fetchStub = kit.lockFlowFetch();
   kit.stubFetch(fetchStub);
-  const second = await bookingLockService.attemptLock({ intent, slot: slotData, date });
+  const second = await bookingLockService.attemptLockOrder({ intent, items: [slotData], date });
   assert.equal(second.success, true);
   assert.equal(second.orderId, 'ORD-123');
   assert.deepEqual(fetchStub.orderCalls.map(c => c.kind), ['check', 'create']);
@@ -564,7 +646,7 @@ test('部分唯一索引：failed 记录存在时同 uniq_no 可再锁成功', a
   assert.deepEqual(rows.map(r => r.status).sort(), ['failed', 'locked']);
 });
 
-test('部分唯一索引：已有 locked 记录时 attemptLock 跳过，不重复下单', async () => {
+test('部分唯一索引：已有 locked 记录时 attemptLockOrder 跳过，不重复下单', async () => {
   resetLock();
   kit.configureEnv({ withKey: true });
   const date = kit.datePlus(1);
@@ -575,12 +657,12 @@ test('部分唯一索引：已有 locked 记录时 attemptLock 跳过，不重�
   const fetchStub = kit.lockFlowFetch();
   kit.stubFetch(fetchStub);
 
-  const first = await bookingLockService.attemptLock({ intent, slot: slotData, date });
+  const first = await bookingLockService.attemptLockOrder({ intent, items: [slotData], date });
   assert.equal(first.success, true);
 
-  const second = await bookingLockService.attemptLock({ intent, slot: slotData, date });
+  const second = await bookingLockService.attemptLockOrder({ intent, items: [slotData], date });
   assert.equal(second.success, true);
-  assert.equal(second.skipped, true);
+  assert.equal(second.skipped, 'already_locked');
   assert.equal(second.orderId, 'ORD-123');
 
   // 第二次未触发任何下单请求
@@ -611,7 +693,7 @@ async function seedLockedRow() {
   const intent = makeIntentRow({ durationHours: 1, windowStart: '17:00', windowEnd: '18:00' });
   const uniqNo = `41_${date}_17:00`;
   kit.stubFetch(kit.lockFlowFetch());
-  await bookingLockService.attemptLock({ intent, slot: flatSlot(uniqNo, '17:00', '18:00'), date });
+  await bookingLockService.attemptLockOrder({ intent, items: [flatSlot(uniqNo, '17:00', '18:00')], date });
   return { intent, uniqNo, date };
 }
 
@@ -652,26 +734,22 @@ test('expired 释放额度与 uniq_no 占位：tryFulfill 可立即重抢同格'
   assert.deepEqual(rows.map(r => r.status).sort(), ['expired', 'locked']);
 });
 
-test('锁到即停：整段满足后意图自动停用；部分满足不停用', async () => {
+test('锁到即停：整段满足后意图自动停用；未锁齐不停用', async () => {
   resetLock();
   kit.configureEnv({ withKey: true });
   const date = kit.datePlus(1);
 
-  // 部分满足：18-19 被抢，只锁到 17-18 → 不停用
-  const partial = makeIntentRow();
-  kit.stubFetch(kit.lockFlowFetch({
-    createBody: (body) => body.areaItems[0].uniqNo.endsWith('18:00')
-      ? { code: 1001, msg: '该时段已被预订' }
-      : { code: 200, data: { areaOrderId: 'ORD-P' } }
-  }));
-  const first = await bookingLockService.tryFulfill(partial, date, windowSlots(date, { only: ['17:00', '18:00'] }), intentService.getEnvConfig());
+  // 未锁齐（整单被抢）→ 不停用，继续盯回流
+  const partial = makeIntentRow({ durationHours: 1, windowStart: '17:00', windowEnd: '18:00' });
+  kit.stubFetch(kit.lockFlowFetch({ createBody: { code: 1001, msg: '该时段已被预订' } }));
+  const first = await bookingLockService.tryFulfill(partial, date, windowSlots(date, { only: ['17:00'] }), intentService.getEnvConfig());
   assert.equal(first.fulfilled, false);
   assert.equal(intentService.getIntentById(partial.id).enabled, 1);
 
-  // 回流续锁成功 → 整段满足 → 自动停用，推送注明已暂停
+  // 回流后再触发锁齐 → 自动停用，推送注明已暂停
   kit.stubFetch(kit.lockFlowFetch({ createBody: { code: 200, data: { areaOrderId: 'ORD-C' } } }));
   kit.PUSH_CALLS.length = 0;
-  const second = await bookingLockService.tryFulfill(partial, date, windowSlots(date, { only: ['18:00'] }), intentService.getEnvConfig());
+  const second = await bookingLockService.tryFulfill(partial, date, windowSlots(date, { only: ['17:00'] }), intentService.getEnvConfig());
   assert.equal(second.fulfilled, true);
   assert.equal(intentService.getIntentById(partial.id).enabled, 0);
   assert.match(kit.PUSH_CALLS[0].body.content, /已自动暂停/);
@@ -683,11 +761,11 @@ test('listLockRecords：intentId 过滤 + 倒序分页 + 字段输出', () => {
   resetLock();
   const a = makeIntentRow({ date: kit.datePlus(1) });
   const b = makeIntentRow({ date: kit.datePlus(2) });
-  const insert = (id, intentId, uniqNo) => prepare(
-    `INSERT INTO booking_intent_locks (id, intent_id, uniq_no, date, start_time, end_time, area_id, area_name, order_id, status)
-     VALUES (?, ?, ?, ?, '17:00', '18:00', 41, '1号场', 'ORD-1', 'locked')`)
-    .run(id, intentId, uniqNo, kit.datePlus(1));
-  insert('bil-1', a.id, 'u-1');
+  const insert = (id, intentId, uniqNo, expireAt = null) => prepare(
+    `INSERT INTO booking_intent_locks (id, intent_id, uniq_no, date, start_time, end_time, area_id, area_name, order_id, expire_at, status)
+     VALUES (?, ?, ?, ?, '17:00', '18:00', 41, '1号场', 'ORD-1', ?, 'locked')`)
+    .run(id, intentId, uniqNo, kit.datePlus(1), expireAt);
+  insert('bil-1', a.id, 'u-1', '2026-09-17 14:28:28');
   insert('bil-2', a.id, 'u-2');
   insert('bil-3', b.id, 'u-3');
 
@@ -701,4 +779,9 @@ test('listLockRecords：intentId 过滤 + 倒序分页 + 字段输出', () => {
   assert.equal(filtered.total, 1);
   assert.equal(filtered.list[0].uniqNo, 'u-3');
   assert.equal(filtered.list[0].intentId, b.id);
+
+  // expire_at（UTC）对外输出为 expireAt；历史行为 NULL
+  const aRows = bookingLockService.listLockRecords({ intentId: a.id }).list;
+  assert.equal(aRows.find(l => l.uniqNo === 'u-1').expireAt, '2026-09-17 14:28:28');
+  assert.equal(aRows.find(l => l.uniqNo === 'u-2').expireAt, null);
 });

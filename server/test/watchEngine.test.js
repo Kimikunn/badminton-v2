@@ -452,8 +452,9 @@ test('burst：09:00 起 1s 连拉，出数即止并触发锁场管道', async (t
 
   // 出数即止：第 3 次拉到后不再连拉
   assert.equal(releaseCalls, 3);
-  // 出数即触发（不播种基线）：自动锁场直接下单，连续两小时锁齐
-  assert.deepEqual(fetchStub.orderCalls.map(c => c.kind), ['check', 'create', 'check', 'create']);
+  // 出数即触发（不播种基线）：自动锁场直接下单，连续两小时打包成一笔订单
+  assert.deepEqual(fetchStub.orderCalls.map(c => c.kind), ['check', 'create']);
+  assert.equal(fetchStub.orderCalls[1].body.areaItems.length, 2);
   const locked = prepare(`SELECT * FROM booking_intent_locks WHERE status = 'locked' ORDER BY start_time`).all();
   assert.deepEqual(locked.map(r => `${r.start_time}-${r.end_time}`), ['19:00-20:00', '20:00-21:00']);
   assert.ok(locked.every(r => r.date === release));
@@ -506,6 +507,38 @@ test('burst：无意图覆盖新放票日则不 burst', async (t) => {
 });
 
 // === 引擎级回流：锁到即停 + 回流记账（不跟踪支付） ===
+
+test('整单打包：连打 2 小时在一轮内只下一笔订单（areaItems 2 条、同 order_id）', async () => {
+  resetEngine();
+  kit.configureEnv({ withKey: true });
+  const date = kit.datePlus(1);
+  makeIntent({ mode: 'auto_lock', date, windowStart: '19:00', windowEnd: '21:00', durationHours: 2 });
+  const u19 = `41_${date}_19:00_20:00`;
+  const u20 = `41_${date}_20:00_21:00`;
+  const mk = (available) => (url) => {
+    const d = new URL(String(url)).searchParams.get('date');
+    return d === date
+      ? kit.leaseResponse([
+        kit.slot(u19, '19:00', '20:00', { available }),
+        kit.slot(u20, '20:00', '21:00', { available })
+      ], { date: d })
+      : kit.emptyLease(d);
+  };
+
+  kit.stubFetch(kit.lockFlowFetch({ leaseHandler: mk(false) }));
+  await watchEngine.pollOnce(); // 基线（不可订）
+
+  const fetchStub = kit.lockFlowFetch({ leaseHandler: mk(true) });
+  kit.stubFetch(fetchStub);
+  await watchEngine.pollOnce(); // 两个片次同轮可订 → 一笔订单
+
+  assert.deepEqual(fetchStub.orderCalls.map(c => c.kind), ['check', 'create']);
+  assert.deepEqual(fetchStub.orderCalls[1].body.areaItems.map(i => i.uniqNo), [u19, u20]);
+  const locked = prepare(`SELECT * FROM booking_intent_locks WHERE status = 'locked' ORDER BY start_time`).all();
+  assert.equal(locked.length, 2);
+  assert.ok(locked.every(r => r.order_id === 'ORD-123'));
+  assert.equal(kit.PUSH_CALLS.filter(c => /【已锁场】/.test(c.body.title)).length, 1);
+});
 
 test('锁到即停：整段锁齐意图自动停用；格子回流仅记账 expired，不重锁不推送；手动重开后可再抢', async () => {
   resetEngine();

@@ -1,0 +1,16 @@
+-- 019: booking_intent_locks 加 expire_at（未支付订单自动释放时刻）
+--
+-- 背景（2026-09-17 实测）：createOrder 响应带回 expireTime（如 2026-09-17 22:28:28），
+-- 即未支付订单 5 分钟后自动释放的精确时刻。落库后用于：
+--   1) 锁场成功推送渲染“请于北京时间 HH:MM 前完成支付”（比“约 5 分钟”更准）
+--   2) GET /api/intents/locks 输出 expireAt（UTC），前端可展示支付截止
+--
+-- 时区口径：expireTime 实测为北京时间 → 统一转 UTC 落库（与 created_at 一致），
+-- 渲染层再 +8h 还原为北京时间。
+--
+-- 只加列不回填：历史行 expire_at 为 NULL（推送文案退回“约 5 分钟”口径）。
+--
+-- 本文件仅作迁移内容记录，实际逻辑由 db.js 的 migrateLockExpireAt() 执行
+-- （hasColumn 幂等判断），此处 SQL 不会被原样执行。
+--
+-- ALTER TABLE booking_intent_locks ADD COLUMN expire_at TEXT;

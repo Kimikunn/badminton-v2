@@ -135,6 +135,10 @@ function runMigrationFile(migrationsDir, file) {
     migrateSingleDateIntents();
     return;
   }
+  if (file === '019_lock_expire_at.sql') {
+    migrateLockExpireAt();
+    return;
+  }
 
   const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf-8');
   db.run(sql);
@@ -473,6 +477,16 @@ function migrateSingleDateIntents() {
 
     db.run('ALTER TABLE booking_intents DROP COLUMN weekdays');
   });
+}
+
+/**
+ * 019: booking_intent_locks 加 expire_at（未支付订单自动释放时刻，UTC）。
+ * 只加列不回填：历史行 expire_at 为 NULL（推送文案退回“约 5 分钟”口径）。
+ */
+function migrateLockExpireAt() {
+  if (!hasColumn('booking_intent_locks', 'expire_at')) {
+    db.run('ALTER TABLE booking_intent_locks ADD COLUMN expire_at TEXT');
+  }
 }
 
 /**
