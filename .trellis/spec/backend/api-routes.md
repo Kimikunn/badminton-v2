@@ -95,6 +95,33 @@ From `server/src/services/venueService.js`:
 - Services expose a `formatX(row)` mapper: snake_case columns → camelCase API
   fields, JSON parsed (see `formatVenue`).
 
+## Derived fields & engine state (intents domain)
+
+`/api/intents*` is the only domain that returns **derived lifecycle state**.
+Rules (do not duplicate them elsewhere):
+
+- `booking_intents` is **single-date** (`date` required, no weekly column).
+  Creation rejects `weekdays` with 422; `date < today` is 422; far-future dates
+  are allowed (pre-set monitors activate when the date enters the release window).
+- Every intent carries `status`, produced by the pure function
+  `intentService.deriveIntentStatus(row, ctx)` — **order of its branches is the
+  contract** (see `.trellis/tasks/archive/2026-09/09-17-calendar-day-intents/design.md §3.1`).
+  The controller only assembles `ctx`:
+  - `riskRetryKeys` from `watchEngine.getRiskRetries()` (in-memory; element is
+    `${intentId}|${date}`),
+  - `isFulfilled` from `lockRun.isOccurrenceFulfilled(row, lockedRows)`,
+  - `today` / `windowEnd` / `now` from `venueShared` (`BOOKING_WINDOW_DAYS`, `RUSH_HOUR`).
+- Also returned: `verifyDeadline` (only while `status === 'awaiting_verify'`) and
+  `lastAttempt` (`{ status, errorCode, error, createdAt, attempts }`, derived from
+  `booking_intent_locks`; `errorCode ∈ RISK_CONTROL|SOLDOUT|LIMIT|UNPAID|OTHER`).
+  `expired` is kept as a compatibility alias for `status === 'expired'`.
+- **Day availability is a separate dimension, never folded into `status`**: a day
+  marked in `unavailable_days` is skipped by the engine and rendered as its own
+  marker; there is deliberately no `blocked` status.
+- Filters: `GET /api/intents?from=&to=` (date range), `GET /api/intents/locks?date=`,
+  `GET /api/intents/notifications?date=` (both also keep the older `?intentId=`).
+  Date params are validated with `utils/validators.validateDateText` → 422 when malformed.
+
 ## Error flow
 
 - Expected business errors: throw an `AppError` subclass from
