@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "frontend 层总览：Vue 3 script setup + Pinia + Tailwind 4，纯 JS ESM 无 TS"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "新建 MiniProgramEntry.vue 必须遵守：SFC 结构、props 运行时声明、JSDoc 头注释、优先用 components/ui 原语（Button）"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "新建 useMiniProgramJump 须按 per-call state 模式实现，返回 refs/functions 对象，禁直接 axios"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "落点约定：domain 组件进 components/venue/、composable 进 composables/、常量进 constants/，一律 @ 别名导入"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "客户端风格（ESM/无分号/单引号/中文文案）与验证命令（npm run build + playwright），以及 PWA 缓存注意事项"}
+{"file": ".trellis/tasks/09-18-wx-mp-entry/design.md", "reason": "本任务的跳转机制、失败启发式时序、接入点与待支付数据流契约"}

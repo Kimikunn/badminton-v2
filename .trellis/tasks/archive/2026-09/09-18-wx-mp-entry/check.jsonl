@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "验收要跑 cd client && npm run build 与 npx playwright test，并核对无 console.log / 无裸 button / 设计令牌配色"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "核对新增组件的 SFC 形态、props 声明、JSDoc 与既有 UI 原语用法一致"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "核对 useMiniProgramJump 的 per-call state、返回值形态与清理逻辑符合既有 composable 模式"}
+{"file": ".trellis/spec/guides/index.md", "reason": "验证前过一遍思考触发清单（跨层/复用）：确认本次纯前端改动未引入重复实现，且未误用服务端契约"}
+{"file": ".trellis/tasks/09-18-wx-mp-entry/prd.md", "reason": "逐条对照 AC1-AC7 验收，并把 O1 真机结论回填"}
