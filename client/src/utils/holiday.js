@@ -6,6 +6,9 @@ const NAME_MAP = { 清明: '清明节', 端午: '端午节', 中秋: '中秋节'
 /** 休/班 的界面文案（DaySheet 等详情处使用；字形由 HolidayBadge 组件统一渲染） */
 export const HOLIDAY_TYPE_LABELS = { holiday: '法定假日', workday: '调休补班' }
 
+/** 休/班 的字形（HolidayBadge 与月摘要共用，避免多处写「休」「班」字面量） */
+export const HOLIDAY_TYPE_MARKS = { holiday: '休', workday: '班' }
+
 /**
  * 中国法定节假日 / 调休补班查询（离线，数据随 chinese-days 包内置）。
  *

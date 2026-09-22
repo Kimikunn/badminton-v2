@@ -14,7 +14,7 @@
 import { ref, computed } from 'vue'
 import { ChevronLeft, ChevronRight, X } from 'lucide-vue-next'
 import { MONITOR_CELL_LABELS } from '@/stores/intent'
-import { holidayFor } from '@/utils/holiday'
+import { holidayFor, HOLIDAY_TYPE_MARKS } from '@/utils/holiday'
 import HolidayBadge from '@/components/venue/HolidayBadge.vue'
 
 const props = defineProps({
@@ -125,8 +125,8 @@ const holidaySummary = computed(() => {
   }
   const span = r => (r.start === r.end ? `${r.start}` : `${r.start}–${r.end}`)
   return [
-    ...runs.holiday.map(r => `休 ${span(r)} ${r.name}`),
-    ...runs.workday.map(r => `班 ${span(r)}`),
+    ...runs.holiday.map(r => `${HOLIDAY_TYPE_MARKS.holiday} ${span(r)} ${r.name}`),
+    ...runs.workday.map(r => `${HOLIDAY_TYPE_MARKS.workday} ${span(r)}`),
   ].join(' · ')
 })
 

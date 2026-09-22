@@ -1,4 +1,6 @@
 <script setup>
+import { HOLIDAY_TYPE_MARKS } from '@/utils/holiday'
+
 /**
  * HolidayBadge — 法定假日「休」/ 调休补班「班」徽标
  *
@@ -20,5 +22,5 @@ defineProps({
     :class="size === 'xs'
       ? ['text-[8px] leading-[10px]', type === 'holiday' ? 'text-danger' : 'text-fg-muted']
       : ['w-5 h-5 rounded-md text-2xs text-fg-inverse shrink-0', type === 'holiday' ? 'bg-danger' : 'bg-fg-muted']"
-  >{{ type === 'holiday' ? '休' : '班' }}</span>
+  >{{ HOLIDAY_TYPE_MARKS[type] }}</span>
 </template>
