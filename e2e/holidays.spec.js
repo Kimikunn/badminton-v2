@@ -36,13 +36,37 @@ test.describe('Calendar holidays', () => {
     await expect(summary).toContainText('班 10')
 
     // 所有格子的日期数字同一基线（允许 0.1px 子像素舍入，不能有像素级漂移）
-    const offsets = await page.evaluate(() => [...document.querySelectorAll('.day-cell[data-date]')]
+    const offsets = await page.evaluate(() => [...document.querySelectorAll('[data-date]')]
       .map(c => {
-        const n = c.querySelector('.day-num-fixed')
+        const n = c.querySelector('.day-number')
         return n ? +(n.getBoundingClientRect().y - c.getBoundingClientRect().y).toFixed(2) : null
       })
       .filter(v => v !== null))
     expect(Math.max(...offsets) - Math.min(...offsets)).toBeLessThan(0.1)
+  })
+
+  test('monitor pill stays inside the day square (no 破圈/截断)', async ({ page }) => {
+    await openCalendar(page)
+
+    const pills = page.locator('.day-block .monitor-pill')
+    const count = await pills.count()
+    test.skip(count === 0, '测试库当前月没有监控数据')
+
+    for (let i = 0; i < count; i++) {
+      const pill = pills.nth(i)
+      await expect(pill).toBeVisible()
+      const text = (await pill.textContent()).trim()
+      const state = await pill.evaluate(el => {
+        const cell = el.closest('.day-block')
+        const cr = cell.getBoundingClientRect(), pr = el.getBoundingClientRect()
+        return {
+          inside: pr.left >= cr.left + 1 && pr.right <= cr.right - 1 && pr.top >= cr.top + 1 && pr.bottom <= cr.bottom - 1,
+          truncated: el.scrollWidth > el.clientWidth + 1,
+        }
+      })
+      expect(state.truncated, `pill 被截断：${text}`).toBe(false)
+      expect(state.inside, `pill 越出方块：${text}`).toBe(true)
+    }
   })
 
   test('DaySheet shows legal holiday info', async ({ page }) => {

@@ -20,15 +20,16 @@ holidayFor('YYYY-MM-DD') // → null | { name: string, type: 'holiday' | 'workda
 
 日期串直接透传（不经 `new Date()`），避免时区偏移。
 
-## UI 呈现（2026-09-22 用户定：参考苹果日历）
+## UI 呈现（2026-09-22 用户定：苹果日历式 休/班 角标；同日二改：卡片方块化）
 
-- **休/班 字形与配色只有一处定义**：`components/venue/HolidayBadge.vue`（`size="xs"` 格子 8px 纯文字 / `size="md"` DaySheet 20px 色块）。消费方只传定位类（`.holiday-mark` / `.holiday-chip`），**不要在消费方重写 `type → 休/班/颜色` 映射**。
-- **日历格子只放 8px「休/班」角标**（左上角绝对定位）：不参与 flex 流；**格子内不显示节日名**（写多了整片发红、数字被顶歪，被用户退回）。
-- 格子布局不变式（改动任何一项都要重测）：日期数字绝对居中固定（`.day-num-fixed`，整月同一基线）；角标固定左上；订场圆点固定在数字下方（有监控 pill 时隐藏）；监控 pill 贴底居中；条数角标固定右上（高 11px，避免碰两位数）。
-- 节日名出现在两处（不占格子）：月历下方摘要一行（`.holiday-summary`，固定结构「休 <日期> <名称>」在前、「班 <日期>」在后，如「10月：休 1–7 国庆节 · 班 10」）与 DaySheet 顶部节日行。
-- 名称统一：`holidayFor` 内部用 `NAME_MAP` 把 清明/端午/中秋 补成 …节，保证摘要与 DaySheet 用词一致。
-- 不可用日（X 分支）不叠加休/班角标——X 语义优先。
-- 改动格子布局后用 DOM rect 复测重叠/溢出与数字基线（见 component-guidelines 密集格一节；e2e 已有基线断言）。
+- **单日方块的全部状态收在 `components/venue/DayCell.vue`**：今天（蓝方框）/ 不可用（红方块 + X）/ 休班角标 / 订场圆点 / 监控徽标。`BookingCalendar.vue` 只负责月份与数据装配。（改「蓝圈/红圈」只改 DayCell 一处。）
+- 方块：`bg-surface` 卡片 + `rounded-sm`（项目 `rounded-lg`=20px 会变圆）+ `shadow-sm`；今天用 inset 阴影画蓝框（不改 border 宽度，内容锚点与其它格完全一致）。
+- 内容锚点全部绝对定位，互不挤动：数字 `top: calc(50% + 1px)` 居中（整月同一基线）、角标左上 `3px`、圆点数字下方（有监控 pill 时隐藏）、pill 贴底、条数角标右上。
+- **休/班 字形与配色只有一处定义**：`HolidayBadge.vue`（`size="xs"` 格子 8px 纯文字 / `size="md"` DaySheet 20px 色块）。消费方只传定位类（`.holiday-mark` / `.holiday-chip`），**不要在消费方重写 `type → 休/班/颜色` 映射**。
+- **格子内不显示节日名**（写多了整片发红、数字被顶歪，被用户退回）；节日名在月摘要一行（`.holiday-summary`，固定结构「休 <日期> <名称>」在前、「班 <日期>」在后）与 DaySheet 顶部。
+- **监控 pill 是胶囊且贴底满内宽**（`bottom-0 max-w-full`）：360px 下「已暂停」3 字必须完整且不切方块圆角（e2e 有「不越界/不截断」回归用例）。
+- 不可用日不叠加休/班角标（X 语义优先）；名称统一由 `NAME_MAP`（清明/端午/中秋 → …节）。
+- 改动格子布局后用 DOM rect 复测重叠/溢出/数字基线；e2e 已有基线断言与 pill 约束断言。
 
 ## 判定规则（来自 `chinese-days` 的 `getDayDetail`）
 

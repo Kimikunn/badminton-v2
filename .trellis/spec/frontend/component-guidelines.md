@@ -64,14 +64,17 @@ never a hardcoded value. `--safe-bottom` is
 standalone display-mode a 16px floor applies because some Android Chrome
 versions report the inset as 0 (gesture bar would cover bottom buttons).
 
-### Dense grid cells (month calendar)
+### Dense day squares (month calendar)
 
-At 360px a `.day-cell` is only ~37px wide (`BookingCalendar.vue`): day number
-14px + booking dots 6px + monitor pill 13px already fills the column. Before
-adding another line, budget the flex stack and verify geometry numerically:
-compare `getBoundingClientRect()` of stacked elements for intersection and
-check `scrollHeight === clientHeight` (see `e2e/holidays.spec.js`). Holiday
-`休/班` marks are absolutely positioned so they never shift the day number —
-anything you add that joins the flex flow will de-align that cell from its row.
-If a new mark can collide with existing ones (top-right `.monitor-count`,
-in-flow `.monitor-pill`), stack checks must include it.
+A day square is only ~36px at 360px (`components/venue/DayCell.vue`). All
+content is absolutely anchored so nothing reflows: number `top: calc(50% + 1px)`
+(same baseline in every cell), 休/班 mark top-left `3px`, booking dots under the
+number (hidden when a monitor pill renders), monitor pill flush at the bottom
+(`bottom-0 max-w-full` — full inner width so 3-char labels fit; the capsule's
+rounded ends keep it inside the 8px card radius), count badge top-right.
+Anything added to the flex flow will de-align the cell from its row — keep the
+anchors absolute. Verify with DOM rects (`getBoundingClientRect` intersection +
+`scrollHeight === clientHeight`); at 360 the boxes of mark/number and
+number/pill can be adjacent by ~1px while the ink stays separate, so judge with
+a 3× zoom screenshot as well as the numbers. Regression guards live in
+`e2e/holidays.spec.js` (number baseline + pill inside/!truncated).

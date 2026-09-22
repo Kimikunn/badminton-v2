@@ -20,7 +20,7 @@ defineProps({
   <span
     class="flex items-center justify-center font-semibold"
     :class="size === 'xs'
-      ? ['text-[8px] leading-[10px]', type === 'holiday' ? 'text-danger' : 'text-fg-muted']
+      ? ['text-[8px] leading-[9px]', type === 'holiday' ? 'text-danger' : 'text-fg-muted']
       : ['w-5 h-5 rounded-md text-2xs text-fg-inverse shrink-0', type === 'holiday' ? 'bg-danger' : 'bg-fg-muted']"
   >{{ HOLIDAY_TYPE_MARKS[type] }}</span>
 </template>
