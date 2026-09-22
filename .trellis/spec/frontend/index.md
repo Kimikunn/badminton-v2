@@ -19,6 +19,7 @@ backend. Backend conventions live in the sibling layer
 | [Directory Structure](./directory-structure.md) | `client/src` layout, `@` alias, domain folders | Filled |
 | [Component Guidelines](./component-guidelines.md) | `<script setup>` SFCs, UI primitives, the Sheet+Input+toast form pattern | Filled |
 | [Composable Guidelines](./hook-guidelines.md) | `useX` composables, singleton vs per-call state | Filled |
+| [Date & Holiday Data](./date-holidays.md) | `chinese-days` 节日/调休约定：`holidayFor` 契约、逗号判定、数据范围与升级 | Filled |
 | [State Management](./state-management.md) | Pinia setup stores, lazy `init()`, api client envelope | Filled |
 | [Quality Guidelines](./quality-guidelines.md) | Per-layer style, verification commands, PWA cache caution | Filled |
 | [Type Safety](./type-safety.md) | Plain-JS reality: runtime props, JSDoc, envelope contract | Filled |

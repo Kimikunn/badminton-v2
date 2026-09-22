@@ -14,6 +14,7 @@
 import { ref, computed } from 'vue'
 import { ChevronLeft, ChevronRight, X } from 'lucide-vue-next'
 import { MONITOR_CELL_LABELS } from '@/stores/intent'
+import { holidayFor } from '@/utils/holiday'
 
 const props = defineProps({
   records: { type: Array, default: () => [] },
@@ -76,6 +77,7 @@ const days = computed(() => {
       isPast: key < todayKey.value,
       isUnavailable: props.unavailableDateSet.has(key),
       monitor: props.monitorStatusByDate.get(key) || null,
+      holiday: holidayFor(key),
     })
   }
   return cells
@@ -138,6 +140,7 @@ const monthTotalHours = computed(() => {
         v-for="(cell, i) in days"
         :key="i"
         class="day-cell"
+        :data-date="cell?.key"
         :class="cell ? {
           'cursor-pointer active:scale-95': !cell.isPast && !cell.isUnavailable,
           'cursor-default': cell.isUnavailable,
@@ -166,8 +169,20 @@ const monthTotalHours = computed(() => {
           >
             <!-- 维度一：当天监控条数（>1 才显示）；过去日不渲染 -->
             <span v-if="!cell.isPast && cell.monitor && cell.monitor.count > 1" class="monitor-count">{{ cell.monitor.count }}</span>
-            <span class="leading-none">{{ cell.day }}</span>
-            <span v-if="cell.bookings.length" class="flex gap-0.5 mt-0.5">
+            <!-- 法定节假日（休）/ 调休补班（班）+ 中文名：纯展示，不参与订场与监控逻辑 -->
+            <span
+              v-if="cell.holiday"
+              class="holiday-tag shrink-0"
+              :class="cell.holiday.type === 'holiday' ? 'text-danger' : 'text-fg-muted'"
+            ><span>{{ cell.holiday.type === 'holiday' ? '休' : '班' }}</span>{{ cell.holiday.name }}</span>
+            <!-- 角标（future）会占据右上角 12px，节日 tag 与之同格时把日期数字提到前面，
+                 让 tag 落到第二行（badge 下沿之下），避免文字被角标压盖 -->
+            <span
+              class="leading-none"
+              :class="{ 'order-first': cell.holiday && !cell.isPast && cell.monitor && cell.monitor.count > 1 }"
+            >{{ cell.day }}</span>
+            <!-- 仅「节日 + 会渲染出监控徽标」时让位隐藏圆点；过去日徽标不渲染，圆点必须保留 -->
+            <span v-if="cell.bookings.length && !(cell.holiday && cell.monitor && !cell.isPast)" class="flex gap-0.5 mt-0.5">
               <span
                 v-for="(b, j) in cell.bookings.slice(0, 3)"
                 :key="j"
@@ -228,6 +243,12 @@ const monthTotalHours = computed(() => {
 .day-num.muted {
   @apply text-sm;
   color: oklch(0.55 0.22 25 / 0.4);
+}
+
+/* 节日标记：格子窄，8px 字 + 9px 行高；超长省略而不是撑破格子
+   （节日 + 监控徽标同格时隐藏圆点行，见模板 v-if） */
+.holiday-tag {
+  @apply w-full truncate text-center text-[8px] leading-[9px] font-medium px-[2px];
 }
 
 /* 监控徽标：格子只有 40px 上下，用 9px 字 + 紧凑内边距；超长时省略而不是撑破格子 */

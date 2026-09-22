@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "组件结构与 UI 原语约定：新组件/接线必须遵循的 SFC 与样式规范"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "验证命令、移动端 360px、token 配色、PWA 缓存与禁止模式"}
+{"file": ".trellis/spec/backend/testing.md", "reason": "e2e（Playwright 4 project、测试环境 compose 项目名）与前端无单测 runner 的约定"}
+{"file": ".trellis/tasks/09-22-venue-calendar-holidays/research/chinese-days-api.md", "reason": "chinese-days API 语义/判定规则/数据范围/体积与集成验证结论"}

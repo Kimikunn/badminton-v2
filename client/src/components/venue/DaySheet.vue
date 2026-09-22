@@ -17,6 +17,7 @@
  */
 import { ref, computed, watch } from 'vue'
 import { useIntentStore, MONITOR_STATUS_LABELS, MONITOR_BADGE_VARIANT } from '@/stores/intent'
+import { holidayFor } from '@/utils/holiday'
 import Avatar from '@/components/ui/Avatar.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
@@ -48,6 +49,9 @@ const now = new Date()
 const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 
 const monitors = computed(() => store.monitorsForDate(props.date))
+
+// 节假日信息（纯展示）：法定放假「休」/ 调休补班「班」；普通日与超数据范围（2027+）为 null
+const holiday = computed(() => holidayFor(props.date))
 
 // === 监控表单：日期已由 sheet 决定，只剩时段 / 时长 / 模式 / 片数 ===
 // 场馆可订时段 09:00-21:00（见 CONTEXT.md 可订时段）：开始 09:00-20:00，结束 10:00-21:00
@@ -294,6 +298,21 @@ async function handleMarkUnavailable() {
 
 <template>
   <Sheet :show="show" :title="date" @close="emit('close')">
+    <!-- 节假日：纯展示，放内容区顶部（不可用日也显示，两类日期都能看到） -->
+    <div
+      v-if="holiday"
+      class="flex items-center gap-2 rounded-lg px-3 py-2 mb-3"
+      :class="holiday.type === 'holiday' ? 'bg-danger-subtle' : 'bg-surface-hover'"
+    >
+      <span
+        class="holiday-chip w-5 h-5 rounded-md flex items-center justify-center text-2xs font-semibold text-fg-inverse shrink-0"
+        :class="holiday.type === 'holiday' ? 'bg-danger' : 'bg-fg-muted'"
+      >{{ holiday.type === 'holiday' ? '休' : '班' }}</span>
+      <span class="text-sm font-medium text-fg">{{ holiday.name }}</span>
+      <!-- 说明文字用 fg-secondary：淡红底（danger-subtle）上 fg-muted 实测对比度过低 -->
+      <span class="text-xs text-fg-secondary">{{ holiday.type === 'holiday' ? '法定假日' : '调休补班' }}</span>
+    </div>
+
     <!-- 不可用日：维度二命中，整块替换为提示 + 取消标记入口（监控不生效，也不可达新建） -->
     <div v-if="unavailable" class="text-center py-4 text-sm">
       <X :size="28" class="text-danger mx-auto mb-2" />

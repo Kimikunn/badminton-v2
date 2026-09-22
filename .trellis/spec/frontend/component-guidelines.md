@@ -63,3 +63,14 @@ never a hardcoded value. `--safe-bottom` is
 `max(env(safe-area-inset-bottom, 0px), var(--safe-bottom-min, 0px))`: in
 standalone display-mode a 16px floor applies because some Android Chrome
 versions report the inset as 0 (gesture bar would cover bottom buttons).
+
+### Dense grid cells (month calendar)
+
+At 360px a `.day-cell` is only ~37px wide (`BookingCalendar.vue`): day number
+14px + booking dots 6px + monitor pill 13px already fills the column. Before
+adding another line, budget the flex stack and verify geometry numerically:
+compare `getBoundingClientRect()` of stacked elements for intersection and
+check `scrollHeight === clientHeight` (see `e2e/holidays.spec.js`). Current
+compensations in that cell: booking dots are hidden when a monitor pill
+renders, and the day number goes `order-first` when a `monitor-count` badge
+shares the top row — keep them in mind when touching the markup.

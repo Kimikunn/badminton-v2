@@ -77,21 +77,34 @@ learned from the risk-control retry tests (`watchEngine.test.js`):
 ## E2E — Playwright (repo root)
 
 Location: `e2e/*.spec.js`, config `playwright.config.js`.
-Run: `npx playwright test` (requires the app running at
-`PLAYWRIGHT_BASE_URL`, default `http://localhost:8089`).
+Run: `PLAYWRIGHT_BASE_URL=http://localhost:8090 npx playwright test`.
 
+- Test deployment runs alongside prod on the same host: prod is `:8088`
+  (project `badminton`), test is `:8090` (project `badmintontest`, from
+  `docker-compose.test.yml` which sets `name: badmintontest` and maps
+  `8090:3000`). `playwright.config.js` defaults to `:8089`, so always pass
+  `PLAYWRIGHT_BASE_URL=http://localhost:8090` for the test env. Rebuild it with
+  `docker compose -p badmintontest -f docker-compose.test.yml build app &&
+  docker compose -p badmintontest -f docker-compose.test.yml up -d app`
+  (`-p` must match the compose file's project name; otherwise compose may adopt
+  and recreate the prod container).
 - Four projects: `light` + `dark` at 390×844 (iPhone baseline), plus
   `android-light` + `android-dark` at 360×640 (smallest supported Android
   width) — features are mobile-first; check both color schemes and both
   widths. `smoke.spec.js` asserts no horizontal scroll on every page.
-- Test deployment runs alongside prod on the same host. The prod and test
-  compose files both name their service `app`, so always pass an explicit
-  project name for the test env — `docker compose -p badminton-test -f
-  docker-compose.test.yml ...` — otherwise compose may adopt and recreate
-  the prod container (`badminton`, :8088).
 - Existing specs: `smoke.spec.js`, `season-management.spec.js`,
-  `contrast.spec.js` (text/background contrast), `screenshots.spec.js`
-  (visual record into `e2e/screenshots/`, gitignored).
+  `contrast.spec.js` (text/background contrast — **only scans the rankings
+  page**, see frontend quality guidelines), `screenshots.spec.js` (visual
+  record into `e2e/screenshots/`, gitignored), `holidays.spec.js` (fixed-clock
+  calendar markers).
+- **Date-dependent UI: freeze the clock before `goto`** —
+  `await page.clock.install({ time: new Date('2026-10-01T12:00:00+08:00') })`
+  (see `holidays.spec.js`). Clock fakes timers too; if a page needs timer-driven
+  init, fall back to `page.addInitScript` overriding `Date`.
+- **Dense/stacked layout assertions are numeric**: compare element
+  `getBoundingClientRect()` for intersections and check
+  `scrollHeight === clientHeight` (see `holidays.spec.js` + the calendar cell
+  budget in frontend component guidelines) — don't rely on screenshots alone.
 - ES module syntax (`import { test, expect } from '@playwright/test'`),
   unlike the CommonJS backend tests.
 
