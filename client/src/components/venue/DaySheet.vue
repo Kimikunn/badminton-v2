@@ -17,7 +17,8 @@
  */
 import { ref, computed, watch } from 'vue'
 import { useIntentStore, MONITOR_STATUS_LABELS, MONITOR_BADGE_VARIANT } from '@/stores/intent'
-import { holidayFor } from '@/utils/holiday'
+import { holidayFor, HOLIDAY_TYPE_LABELS } from '@/utils/holiday'
+import HolidayBadge from '@/components/venue/HolidayBadge.vue'
 import Avatar from '@/components/ui/Avatar.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
@@ -304,13 +305,10 @@ async function handleMarkUnavailable() {
       class="flex items-center gap-2 rounded-lg px-3 py-2 mb-3"
       :class="holiday.type === 'holiday' ? 'bg-danger-subtle' : 'bg-surface-hover'"
     >
-      <span
-        class="holiday-chip w-5 h-5 rounded-md flex items-center justify-center text-2xs font-semibold text-fg-inverse shrink-0"
-        :class="holiday.type === 'holiday' ? 'bg-danger' : 'bg-fg-muted'"
-      >{{ holiday.type === 'holiday' ? '休' : '班' }}</span>
+      <HolidayBadge :type="holiday.type" class="holiday-chip" />
       <span class="text-sm font-medium text-fg">{{ holiday.name }}</span>
       <!-- 说明文字用 fg-secondary：淡红底（danger-subtle）上 fg-muted 实测对比度过低 -->
-      <span class="text-xs text-fg-secondary">{{ holiday.type === 'holiday' ? '法定假日' : '调休补班' }}</span>
+      <span class="text-xs text-fg-secondary">{{ HOLIDAY_TYPE_LABELS[holiday.type] }}</span>
     </div>
 
     <!-- 不可用日：维度二命中，整块替换为提示 + 取消标记入口（监控不生效，也不可达新建） -->

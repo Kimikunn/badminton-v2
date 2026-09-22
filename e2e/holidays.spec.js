@@ -30,10 +30,19 @@ test.describe('Calendar holidays', () => {
     await expect(page.locator('[data-date="2026-10-10"] .holiday-mark')).toHaveText('班')
     await expect(page.locator('[data-date="2026-10-08"] .holiday-mark')).toHaveCount(0)
 
-    // 节日名在月摘要里给一次
+    // 节日名在月摘要里给一次：固定结构「休 <日期> <名称>」在前、「班 <日期>」在后
     const summary = page.locator('.holiday-summary')
-    await expect(summary).toContainText('1–7 国庆节')
-    await expect(summary).toContainText('10 补班')
+    await expect(summary).toContainText('休 1–7 国庆节')
+    await expect(summary).toContainText('班 10')
+
+    // 所有格子的日期数字同一基线（允许 0.1px 子像素舍入，不能有像素级漂移）
+    const offsets = await page.evaluate(() => [...document.querySelectorAll('.day-cell[data-date]')]
+      .map(c => {
+        const n = c.querySelector('.day-num-fixed')
+        return n ? +(n.getBoundingClientRect().y - c.getBoundingClientRect().y).toFixed(2) : null
+      })
+      .filter(v => v !== null))
+    expect(Math.max(...offsets) - Math.min(...offsets)).toBeLessThan(0.1)
   })
 
   test('DaySheet shows legal holiday info', async ({ page }) => {

@@ -1,5 +1,11 @@
 import { getDayDetail } from 'chinese-days'
 
+// chinese-days 的中文名不统一（有的带「节」：中秋/清明/端午）→ 统一为通用名，UI 各处用词一致
+const NAME_MAP = { 清明: '清明节', 端午: '端午节', 中秋: '中秋节' }
+
+/** 休/班 的界面文案（DaySheet 等详情处使用；字形由 HolidayBadge 组件统一渲染） */
+export const HOLIDAY_TYPE_LABELS = { holiday: '法定假日', workday: '调休补班' }
+
 /**
  * 中国法定节假日 / 调休补班查询（离线，数据随 chinese-days 包内置）。
  *
@@ -18,5 +24,6 @@ export function holidayFor(dateKey) {
   if (!dateKey) return null
   const detail = getDayDetail(dateKey)
   if (!detail.name.includes(',')) return null
-  return { name: detail.name.split(',')[1], type: detail.work ? 'workday' : 'holiday' }
+  const raw = detail.name.split(',')[1]
+  return { name: NAME_MAP[raw] || raw, type: detail.work ? 'workday' : 'holiday' }
 }

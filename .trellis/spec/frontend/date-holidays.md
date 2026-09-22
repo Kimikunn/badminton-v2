@@ -22,10 +22,13 @@ holidayFor('YYYY-MM-DD') // → null | { name: string, type: 'holiday' | 'workda
 
 ## UI 呈现（2026-09-22 用户定：参考苹果日历）
 
-- **日历格子只放 8px「休/班」角标**（`.holiday-mark`，绝对定位在左上角）：不参与 flex 流，日期数字与普通格保持同一基线；**格子内不显示节日名**（写多了整片发红、数字被顶歪，被用户退回）。
-- 节日名出现在两处（不占格子）：月历下方摘要一行（`.holiday-summary`，如「10月：1–7 国庆节 · 10 补班」）与 DaySheet 顶部节日行。
+- **休/班 字形与配色只有一处定义**：`components/venue/HolidayBadge.vue`（`size="xs"` 格子 8px 纯文字 / `size="md"` DaySheet 20px 色块）。消费方只传定位类（`.holiday-mark` / `.holiday-chip`），**不要在消费方重写 `type → 休/班/颜色` 映射**。
+- **日历格子只放 8px「休/班」角标**（左上角绝对定位）：不参与 flex 流；**格子内不显示节日名**（写多了整片发红、数字被顶歪，被用户退回）。
+- 格子布局不变式（改动任何一项都要重测）：日期数字绝对居中固定（`.day-num-fixed`，整月同一基线）；角标固定左上；订场圆点固定在数字下方（有监控 pill 时隐藏）；监控 pill 贴底居中；条数角标固定右上（高 11px，避免碰两位数）。
+- 节日名出现在两处（不占格子）：月历下方摘要一行（`.holiday-summary`，固定结构「休 <日期> <名称>」在前、「班 <日期>」在后，如「10月：休 1–7 国庆节 · 班 10」）与 DaySheet 顶部节日行。
+- 名称统一：`holidayFor` 内部用 `NAME_MAP` 把 清明/端午/中秋 补成 …节，保证摘要与 DaySheet 用词一致。
 - 不可用日（X 分支）不叠加休/班角标——X 语义优先。
-- 角标不与右上角 `.monitor-count`、监控 pill 重叠（左上/右上分开）；改动格子布局后用 DOM rect 复测（见 component-guidelines 密集格一节）。
+- 改动格子布局后用 DOM rect 复测重叠/溢出与数字基线（见 component-guidelines 密集格一节；e2e 已有基线断言）。
 
 ## 判定规则（来自 `chinese-days` 的 `getDayDetail`）
 

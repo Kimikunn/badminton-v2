@@ -15,6 +15,7 @@ import { ref, computed } from 'vue'
 import { ChevronLeft, ChevronRight, X } from 'lucide-vue-next'
 import { MONITOR_CELL_LABELS } from '@/stores/intent'
 import { holidayFor } from '@/utils/holiday'
+import HolidayBadge from '@/components/venue/HolidayBadge.vue'
 
 const props = defineProps({
   records: { type: Array, default: () => [] },
@@ -110,27 +111,23 @@ const monthTotalHours = computed(() => {
   return total
 })
 
-// 本月节日摘要：格子只留 休/班 角标（参考苹果日历），节日名在这里与 DaySheet 呈现
+/* 本月节日摘要：格子只显示 休/班 角标，节日名在这里给一次（点某天看 DaySheet 详情）
+   固定顺序：先全部「休」（按日期），再全部「班」——不随月份变 */
 const holidaySummary = computed(() => {
-  const parts = []
-  let run = null
-  const flush = () => {
-    if (!run) return
-    const span = run.start === run.end ? `${run.start}` : `${run.start}–${run.end}`
-    parts.push(run.type === 'holiday' ? `${span} ${run.name}` : `${span} 补班`)
-    run = null
-  }
+  const runs = { holiday: [], workday: [] }
   for (const cell of days.value) {
-    if (!cell) continue
-    const holiday = cell.holiday
-    const extendsRun = run && holiday && run.type === holiday.type && run.end === cell.day - 1
-      && (holiday.type !== 'holiday' || run.name === holiday.name)
-    if (extendsRun) { run.end = cell.day; continue }
-    flush()
-    if (holiday) run = { start: cell.day, end: cell.day, name: holiday.name, type: holiday.type }
+    if (!cell || !cell.holiday) continue
+    const { type, name } = cell.holiday
+    const last = runs[type][runs[type].length - 1]
+    const sameBlock = last && last.end === cell.day - 1 && (type !== 'holiday' || last.name === name)
+    if (sameBlock) last.end = cell.day
+    else runs[type].push({ start: cell.day, end: cell.day, name })
   }
-  flush()
-  return parts.join(' · ')
+  const span = r => (r.start === r.end ? `${r.start}` : `${r.start}–${r.end}`)
+  return [
+    ...runs.holiday.map(r => `休 ${span(r)} ${r.name}`),
+    ...runs.workday.map(r => `班 ${span(r)}`),
+  ].join(' · ')
 })
 
 // 图例只解释两个**日期维度**的标记（订场圆点 / 不可用 X）；监控状态不列进来
@@ -192,15 +189,18 @@ const holidaySummary = computed(() => {
           >
             <!-- 维度一：当天监控条数（>1 才显示）；过去日不渲染 -->
             <span v-if="!cell.isPast && cell.monitor && cell.monitor.count > 1" class="monitor-count">{{ cell.monitor.count }}</span>
-            <!-- 法定节假日「休」/ 调休补班「班」角标：左上角小字，绝对定位不参与布局，
-                 数字与普通格完全对齐（参考苹果日历：格子不放节日名，名字见月摘要与 DaySheet） -->
-            <span
+            <!-- 休/班 角标：固定左上角（参考苹果日历：格子不放节日名，名字见月摘要与 DaySheet；过去日随格子变淡） -->
+            <HolidayBadge
               v-if="cell.holiday"
+              :type="cell.holiday.type"
+              size="xs"
               class="holiday-mark"
-              :class="cell.holiday.type === 'holiday' ? 'text-danger' : 'text-fg-muted'"
-            >{{ cell.holiday.type === 'holiday' ? '休' : '班' }}</span>
-            <span class="leading-none">{{ cell.day }}</span>
-            <span v-if="cell.bookings.length" class="flex gap-0.5 mt-0.5">
+              :class="{ 'opacity-50': cell.isPast }"
+            />
+            <!-- 日期数字：固定居中，位置与角标/圆点/徽标无关 → 整月所有格子同一基线 -->
+            <span class="day-num-fixed leading-none">{{ cell.day }}</span>
+            <!-- 订场圆点：数字下方固定位置；有监控徽标时让位（徽标信息优先级更高） -->
+            <span v-if="cell.bookings.length && !(cell.monitor && !cell.isPast)" class="day-dots">
               <span
                 v-for="(b, j) in cell.bookings.slice(0, 3)"
                 :key="j"
@@ -240,7 +240,18 @@ const holidaySummary = computed(() => {
 }
 
 .day-normal {
-  @apply w-full h-full rounded-lg flex flex-col items-center justify-center;
+  @apply w-full h-full rounded-lg;
+}
+
+/* 日期数字：固定居中（绝对定位），不随角标/圆点/徽标移动 → 整月同一基线 */
+.day-num-fixed {
+  @apply absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2;
+}
+
+/* 订场圆点：数字行盒下方固定 2px */
+.day-dots {
+  @apply absolute left-1/2 -translate-x-1/2 flex gap-0.5;
+  top: calc(50% + 9px);
 }
 
 .past-cell {
@@ -266,17 +277,17 @@ const holidaySummary = computed(() => {
   color: oklch(0.55 0.22 25 / 0.4);
 }
 
-/* 休/班 角标：左上角 8px 小字，绝对定位；不占数字位置，格子数字与无假期格保持一行对齐 */
+/* 休/班 角标：只负责定位；字形/配色由 HolidayBadge 组件统一 */
 .holiday-mark {
-  @apply absolute top-0 left-0 px-[1px] text-[8px] leading-[10px] font-semibold;
+  @apply absolute top-0 left-0 px-[1px];
 }
 
-/* 监控徽标：格子只有 40px 上下，用 9px 字 + 紧凑内边距；超长时省略而不是撑破格子 */
+/* 监控徽标：固定贴格子底部居中，不挤动数字与圆点 */
 .monitor-pill {
-  @apply mt-0.5 max-w-full truncate rounded-full px-[3px] text-[9px] font-medium leading-[13px];
+  @apply absolute bottom-0 left-1/2 -translate-x-1/2 max-w-full truncate rounded-full px-[3px] text-[9px] font-medium leading-[11px];
 }
-/* 条数角标：多条才显示，放在格子右上角，不跟状态文字抢宽度 */
+/* 条数角标：多条才显示，右上角；限高 11px 避免与居中的两位数字行盒相碰 */
 .monitor-count {
-  @apply absolute top-0 right-0 min-w-3 h-3 px-[3px] rounded-full bg-fg text-fg-inverse text-[8px] font-semibold leading-3 flex items-center justify-center;
+  @apply absolute top-0 right-0 min-w-[11px] h-[11px] px-[3px] rounded-full bg-fg text-fg-inverse text-[8px] font-semibold leading-[11px] flex items-center justify-center;
 }
 </style>
