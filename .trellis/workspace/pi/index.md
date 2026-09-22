@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 16
-- **Last Active**: 2026-09-17
+- **Total Sessions**: 17
+- **Last Active**: 2026-09-22
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~588 | Active |
+| `journal-1.md` | ~621 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 17 | 2026-09-22 | 订场日历节假日（chinese-days 休/班 + 节日名） | `f242db6` | `master` |
 | 16 | 2026-09-17 | 图例校准收尾：彻底移除图例里的监控状态 | `ebd6afd` | `master` |
 | 15 | 2026-09-17 | 锁场整单打包：一笔订单装整段片次（绕开未支付限制）+ 场馆反馈治理 | `6d598be`, `fb10fa0`, `8833adc` | `master` |
 | 14 | 2026-09-17 | 按天监控收尾：默认值、同段不重复、图例校准与生产上线 | `e8df3a6`, `0b0bb96`, `2e3494c`, `5419770` | `master` |

@@ -586,3 +586,36 @@ standard/s2/s3 的 calcRankings 只按大分排序的 bug 修复：新增共享�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: 订场日历节假日（chinese-days 休/班 + 节日名）
+
+**Date**: 2026-09-22
+**Task**: 订场日历节假日（chinese-days 休/班 + 节日名）
+**Branch**: `master`
+
+### Summary
+
+订场日历与 DaySheet 显示中国法定节假日/调休：新增 client/src/utils/holiday.js（holidayFor，name 含逗号判定）、BookingCalendar 格子休/班 tag + DaySheet 节日行；chinese-days 离线包；e2e/holidays.spec.js 固定时钟 2026-10-01，全量 60 passed；360px 密集格 0 重叠 0 溢出，DaySheet 对比度修至 WCAG AA；spec 新增 date-holidays 并补充着色底对比度与 e2e 时钟/几何约定。生产部署（Step 7）待确认。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f242db6` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
