@@ -110,6 +110,29 @@ const monthTotalHours = computed(() => {
   return total
 })
 
+// 本月节日摘要：格子只留 休/班 角标（参考苹果日历），节日名在这里与 DaySheet 呈现
+const holidaySummary = computed(() => {
+  const parts = []
+  let run = null
+  const flush = () => {
+    if (!run) return
+    const span = run.start === run.end ? `${run.start}` : `${run.start}–${run.end}`
+    parts.push(run.type === 'holiday' ? `${span} ${run.name}` : `${span} 补班`)
+    run = null
+  }
+  for (const cell of days.value) {
+    if (!cell) continue
+    const holiday = cell.holiday
+    const extendsRun = run && holiday && run.type === holiday.type && run.end === cell.day - 1
+      && (holiday.type !== 'holiday' || run.name === holiday.name)
+    if (extendsRun) { run.end = cell.day; continue }
+    flush()
+    if (holiday) run = { start: cell.day, end: cell.day, name: holiday.name, type: holiday.type }
+  }
+  flush()
+  return parts.join(' · ')
+})
+
 // 图例只解释两个**日期维度**的标记（订场圆点 / 不可用 X）；监控状态不列进来
 // （2026-09-17 用户定：格子上的监控徽标自己会说话，图例里堆状态只是噪音）
 </script>
@@ -169,20 +192,15 @@ const monthTotalHours = computed(() => {
           >
             <!-- 维度一：当天监控条数（>1 才显示）；过去日不渲染 -->
             <span v-if="!cell.isPast && cell.monitor && cell.monitor.count > 1" class="monitor-count">{{ cell.monitor.count }}</span>
-            <!-- 法定节假日（休）/ 调休补班（班）+ 中文名：纯展示，不参与订场与监控逻辑 -->
+            <!-- 法定节假日「休」/ 调休补班「班」角标：左上角小字，绝对定位不参与布局，
+                 数字与普通格完全对齐（参考苹果日历：格子不放节日名，名字见月摘要与 DaySheet） -->
             <span
               v-if="cell.holiday"
-              class="holiday-tag shrink-0"
+              class="holiday-mark"
               :class="cell.holiday.type === 'holiday' ? 'text-danger' : 'text-fg-muted'"
-            ><span>{{ cell.holiday.type === 'holiday' ? '休' : '班' }}</span>{{ cell.holiday.name }}</span>
-            <!-- 角标（future）会占据右上角 12px，节日 tag 与之同格时把日期数字提到前面，
-                 让 tag 落到第二行（badge 下沿之下），避免文字被角标压盖 -->
-            <span
-              class="leading-none"
-              :class="{ 'order-first': cell.holiday && !cell.isPast && cell.monitor && cell.monitor.count > 1 }"
-            >{{ cell.day }}</span>
-            <!-- 仅「节日 + 会渲染出监控徽标」时让位隐藏圆点；过去日徽标不渲染，圆点必须保留 -->
-            <span v-if="cell.bookings.length && !(cell.holiday && cell.monitor && !cell.isPast)" class="flex gap-0.5 mt-0.5">
+            >{{ cell.holiday.type === 'holiday' ? '休' : '班' }}</span>
+            <span class="leading-none">{{ cell.day }}</span>
+            <span v-if="cell.bookings.length" class="flex gap-0.5 mt-0.5">
               <span
                 v-for="(b, j) in cell.bookings.slice(0, 3)"
                 :key="j"
@@ -208,6 +226,9 @@ const monthTotalHours = computed(() => {
       </div>
       <span v-if="monthTotalHours" class="font-medium text-fg-secondary">{{ monthTotalHours }}h</span>
     </div>
+
+    <!-- 本月节日摘要：格子只显示 休/班 角标，节日名在这里给一次（点某天看 DaySheet 详情） -->
+    <div v-if="holidaySummary" class="holiday-summary text-2xs text-fg-muted px-1">{{ month }}月：{{ holidaySummary }}</div>
   </div>
 </template>
 
@@ -245,10 +266,9 @@ const monthTotalHours = computed(() => {
   color: oklch(0.55 0.22 25 / 0.4);
 }
 
-/* 节日标记：格子窄，8px 字 + 9px 行高；超长省略而不是撑破格子
-   （节日 + 监控徽标同格时隐藏圆点行，见模板 v-if） */
-.holiday-tag {
-  @apply w-full truncate text-center text-[8px] leading-[9px] font-medium px-[2px];
+/* 休/班 角标：左上角 8px 小字，绝对定位；不占数字位置，格子数字与无假期格保持一行对齐 */
+.holiday-mark {
+  @apply absolute top-0 left-0 px-[1px] text-[8px] leading-[10px] font-semibold;
 }
 
 /* 监控徽标：格子只有 40px 上下，用 9px 字 + 紧凑内边距；超长时省略而不是撑破格子 */

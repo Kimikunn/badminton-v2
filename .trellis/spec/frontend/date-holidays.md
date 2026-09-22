@@ -20,6 +20,13 @@ holidayFor('YYYY-MM-DD') // → null | { name: string, type: 'holiday' | 'workda
 
 日期串直接透传（不经 `new Date()`），避免时区偏移。
 
+## UI 呈现（2026-09-22 用户定：参考苹果日历）
+
+- **日历格子只放 8px「休/班」角标**（`.holiday-mark`，绝对定位在左上角）：不参与 flex 流，日期数字与普通格保持同一基线；**格子内不显示节日名**（写多了整片发红、数字被顶歪，被用户退回）。
+- 节日名出现在两处（不占格子）：月历下方摘要一行（`.holiday-summary`，如「10月：1–7 国庆节 · 10 补班」）与 DaySheet 顶部节日行。
+- 不可用日（X 分支）不叠加休/班角标——X 语义优先。
+- 角标不与右上角 `.monitor-count`、监控 pill 重叠（左上/右上分开）；改动格子布局后用 DOM rect 复测（见 component-guidelines 密集格一节）。
+
 ## 判定规则（来自 `chinese-days` 的 `getDayDetail`）
 
 | `name` 形态 | 含义 | 例 |

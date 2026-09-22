@@ -70,7 +70,8 @@ At 360px a `.day-cell` is only ~37px wide (`BookingCalendar.vue`): day number
 14px + booking dots 6px + monitor pill 13px already fills the column. Before
 adding another line, budget the flex stack and verify geometry numerically:
 compare `getBoundingClientRect()` of stacked elements for intersection and
-check `scrollHeight === clientHeight` (see `e2e/holidays.spec.js`). Current
-compensations in that cell: booking dots are hidden when a monitor pill
-renders, and the day number goes `order-first` when a `monitor-count` badge
-shares the top row — keep them in mind when touching the markup.
+check `scrollHeight === clientHeight` (see `e2e/holidays.spec.js`). Holiday
+`休/班` marks are absolutely positioned so they never shift the day number —
+anything you add that joins the flex flow will de-align that cell from its row.
+If a new mark can collide with existing ones (top-right `.monitor-count`,
+in-flow `.monitor-pill`), stack checks must include it.

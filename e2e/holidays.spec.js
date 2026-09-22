@@ -25,15 +25,15 @@ test.describe('Calendar holidays', () => {
   test('holiday / makeup workday / normal day cells', async ({ page }) => {
     await openCalendar(page)
 
-    const nationalDay = page.locator('[data-date="2026-10-01"]')
-    await expect(nationalDay.locator('.holiday-tag')).toContainText('国庆节')
-    await expect(nationalDay.locator('.holiday-tag')).toContainText('休')
+    // 格子只放 休/班 角标（参考苹果日历），不放节日名
+    await expect(page.locator('[data-date="2026-10-01"] .holiday-mark')).toHaveText('休')
+    await expect(page.locator('[data-date="2026-10-10"] .holiday-mark')).toHaveText('班')
+    await expect(page.locator('[data-date="2026-10-08"] .holiday-mark')).toHaveCount(0)
 
-    const makeupWorkday = page.locator('[data-date="2026-10-10"]')
-    await expect(makeupWorkday.locator('.holiday-tag')).toContainText('国庆节')
-    await expect(makeupWorkday.locator('.holiday-tag')).toContainText('班')
-
-    await expect(page.locator('[data-date="2026-10-08"] .holiday-tag')).toHaveCount(0)
+    // 节日名在月摘要里给一次
+    const summary = page.locator('.holiday-summary')
+    await expect(summary).toContainText('1–7 国庆节')
+    await expect(summary).toContainText('10 补班')
   })
 
   test('DaySheet shows legal holiday info', async ({ page }) => {
@@ -68,6 +68,7 @@ test.describe('Calendar holidays', () => {
 
     const outOfRange = page.locator('[data-date="2027-01-05"]')
     await expect(outOfRange).toBeVisible()
-    await expect(outOfRange.locator('.holiday-tag')).toHaveCount(0)
+    await expect(outOfRange.locator('.holiday-mark')).toHaveCount(0)
+    await expect(page.locator('.holiday-summary')).toHaveCount(0)
   })
 })
