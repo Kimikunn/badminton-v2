@@ -20,16 +20,17 @@ holidayFor('YYYY-MM-DD') // → null | { name: string, type: 'holiday' | 'workda
 
 日期串直接透传（不经 `new Date()`），避免时区偏移。
 
-## UI 呈现（2026-09-22 用户定：苹果日历式 休/班 角标；同日二改：卡片方块化）
+## UI 呈现（2026-09-22 苹果日历式角标；2026-09-23 三改：换 Vant 4 Calendar）
 
-- **单日方块的全部状态收在 `components/venue/DayCell.vue`**：今天（蓝方框）/ 不可用（红方块 + X）/ 休班角标 / 订场圆点 / 监控徽标。`BookingCalendar.vue` 只负责月份与数据装配。（改「蓝圈/红圈」只改 DayCell 一处。）
-- 方块：`bg-surface` 卡片 + `rounded-sm`（项目 `rounded-lg`=20px 会变圆）+ `shadow-sm`；今天用 inset 阴影画蓝框（不改 border 宽度，内容锚点与其它格完全一致）。
-- 内容锚点全部绝对定位，互不挤动：数字 `top: calc(50% + 1px)` 居中（整月同一基线）、角标左上 `3px`、圆点数字下方（有监控 pill 时隐藏）、pill 贴底、条数角标右上。
-- **休/班 字形与配色只有一处定义**：`HolidayBadge.vue`（`size="xs"` 格子 8px 纯文字 / `size="md"` DaySheet 20px 色块）。消费方只传定位类（`.holiday-mark` / `.holiday-chip`），**不要在消费方重写 `type → 休/班/颜色` 映射**。
-- **格子内不显示节日名**（写多了整片发红、数字被顶歪，被用户退回）；节日名在月摘要一行（`.holiday-summary`，固定结构「休 <日期> <名称>」在前、「班 <日期>」在后）与 DaySheet 顶部。
-- **监控 pill 是胶囊且贴底满内宽**（`bottom-0 max-w-full`）：360px 下「已暂停」3 字必须完整且不切方块圆角（e2e 有「不越界/不截断」回归用例）。
-- 不可用日不叠加休/班角标（X 语义优先）；名称统一由 `NAME_MAP`（清明/端午/中秋 → …节）。
-- 改动格子布局后用 DOM rect 复测重叠/溢出/数字基线；e2e 已有基线断言与 pill 约束断言。
+- **日历骨架由 Vant Calendar 承担**（`BookingCalendar.vue` 内嵌 `poppable=false`，行高 64px）：网格/星期/月份标题/触控滚动都是组件库的；自研格子组件 DayCell 已删除。
+- 领域标记放 Vant 的逐日定制位：`formatter`（不可用 → `type:'disabled'` + `.day-unavail`；今天/过去 → className）＋ `#top-info`（HolidayBadge xs 休/班；不可用日 X）＋ `#bottom-info`（监控胶囊或订场圆点）＋ `#text`（数字包 `<span :data-date>`，e2e 锚点 + 今天 accent 环钩子）。
+- **休/班 字形与配色只有一处定义**：`HolidayBadge.vue`（xs=格子 / md=DaySheet 色块）；消费方只传定位类（`.holiday-mark` / `.holiday-chip`），不要在消费方重写映射。
+- **格子内不显示节日名**；名字在月摘要（`utils/holiday.js` 的 `monthHolidaySummary(year, month)`，休在前班在后）与 DaySheet。
+- **可见月跟踪**：不用 `@monthShow`（Vant 只对首次进入视口的月触发，回滚不再发）；用 IntersectionObserver 监听 `.van-calendar__month` 区块、取可见比例最大的月驱动摘要与当月时长。
+- **Vant 的 `showMark` 是月份背景水印**（不是「今天」标记）——必须 `:show-mark="false"`（深色下会以巨型浅灰月份数字压住日期，实测对比度 1.43:1）；今天用 `.day-today .day-number` 的 accent 色环。
+- 交互：点日期与点不可用日（`clickDisabledDate`）走同一个 `select-day` 上抛；过去日忽略；select 后 `calendarRef.reset(null)` 清选中态（本日历是「打开面板」不是「选日期」）。
+- 不可用日：红底（danger-subtle 8px 圆角）+ X（danger、opacity 0.7，L 差 ≥ 0.3）；过去日整格 0.45 淡化。
+- 改动后验证：`e2e/holidays.spec.js`（固定时钟）+ DOM rect 审计（越界/截断/上下排重叠）+ 深色下确认无水印残留。
 
 ## 判定规则（来自 `chinese-days` 的 `getDayDetail`）
 

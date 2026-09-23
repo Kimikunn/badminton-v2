@@ -64,17 +64,22 @@ never a hardcoded value. `--safe-bottom` is
 standalone display-mode a 16px floor applies because some Android Chrome
 versions report the inset as 0 (gesture bar would cover bottom buttons).
 
-### Dense day squares (month calendar)
+### Calendar day cells (Vant)
 
-A day square is only ~36px at 360px (`components/venue/DayCell.vue`). All
-content is absolutely anchored so nothing reflows: number `top: calc(50% + 1px)`
-(same baseline in every cell), 休/班 mark top-left `3px`, booking dots under the
-number (hidden when a monitor pill renders), monitor pill flush at the bottom
-(`bottom-0 max-w-full` — full inner width so 3-char labels fit; the capsule's
-rounded ends keep it inside the 8px card radius), count badge top-right.
-Anything added to the flex flow will de-align the cell from its row — keep the
-anchors absolute. Verify with DOM rects (`getBoundingClientRect` intersection +
-`scrollHeight === clientHeight`); at 360 the boxes of mark/number and
-number/pill can be adjacent by ~1px while the ink stays separate, so judge with
-a 3× zoom screenshot as well as the numbers. Regression guards live in
-`e2e/holidays.spec.js` (number baseline + pill inside/!truncated).
+The venue calendar is Vant 4's `Calendar` (`poppable=false`, rowHeight 64px)
+wrapped by `BookingCalendar.vue`. Day states go through the official
+extension points: `formatter` (disabled/className per day), `#top-info` /
+`#bottom-info` / `#text` slots (holiday badge, monitor pill, booking dots,
+`data-date`-tagged number). When touching it:
+
+- All domain markers must stay inside their slot boxes — verify with DOM
+  rects (inside-check + `scrollWidth <= clientWidth + 1` for the pill) across
+  390/360 × light/dark; the busiest cell is 「休 + 两位数 + 条数角标 + 监控胶囊」
+  (fixed clock 2026-10-01).
+- Do not enable `show-mark` without setting `--van-calendar-month-mark-color`
+  for dark mode: it is a giant month watermark that crushes day-number
+  contrast (measured 1.43:1). The today indicator is the accent ring on
+  `.day-today .day-number` instead.
+- The current-month summary uses an IntersectionObserver over
+  `.van-calendar__month` sections — not Vant's `monthShow` event, which fires
+  once per month and never re-emits when scrolling back.

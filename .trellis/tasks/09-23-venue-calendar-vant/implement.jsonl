@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "组件/SFC 规范与 UI 原语约定"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "验证命令、token 配色、360px、PWA 缓存与禁止模式"}
+{"file": ".trellis/spec/backend/testing.md", "reason": "e2e 运行方式、测试环境 compose 项目名、4 个 project"}
+{"file": ".trellis/tasks/09-23-venue-calendar-vant/research/vant-calendar.md", "reason": "Vant Calendar API 实测（插槽/事件/formatter/主题变量）与预检结论"}
