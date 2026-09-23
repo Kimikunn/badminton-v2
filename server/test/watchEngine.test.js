@@ -374,6 +374,39 @@ test('连续两轮全部日期拉取失败 → 告警一次不重复，恢复后
   assert.equal(notifiedFlags().p, 0);
 });
 
+test('告警后中间轮全部 403/失败但无一成功：不清零标记，不重复告警（回归：网络被间歇性阻断时反复推送）', async (t) => {
+  resetEngine();
+  kit.configureEnv();
+  makeIntent();
+  mockTime(t, 8, 0, { mockTimeout: true });
+
+  // 第 1、2 轮全失败：告警一次，标记置 1
+  kit.stubFetch(kit.leaseAndPushFetch(async () => { throw new Error('network down'); }));
+  await watchEngine.tick();
+  await advancePastPollInterval(t);
+  await watchEngine.tick();
+  assert.equal(notifiedFlags().p, 1);
+  assert.equal(kit.PUSH_CALLS.length, 1);
+
+  // 第 3 轮全 403（该日尚未开售）：网络虽通但没拉到任何有效数据，不视为恢复
+  kit.stubFetch(kit.leaseAndPushFetch(() => ({ ok: true, status: 200, json: async () => ({ code: 403 }) })));
+  await advancePastPollInterval(t);
+  await watchEngine.tick();
+  assert.equal(notifiedFlags().p, 1, '403-only 轮不应清零告警标记');
+
+  // 第 4 轮再次全失败：没有恢复过，不产生重复告警
+  kit.stubFetch(kit.leaseAndPushFetch(async () => { throw new Error('network down'); }));
+  await advancePastPollInterval(t);
+  await watchEngine.tick();
+  assert.equal(kit.PUSH_CALLS.length, 1);
+
+  // 真正恢复（拉到有效数据）才清零
+  kit.stubFetch(kit.leaseAndPushFetch(() => kit.leaseResponse([])));
+  await advancePastPollInterval(t);
+  await watchEngine.tick();
+  assert.equal(notifiedFlags().p, 0);
+});
+
 test('有 auto_lock 意图但签名私钥未配置 → 每进程告警一次，锁场静默跳过', async (t) => {
   resetEngine();
   kit.configureEnv({ withKey: false });

@@ -540,13 +540,16 @@ async function runTick() {
     intentService.setTokenInvalidNotified(false);
   }
 
-  // 拉取连败告警：全部日期失败累计，达到阈值提醒一次；有成功即清零恢复
+  // 拉取连败告警：全部日期失败累计，达到阈值提醒一次；至少一个日期拉到有效
+  // 数据（hadSuccess）才清零恢复。注意 403-only / 非全失败的中间轮既不计失败
+  // 也不清零——否则外网被间歇性阻断时（部分轮 403/部分超时）告警标记会被误清，
+  // 导致"告警 → 误判恢复 → 再告警"反复推送。
   if (due.length > 0 && failedFetches === due.length) {
     consecutivePollFailures += 1;
     if (consecutivePollFailures >= POLL_FAILURE_ALERT_THRESHOLD) {
       await notifyPollFailure(env, failedFetches);
     }
-  } else if (due.length > 0) {
+  } else if (hadSuccess) {
     consecutivePollFailures = 0;
     if (flags.pollFailureNotified) {
       intentService.setPollFailureNotified(false);
