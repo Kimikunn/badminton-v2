@@ -45,7 +45,8 @@ let stopped = true;
 let ticking = false;
 let bursting = false;
 
-// 取数计划：date → { date, mode: 'normal' | 'burst' | 'bursting', nextFetchAt }
+// 取数计划：date → { date, mode: 'normal' | 'burst' | 'bursting', nextFetchAt, burstDoneAt }
+// burstDoneAt：当天 burst 已完结（出数即止或连续失败告警后放弃），不再重复进入 burst
 const plan = new Map();
 
 // 重新启用的意图待评估集合：diff 只报"新出现"的可订，重开意图时已在架的
@@ -413,6 +414,7 @@ async function maybeStartBurst(env, intents) {
   const date = releaseDate();
   const entry = plan.get(date);
   if (!entry || entry.mode !== 'normal' || bursting) return;
+  if (entry.burstDoneAt) return; // 当天 burst 已完结：出数即止后并入常规节奏，不重复 burst
   if (new Date().getHours() < RUSH_HOUR) return;
   // 没有意图覆盖新放票日则无需 burst（常规节奏够用了）
   if (!intents.some(i => i.dates.has(date))) return;
@@ -433,6 +435,7 @@ async function maybeStartBurst(env, intents) {
           entry.mode = 'normal';
           entry.nextFetchAt = Date.now() + env.pollIntervalSec * 1000;
           logger.info(`watchEngine.burst - ${date} 第 ${i + 1} 次拉取到放票数据，转入常规节奏`);
+          entry.burstDoneAt = Date.now();
           return;
         }
         logger.info(`watchEngine.burst - ${date} 第 ${i + 1} 次拉取尚无场次数据，稍后重试`);
@@ -443,6 +446,7 @@ async function maybeStartBurst(env, intents) {
     }
     // 出数失败：告警一次，并入常规节奏继续等
     logger.error(`watchEngine.burst - ${date} 放票数据连续 ${BURST_MAX_ATTEMPTS} 次拉取失败，本轮放弃`);
+    entry.burstDoneAt = Date.now();
     await notifyWith(env, '订场监控告警',
       `**9 点抢场失败**：${date} 放票数据连续 ${BURST_MAX_ATTEMPTS} 次拉取失败，请检查网络或场馆接口状态，必要时手动订场。`);
     entry.mode = 'normal';

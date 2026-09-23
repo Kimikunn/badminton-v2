@@ -491,6 +491,65 @@ test('burst：连续失败达上限 → 告警一次，并入常规节奏', asyn
   assert.match(alert.body.title, /告警/);
 });
 
+test('burst 出数即止后，当天再 tick 不重复 burst（回归：曾每分钟重刷"第 1 次拉取到放票数据"）', async (t) => {
+  resetEngine();
+  kit.configureEnv({ withKey: true });
+  const release = kit.datePlus(BOOKING_WINDOW_DAYS - 1);
+  makeIntent({ mode: 'notify', date: release });
+  mockTime(t, 9, 0, { mockTimeout: true });
+
+  const releaseData = () => kit.leaseResponse(
+    [kit.slot(`41_${release}_19:00_20:00`, '19:00', '20:00')], { date: release });
+  kit.stubFetch(kit.leaseAndPushFetch((url) => {
+    const d = new URL(String(url)).searchParams.get('date');
+    return d === release ? releaseData() : kit.emptyLease(d);
+  }));
+  await watchEngine.tick();
+
+  // 第二轮：出数后应并入常规节奏，放票日只按常规节奏拉 1 次
+  const stub2 = kit.leaseAndPushFetch((url) => {
+    const d = new URL(String(url)).searchParams.get('date');
+    return d === release ? releaseData() : kit.emptyLease(d);
+  });
+  kit.stubFetch(stub2);
+  await advancePastPollInterval(t);
+  await watchEngine.tick();
+
+  const releaseCalls = stub2.leaseCalls.filter(c => c.url.includes(`date=${release}`));
+  assert.equal(releaseCalls.length, 1); // 不再 burst（真 burst 会立即再拉到数据多打请求）
+});
+
+test('burst 连败告警并入常规节奏后，当天再 tick 不重复 burst', async (t) => {
+  resetEngine();
+  kit.configureEnv();
+  const release = kit.datePlus(BOOKING_WINDOW_DAYS - 1);
+  makeIntent({ date: release });
+  mockTime(t, 9, 0, { mockTimeout: true });
+
+  kit.stubFetch(kit.leaseAndPushFetch(() => kit.emptyLease()));
+  // burst 的 sleep(1s) 走 mocked setTimeout：驱动时钟直到 tick 完成
+  let done = false;
+  const p = watchEngine.tick().finally(() => { done = true; });
+  for (let i = 0; i < 60 && !done; i++) {
+    await new Promise(r => setImmediate(r));
+    t.mock.timers.tick(1500);
+  }
+  await p;
+  const pushCount = kit.PUSH_CALLS.length; // 第 9 点抢场失败告警 1 条
+  assert.ok(pushCount >= 1);
+
+  let releaseCalls = 0;
+  const stub2 = kit.leaseAndPushFetch((url) => {
+    if (new URL(String(url)).searchParams.get('date') === release) releaseCalls += 1;
+    return kit.emptyLease();
+  });
+  kit.stubFetch(stub2);
+  await advancePastPollInterval(t);
+  await watchEngine.tick();
+
+  assert.equal(releaseCalls, 1); // 只按常规节奏拉 1 次，不重复 burst
+});
+
 test('burst：无意图覆盖新放票日则不 burst', async (t) => {
   resetEngine();
   kit.configureEnv();
