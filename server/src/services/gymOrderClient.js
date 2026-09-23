@@ -23,6 +23,7 @@
  */
 const intentService = require('./intentService');
 const { signCreateOrder } = require('./venueLockSigner');
+const venueHttp = require('./venueHttp');
 
 const GYM_API_BASE = 'https://shop.chuanshatiyuchang.cn/gym/miniprogram';
 const CREATE_ORDER_CHECK_URL = `${GYM_API_BASE}/areaOrder/createOrderCheck`;
@@ -38,7 +39,7 @@ function baseHeaders(tokenUser) {
 }
 
 /** POST JSON；网络异常 / 超时抛出，HTTP 或业务码不抛出（由调用方检查 body.code） */
-async function postJson(url, body, { extraHeaders = {}, fetchImpl = fetch } = {}) {
+async function postJson(url, body, { extraHeaders = {} } = {}) {
   const tokenUser = intentService.getEnvConfig().tokenUser;
   if (!tokenUser) throw new Error('小程序 token 未配置（GYM_TOKEN_USER）');
 
@@ -46,7 +47,7 @@ async function postJson(url, body, { extraHeaders = {}, fetchImpl = fetch } = {}
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const resp = await fetchImpl(url, {
+    const resp = await venueHttp.venueFetch(url, {
       method: 'POST',
       headers: { ...baseHeaders(tokenUser), ...extraHeaders },
       body: bodyText,

@@ -29,6 +29,7 @@ const notifier = require('./watchNotifier');
 const venueLockSigner = require('./venueLockSigner');
 const bookingLockService = require('./bookingLockService');
 const digest = require('./watchDigest');
+const venueHttp = require('./venueHttp');
 const { GYM_API_BASE } = require('./gymOrderClient');
 const { BOOKING_WINDOW_DAYS, RUSH_HOUR, dateStr, today, yesterday, isSlotAvailable } = require('./venueShared');
 const { parseJson } = require('../utils/json');
@@ -90,7 +91,7 @@ async function fetchAreaLease(date, tokenUser) {
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
     const url = `${LIST_AREA_LEASE_URL}?venueSportId=1&date=${encodeURIComponent(date)}`;
-    const resp = await fetch(url, {
+    const resp = await venueHttp.venueFetch(url, {
       headers: {
         'token-user': tokenUser,
         'x-gym-client-id': '1',
@@ -508,7 +509,10 @@ async function runTick() {
   let failedFetches = 0;
   let hadSuccess = false; // 本轮至少一个日期拉到有效数据（才允许清零 token 告警标记）
   let notified = 0;
-  for (const entry of due) {
+  for (let idx = 0; idx < due.length; idx++) {
+    const entry = due[idx];
+    // 出站礼貌间隔：连续日期的拉取之间随机 sleep，降低密频触发风控的概率
+    if (idx > 0) await venueHttp.paceOutbound();
     entry.nextFetchAt = now + env.pollIntervalSec * 1000 + Math.floor(Math.random() * JITTER_MAX_MS);
     let resp;
     try {

@@ -20,3 +20,25 @@ services:
       - PORT=3000
       - TZ=Asia/Shanghai
       - ADMIN_TOKEN=${ADMIN_TOKEN:-}
+      # 场馆出站走 WARP 链路（绕主服务器 IP 的风控封禁）；置空则直连
+      - GYM_PROXY_URL=${GYM_PROXY_URL:-http://warp-gost:8080}
+
+  # Cloudflare WARP：给订场请求提供与主服务器不同的免费出口 IP
+  warp:
+    image: caomingjun/warp:latest
+    container_name: badminton-warp
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=1
+      - net.ipv4.conf.all.src_valid_mark=1
+
+  # gost：把 WARP 的 socks5 转成 http 代理（undici ProxyAgent 只认 http 代理）
+  warp-gost:
+    image: ginuerzh/gost
+    container_name: badminton-warp-gost
+    restart: unless-stopped
+    command: -L http://:8080 -F socks5://warp:1080
+    ports:
+      - "127.0.0.1:1081:8080"   # 宿主机可用于手动诊断（curl -x http://127.0.0.1:1081 …）
