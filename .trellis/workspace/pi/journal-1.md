@@ -619,3 +619,36 @@ standard/s2/s3 的 calcRankings 只按大分排序的 bug 修复：新增共享�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: 订场日历换用 Vant 4 Calendar
+
+**Date**: 2026-09-23
+**Task**: 订场日历换用 Vant 4 Calendar
+**Branch**: `master`
+
+### Summary
+
+用户判定自研日历太丑，选型换用 Vant 4 Calendar（2026-08 活跃、月下载 42.8 万、中文内建）：BookingCalendar 重写为 Vant 包装（poppable=false、64px 行高、formatter+三插槽渲染休/班、不可用 X、监控胶囊、订场圆点），删除自研 DayCell；可见月用 IntersectionObserver 跟踪（Vant monthShow 只发一次）驱动月摘要；e2e 重写 5 用例，全量 64 passed；check 发现并修复深色月份水印压字（showMark 关闭）、X 对比度、角标盒重叠；spec 同步 Vant 约定。生产部署待用户确认。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2d7a5ee` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
