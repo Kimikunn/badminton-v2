@@ -48,6 +48,11 @@ but only walks the rankings page. **New UI with a tinted background**
   was **2.2:1 / L-diff 0.27 → violates the project rule**; `text-fg-secondary`
   gives **5.5:1 / L-diff 0.43**. Rule of thumb: on tinted backgrounds use
   `fg-secondary` or stronger; reserve `fg-muted` for neutral surfaces.
+- **Warning text on neutral backgrounds uses `text-warning-text`**, not
+  `text-warning`: light `--color-warning` (L 0.70) on white is only ~2.5:1
+  (measured on the booking-notes line); `--color-warning-text` (L 0.55) gives
+  ~4.8:1 and stays bright in dark via its own token value. `text-warning` is
+  fine on `warning-subtle` chips (bg carries the separation).
 
 ## PWA caching caution
 

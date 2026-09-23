@@ -80,7 +80,7 @@ const autoCost = computed(() => {
 const recordViewMode = ref('list')
 
 // === List expand ===
-const RECORD_PREVIEW_COUNT = 5
+const RECORD_PREVIEW_COUNT = 7
 const showAllRecords = ref(false)
 const visibleRecords = computed(() => {
   if (showAllRecords.value) return bookingsStore.records
@@ -350,7 +350,7 @@ async function deleteEditingVenue() {
       </div>
 
       <!-- 视图切换：Vant Tabs（下划线 + 可左右滑）；两视图同高（.record-view），切换不跳动 -->
-      <Tabs v-model:active="recordViewMode" class="record-tabs" swipe-threshold="2">
+      <Tabs v-model:active="recordViewMode" class="record-tabs" shrink swipe-threshold="2">
         <Tab title="列表" name="list">
           <div class="record-view overflow-y-auto overscroll-contain">
             <!-- 无记录时仍可切到日历：日历是监控的唯一入口，不能因空数据而不可达 -->
@@ -367,15 +367,15 @@ async function deleteEditingVenue() {
               >
                 <template #trailing>
                   <button class="icon-btn !text-danger" @click.stop="deleteRecord(r)" title="删除">
-                    <Trash2 :size="12" />
+                    <Trash2 :size="14" />
                   </button>
                 </template>
               </BookingRow>
 
-              <!-- Expand / collapse -->
+              <!-- Expand / collapse：吸底条，行多时滚动也不会被切掉 -->
               <button
                 v-if="hasMoreRecords"
-                class="flex items-center justify-center gap-1 w-full py-2 mt-1 text-xs text-fg-muted hover:text-accent transition-colors duration-fast"
+                class="sticky bottom-0 flex items-center justify-center gap-1 w-full py-2 mt-1 text-xs text-fg-muted bg-surface/95 backdrop-blur-sm border-t border-line-light hover:text-accent transition-colors duration-fast"
                 @click="showAllRecords = !showAllRecords"
               >
                 <span>{{ showAllRecords ? '收起' : `展开全部（共 ${bookingsStore.records.length} 条）` }}</span>

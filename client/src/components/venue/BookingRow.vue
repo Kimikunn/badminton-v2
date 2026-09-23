@@ -38,8 +38,8 @@ defineEmits(['click'])
       <Avatar v-if="playerAvatar || playerName" :name="playerName" :src="playerAvatar" size="sm" />
       <div class="flex-1 min-w-0">
         <span class="block text-sm font-medium text-fg">{{ playerName }}</span>
-        <span class="block text-xs text-fg-muted">{{ record.venueName || '—' }}<template v-if="!showDate"> · {{ record.startTime }}-{{ record.endTime }}</template></span>
-        <span v-if="record.notes" class="block text-2xs text-warning">{{ record.notes }}</span>
+        <span class="block text-xs text-fg-muted truncate">{{ record.venueName || '—' }}<template v-if="!showDate"> · {{ record.startTime }}-{{ record.endTime }}</template></span>
+        <span v-if="record.notes" class="block text-2xs text-warning-text truncate">{{ record.notes }}</span>
       </div>
       <span class="text-sm font-semibold text-accent shrink-0">¥{{ record.cost }}</span>
     </div>

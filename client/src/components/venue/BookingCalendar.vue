@@ -222,8 +222,8 @@ const holidaySummary = computed(() => monthHolidaySummary(currentMonth.value.yea
       </template>
     </Calendar>
 
-    <!-- Info bar：只列日期维度的标记（订场圆点 / 不可用）+ 当月总时长 -->
-    <div v-if="bookingMap.size || unavailableDateSet.size" class="flex items-center justify-between text-xs text-fg-muted px-1">
+    <!-- Info bar：只列日期维度的标记（订场圆点 / 不可用）+ 当月总时长（与日历网格左缘对齐，字号与摘要一致） -->
+    <div v-if="bookingMap.size || unavailableDateSet.size" class="flex items-center justify-between text-2xs text-fg-muted">
       <div class="flex items-center gap-3">
         <span v-if="bookingMap.size" class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-accent" /> 有订场</span>
         <span v-if="unavailableDateSet.size" class="flex items-center gap-1.5"><X :size="10" class="text-danger" /> 不可用</span>
@@ -232,7 +232,7 @@ const holidaySummary = computed(() => monthHolidaySummary(currentMonth.value.yea
     </div>
 
     <!-- 当前可见月节日摘要：格子只显示 休/班 角标，节日名在这里给一次（点某天看 DaySheet 详情） -->
-    <div v-if="holidaySummary" class="holiday-summary text-2xs text-fg-muted px-1">{{ currentMonth.month }}月：{{ holidaySummary }}</div>
+    <div v-if="holidaySummary" class="holiday-summary text-2xs text-fg-muted">{{ currentMonth.month }}月：{{ holidaySummary }}</div>
   </div>
 </template>
 

@@ -82,9 +82,15 @@ extension points: `formatter` (disabled/className per day), `#top-info` /
   with inverse text on `.day-today .day-number` instead.
 - The calendar's height comes from its parent container (`.record-view`, a
   shared 440px box for the list/calendar tabs — `van-calendar { height: 100% }`),
-  not a hardcoded value; the view switcher is Vant `Tabs` (line variant).
+  not a hardcoded value; the view switcher is Vant `Tabs` with `shrink`
+  (compact left-aligned labels + line indicator), swipeable.
+- The list panel scrolls inside the same 440px box and its「展开全部」is a
+  `sticky bottom-0 bg-surface/95` bar — never push that button out of view
+  or let it be half-clipped.
 - A booking row is rendered by the shared `components/venue/BookingRow.vue`
   (used by both `VenueView` list and `DaySheet`) — don't hand-roll a third copy.
+  Its venue/notes lines are `truncate` so a long venue name can't wrap into a
+  second line (which used to blow up row heights at 360px).
 - The current-month summary uses an IntersectionObserver over
   `.van-calendar__month` sections — not Vant's `monthShow` event, which fires
   once per month and never re-emits when scrolling back.
