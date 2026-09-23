@@ -171,9 +171,10 @@ const holidaySummary = computed(() => monthHolidaySummary(currentMonth.value.yea
 </script>
 
 <template>
-  <div ref="rootEl" class="venue-calendar flex flex-col gap-3">
+  <div ref="rootEl" class="venue-calendar flex flex-col gap-3 h-full">
     <Calendar
       ref="calendarRef"
+      class="flex-1 min-h-0"
       :poppable="false"
       type="single"
       :show-confirm="false"
@@ -250,10 +251,9 @@ const holidaySummary = computed(() => monthHolidaySummary(currentMonth.value.yea
   --van-calendar-day-disabled-color: oklch(0.72 0.16 25 / 0.5);
 }
 
-/* 内嵌日历固定高度：星期栏 30 + 一个月（标题 44 + 6 行 × 64 + 5 段间距 4） = 478，
-   滚动容器里一次正好一个月，月摘要始终贴着日历下沿 */
+/* 日历高度由外层 .record-view 容器决定（列表/日历同高），这里填满剩余空间即可 */
 .venue-calendar :deep(.van-calendar) {
-  height: 478px;
+  height: 100%;
 }
 
 /* 不可用：红底方块（沿用旧 X 方块语义）；X 在 top-info */
@@ -279,11 +279,11 @@ const holidaySummary = computed(() => monthHolidaySummary(currentMonth.value.yea
   line-height: 1;
 }
 
-/* 今天：accent 色环（数字盒固定尺寸，不随 top/bottom 标记位移） */
+/* 今天：Vant 原生选中态语言——实心 accent 圆 + 反白数字（不再用描边色环） */
 .day-today .day-number {
-  color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-fg-inverse);
   font-weight: 600;
-  box-shadow: inset 0 0 0 1.5px var(--color-accent);
 }
 
 .day-x {

@@ -78,8 +78,13 @@ extension points: `formatter` (disabled/className per day), `#top-info` /
   (fixed clock 2026-10-01).
 - Do not enable `show-mark` without setting `--van-calendar-month-mark-color`
   for dark mode: it is a giant month watermark that crushes day-number
-  contrast (measured 1.43:1). The today indicator is the accent ring on
-  `.day-today .day-number` instead.
+  contrast (measured 1.43:1). The today indicator is a solid accent circle
+  with inverse text on `.day-today .day-number` instead.
+- The calendar's height comes from its parent container (`.record-view`, a
+  shared 440px box for the list/calendar tabs — `van-calendar { height: 100% }`),
+  not a hardcoded value; the view switcher is Vant `Tabs` (line variant).
+- A booking row is rendered by the shared `components/venue/BookingRow.vue`
+  (used by both `VenueView` list and `DaySheet`) — don't hand-roll a third copy.
 - The current-month summary uses an IntersectionObserver over
   `.van-calendar__month` sections — not Vant's `monthShow` event, which fires
   once per month and never re-emits when scrolling back.

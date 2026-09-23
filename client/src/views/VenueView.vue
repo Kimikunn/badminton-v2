@@ -12,7 +12,9 @@ import Button from '@/components/ui/Button.vue'
 import Input from '@/components/ui/Input.vue'
 import Sheet from '@/components/ui/Sheet.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
-import SegmentedControl from '@/components/ui/SegmentedControl.vue'
+import { Tab, Tabs } from 'vant'
+import 'vant/lib/tabs/style/index'
+import BookingRow from '@/components/venue/BookingRow.vue'
 import BookingCalendar from '@/components/venue/BookingCalendar.vue'
 import DaySheet from '@/components/venue/DaySheet.vue'
 import VenueWatchSettingsSheet from '@/components/venue/VenueWatchSettingsSheet.vue'
@@ -76,10 +78,6 @@ const autoCost = computed(() => {
 
 // === Record view mode ===
 const recordViewMode = ref('list')
-const recordViewOptions = [
-  { key: 'list', label: '列表' },
-  { key: 'calendar', label: '日历' }
-]
 
 // === List expand ===
 const RECORD_PREVIEW_COUNT = 5
@@ -344,57 +342,60 @@ async function deleteEditingVenue() {
   <div class="flex flex-col gap-4">
     <!-- Records -->
     <Card ref="recordsCardRef" padding="md">
-      <div class="flex items-center justify-between mb-3">
+      <div class="flex items-center justify-between mb-2">
         <h3 class="text-xs font-semibold text-fg-secondary uppercase tracking-wide">订场记录</h3>
-        <div class="flex items-center gap-1.5">
-          <SegmentedControl v-model="recordViewMode" :options="recordViewOptions" size="sm" />
-          <button class="icon-btn" title="监控设置" @click="showWatchSettings = true">
-            <Settings :size="14" />
-          </button>
-        </div>
-      </div>
-      <!-- 无记录时仍可切到日历：日历是监控的唯一入口，不能因空数据而不可达 -->
-      <EmptyState v-if="!bookingsStore.records.length && recordViewMode === 'list'" icon="ClipboardList" title="暂无记录" />
-
-      <!-- List view -->
-      <div v-else-if="recordViewMode === 'list'" class="flex flex-col">
-        <div v-for="r in visibleRecords" :key="r.id" class="flex items-center gap-2 py-2 border-b border-line-light last:border-b-0">
-          <div class="flex-1 flex items-center gap-3 cursor-pointer active:opacity-70" @click="openEdit(r)">
-            <div class="flex flex-col min-w-12">
-              <span class="text-xs font-medium text-fg">{{ r.date?.slice(5) }}</span>
-              <span class="text-2xs text-fg-muted">{{ r.startTime }}-{{ r.endTime }}</span>
-            </div>
-            <div class="flex-1 min-w-0">
-              <span class="text-sm text-fg">{{ playersStore.getPlayerName(r.playerId) }}</span>
-              <span class="block text-2xs text-fg-muted">{{ r.venueName || '—' }}</span>
-              <span class="block text-2xs text-warning" v-if="r.notes">{{ r.notes }}</span>
-            </div>
-            <span class="text-sm font-semibold text-accent">¥{{ r.cost }}</span>
-          </div>
-          <button class="icon-btn !text-danger" @click.stop="deleteRecord(r)" title="删除">
-            <Trash2 :size="12" />
-          </button>
-        </div>
-
-        <!-- Expand / collapse -->
-        <button
-          v-if="hasMoreRecords"
-          class="flex items-center justify-center gap-1 w-full py-2 mt-1 text-xs text-fg-muted hover:text-accent transition-colors duration-fast"
-          @click="showAllRecords = !showAllRecords"
-        >
-          <span>{{ showAllRecords ? '收起' : `展开全部（共 ${bookingsStore.records.length} 条）` }}</span>
-          <ChevronDown :size="14" :class="showAllRecords ? 'rotate-180' : ''" class="transition-transform duration-fast" />
+        <button class="icon-btn" title="监控设置" @click="showWatchSettings = true">
+          <Settings :size="14" />
         </button>
       </div>
 
-      <!-- Calendar view -->
-      <BookingCalendar
-        v-else
-        :records="bookingsStore.records"
-        :unavailable-date-set="unavailableDateSet"
-        :monitor-status-by-date="monitorStatusByDate"
-        @select-day="selectedDate = $event"
-      />
+      <!-- 视图切换：Vant Tabs（下划线 + 可左右滑）；两视图同高（.record-view），切换不跳动 -->
+      <Tabs v-model:active="recordViewMode" class="record-tabs" swipe-threshold="2">
+        <Tab title="列表" name="list">
+          <div class="record-view overflow-y-auto overscroll-contain">
+            <!-- 无记录时仍可切到日历：日历是监控的唯一入口，不能因空数据而不可达 -->
+            <EmptyState v-if="!bookingsStore.records.length" icon="ClipboardList" title="暂无记录" />
+            <template v-else>
+              <BookingRow
+                v-for="r in visibleRecords"
+                :key="r.id"
+                :record="r"
+                :player-name="playersStore.getPlayerName(r.playerId)"
+                show-date
+                clickable
+                @click="openEdit(r)"
+              >
+                <template #trailing>
+                  <button class="icon-btn !text-danger" @click.stop="deleteRecord(r)" title="删除">
+                    <Trash2 :size="12" />
+                  </button>
+                </template>
+              </BookingRow>
+
+              <!-- Expand / collapse -->
+              <button
+                v-if="hasMoreRecords"
+                class="flex items-center justify-center gap-1 w-full py-2 mt-1 text-xs text-fg-muted hover:text-accent transition-colors duration-fast"
+                @click="showAllRecords = !showAllRecords"
+              >
+                <span>{{ showAllRecords ? '收起' : `展开全部（共 ${bookingsStore.records.length} 条）` }}</span>
+                <ChevronDown :size="14" :class="showAllRecords ? 'rotate-180' : ''" class="transition-transform duration-fast" />
+              </button>
+            </template>
+          </div>
+        </Tab>
+
+        <Tab title="日历" name="calendar">
+          <div class="record-view">
+            <BookingCalendar
+              :records="bookingsStore.records"
+              :unavailable-date-set="unavailableDateSet"
+              :monitor-status-by-date="monitorStatusByDate"
+              @select-day="selectedDate = $event"
+            />
+          </div>
+        </Tab>
+      </Tabs>
     </Card>
 
     <!-- Rotation + Add -->
@@ -574,6 +575,18 @@ async function deleteEditingVenue() {
 /* Shared icon button — matches PlayerDetailView */
 .icon-btn { @apply w-7 h-7 border-none rounded-full bg-surface-hover text-fg-muted flex items-center justify-center cursor-pointer transition-all duration-fast active:scale-90; }
 .icon-btn:hover { @apply bg-accent-subtle text-accent; }
+
+/* 视图切换：Vant Tabs 映射 token；两视图同高容器（列表超出内部滚动） */
+.record-tabs {
+  --van-tabs-bottom-bar-color: var(--color-accent);
+  --van-tab-active-text-color: var(--color-accent);
+  --van-tab-text-color: var(--color-fg-secondary);
+  --van-tabs-nav-background: transparent;
+  --van-tab-font-size: 14px;
+}
+.record-view {
+  height: 440px;
+}
 
 /* Native select — needs appearance:none and custom chevron */
 .f-select { @apply w-full p-2.5 pl-3 bg-canvas border border-line rounded-lg text-base text-fg appearance-none focus:outline-none focus:border-accent focus:ring-[3px] focus:ring-accent-subtle transition-[border-color,box-shadow] duration-fast ease-out; }

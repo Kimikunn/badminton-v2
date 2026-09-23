@@ -19,7 +19,7 @@ import { ref, computed, watch } from 'vue'
 import { useIntentStore, MONITOR_STATUS_LABELS, MONITOR_BADGE_VARIANT } from '@/stores/intent'
 import { holidayFor, HOLIDAY_TYPE_LABELS } from '@/utils/holiday'
 import HolidayBadge from '@/components/venue/HolidayBadge.vue'
-import Avatar from '@/components/ui/Avatar.vue'
+import BookingRow from '@/components/venue/BookingRow.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
@@ -324,18 +324,13 @@ async function handleMarkUnavailable() {
       <div>
         <span class="text-2xs font-semibold text-fg-muted uppercase tracking-wide">订场记录</span>
         <div v-if="bookings.length" class="flex flex-col">
-          <div
+          <BookingRow
             v-for="r in bookings"
             :key="r.id"
-            class="flex items-center gap-3 py-2.5 border-b border-line-light last:border-b-0"
-          >
-            <Avatar :name="getPlayerName(r.playerId)" :src="getPlayerAvatar(r.playerId)" size="sm" />
-            <div class="flex-1 min-w-0">
-              <span class="block text-sm font-medium text-fg">{{ getPlayerName(r.playerId) }}</span>
-              <span class="block text-xs text-fg-muted">{{ r.venueName || '—' }} · {{ r.startTime }}-{{ r.endTime }}</span>
-            </div>
-            <span class="text-sm font-semibold text-accent shrink-0">¥{{ r.cost }}</span>
-          </div>
+            :record="r"
+            :player-name="getPlayerName(r.playerId)"
+            :player-avatar="getPlayerAvatar(r.playerId)"
+          />
         </div>
         <div v-else class="py-3 text-fg-muted text-xs">暂无订场</div>
         <Button v-if="date >= todayKey" variant="primary" size="md" block class="mt-1" @click="emit('create-booking', date)">新增订场</Button>

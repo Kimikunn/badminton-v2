@@ -21,7 +21,7 @@ const SEP = new Date('2026-09-10T12:00:00+08:00')
 async function openCalendar(page, now) {
   await page.clock.install({ time: now })
   await page.goto('/venues', { waitUntil: 'networkidle' })
-  await page.getByRole('button', { name: '日历' }).click()
+  await page.getByRole('tab', { name: '日历' }).click()
 }
 
 const day = (page, key) => page.locator(`.van-calendar__day:has([data-date="${key}"])`)
