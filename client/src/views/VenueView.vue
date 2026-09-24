@@ -2,7 +2,7 @@
 /**
  * VenueView — 场地管理 & 订场
  */
-import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useBookingsStore, usePlayersStore, useVenuesStore, useIntentStore } from '@/stores'
 import { api } from '@/api/client'
 import Card from '@/components/ui/Card.vue'
@@ -12,13 +12,12 @@ import Button from '@/components/ui/Button.vue'
 import Input from '@/components/ui/Input.vue'
 import Sheet from '@/components/ui/Sheet.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
-import { Tab, Tabs } from 'vant'
-import 'vant/lib/tabs/style/index'
+import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import BookingRow from '@/components/venue/BookingRow.vue'
 import BookingCalendar from '@/components/venue/BookingCalendar.vue'
 import DaySheet from '@/components/venue/DaySheet.vue'
 import VenueWatchSettingsSheet from '@/components/venue/VenueWatchSettingsSheet.vue'
-import { ClipboardList, Pencil, Trash2, ChevronDown, Settings } from 'lucide-vue-next'
+import { ClipboardList, Pencil, Trash2, Settings } from 'lucide-vue-next'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 
@@ -78,24 +77,10 @@ const autoCost = computed(() => {
 
 // === Record view mode ===
 const recordViewMode = ref('list')
-
-// === List expand ===
-const RECORD_PREVIEW_COUNT = 7
-const showAllRecords = ref(false)
-const visibleRecords = computed(() => {
-  if (showAllRecords.value) return bookingsStore.records
-  return bookingsStore.records.slice(0, RECORD_PREVIEW_COUNT)
-})
-const hasMoreRecords = computed(() => bookingsStore.records.length > RECORD_PREVIEW_COUNT)
-
-// 收起时回到列表顶部
-const recordsCardRef = ref(null)
-watch(showAllRecords, async (val) => {
-  if (!val) {
-    await nextTick()
-    recordsCardRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
-})
+const recordViewOptions = [
+  { key: 'list', label: '列表' },
+  { key: 'calendar', label: '日历' }
+]
 
 onMounted(() => { bookingsStore.init(); venuesStore.init(); intentStore.init(); fetchUnavailableDays() })
 
@@ -151,12 +136,13 @@ const selectedUnavailable = computed(() =>
   selectedDate.value ? getUnavailableForDate(selectedDate.value) : null
 )
 
-// 日历徽标：store 按天派生 + 优先级折叠；维度二「不可用」不参与（格子仍走 X 覆盖）
+// 日历色条：store 按天派生的监控状态数组（段序 = BADGE_PRIORITY 优先级序）；
+// 维度二「不可用」不参与（格子走红淡底 + 数字划线）
 const monitorStatusByDate = computed(() => {
   const map = new Map()
   for (const date of intentStore.monitorsByDate.keys()) {
-    const badge = intentStore.badgeFor(date)
-    if (badge) map.set(date, badge)
+    const bars = intentStore.badgeFor(date)
+    if (bars.length) map.set(date, bars)
   }
   return map
 })
@@ -341,61 +327,53 @@ async function deleteEditingVenue() {
 <template>
   <div class="flex flex-col gap-4">
     <!-- Records -->
-    <Card ref="recordsCardRef" padding="md">
-      <div class="flex items-center justify-between mb-2">
+    <Card padding="md">
+      <div class="flex items-center justify-between mb-3">
         <h3 class="text-xs font-semibold text-fg-secondary uppercase tracking-wide">订场记录</h3>
-        <button class="icon-btn" title="监控设置" @click="showWatchSettings = true">
-          <Settings :size="14" />
-        </button>
+        <div class="flex items-center gap-1.5">
+          <SegmentedControl v-model="recordViewMode" :options="recordViewOptions" size="sm" />
+          <button class="icon-btn" title="监控设置" @click="showWatchSettings = true">
+            <Settings :size="14" />
+          </button>
+        </div>
       </div>
 
-      <!-- 视图切换：Vant Tabs（下划线 + 可左右滑）；两视图同高（.record-view），切换不跳动 -->
-      <Tabs v-model:active="recordViewMode" class="record-tabs" shrink swipe-threshold="2">
-        <Tab title="列表" name="list">
-          <div class="record-view overflow-y-auto overscroll-contain">
-            <!-- 无记录时仍可切到日历：日历是监控的唯一入口，不能因空数据而不可达 -->
-            <EmptyState v-if="!bookingsStore.records.length" icon="ClipboardList" title="暂无记录" />
-            <template v-else>
-              <BookingRow
-                v-for="r in visibleRecords"
-                :key="r.id"
-                :record="r"
-                :player-name="playersStore.getPlayerName(r.playerId)"
-                show-date
-                clickable
-                @click="openEdit(r)"
-              >
-                <template #trailing>
-                  <button class="icon-btn !text-danger" @click.stop="deleteRecord(r)" title="删除">
-                    <Trash2 :size="14" />
-                  </button>
-                </template>
-              </BookingRow>
+      <!-- R18 两分支 grid 叠放：容器高度 = 日历自然高度，列表内滚、日历永不滚；
+           无记录时仍可切到日历：日历是监控的唯一入口，不能因空数据而不可达 -->
+      <EmptyState v-if="!bookingsStore.records.length && recordViewMode === 'list'" icon="ClipboardList" title="暂无记录" />
 
-              <!-- Expand / collapse：吸底条，行多时滚动也不会被切掉 -->
-              <button
-                v-if="hasMoreRecords"
-                class="sticky bottom-0 flex items-center justify-center gap-1 w-full py-2 mt-1 text-xs text-fg-muted bg-surface/95 backdrop-blur-sm border-t border-line-light hover:text-accent transition-colors duration-fast"
-                @click="showAllRecords = !showAllRecords"
-              >
-                <span>{{ showAllRecords ? '收起' : `展开全部（共 ${bookingsStore.records.length} 条）` }}</span>
-                <ChevronDown :size="14" :class="showAllRecords ? 'rotate-180' : ''" class="transition-transform duration-fast" />
+      <div v-else class="record-body grid">
+        <!-- List view -->
+        <div
+          class="record-list flex flex-col overflow-y-auto overscroll-contain min-h-0"
+          :class="recordViewMode === 'list' ? '' : 'invisible pointer-events-none'"
+        >
+          <BookingRow
+            v-for="r in bookingsStore.records"
+            :key="r.id"
+            :record="r"
+            :player-name="playersStore.getPlayerName(r.playerId)"
+            show-date
+            clickable
+            @click="openEdit(r)"
+          >
+            <template #trailing>
+              <button class="icon-btn !text-danger" @click.stop="deleteRecord(r)" title="删除">
+                <Trash2 :size="14" />
               </button>
             </template>
-          </div>
-        </Tab>
+          </BookingRow>
+        </div>
 
-        <Tab title="日历" name="calendar">
-          <div class="record-view">
-            <BookingCalendar
-              :records="bookingsStore.records"
-              :unavailable-date-set="unavailableDateSet"
-              :monitor-status-by-date="monitorStatusByDate"
-              @select-day="selectedDate = $event"
-            />
-          </div>
-        </Tab>
-      </Tabs>
+        <!-- Calendar view -->
+        <BookingCalendar
+          :records="bookingsStore.records"
+          :unavailable-date-set="unavailableDateSet"
+          :monitor-status-by-date="monitorStatusByDate"
+          :class="recordViewMode === 'calendar' ? '' : 'invisible pointer-events-none'"
+          @select-day="selectedDate = $event"
+        />
+      </div>
     </Card>
 
     <!-- Rotation + Add -->
@@ -572,22 +550,16 @@ async function deleteEditingVenue() {
 
 <style scoped>
 @reference "@/styles/global.css";
-/* Shared icon button — matches PlayerDetailView */
-.icon-btn { @apply w-7 h-7 border-none rounded-full bg-surface-hover text-fg-muted flex items-center justify-center cursor-pointer transition-all duration-fast active:scale-90; }
+/* Shared icon button — matches PlayerDetailView；不用 transition-all（visibility 会被 0.12s 过渡拖住，切视图时垃圾桶叠在日历上慢慢消失） */
+.icon-btn { @apply w-7 h-7 border-none rounded-full bg-surface-hover text-fg-muted flex items-center justify-center cursor-pointer transition-[background-color,color,transform] duration-fast active:scale-90; }
 .icon-btn:hover { @apply bg-accent-subtle text-accent; }
-
-/* 视图切换：Vant Tabs 映射 token；两视图同高容器（列表超出内部滚动） */
-.record-tabs {
-  --van-tabs-bottom-bar-color: var(--color-accent);
-  --van-tab-active-text-color: var(--color-accent);
-  --van-tab-text-color: var(--color-fg-secondary);
-  --van-tabs-nav-background: transparent;
-  --van-tab-font-size: 14px;
-}
-.record-view {
-  height: 440px;
-}
 
 /* Native select — needs appearance:none and custom chevron */
 .f-select { @apply w-full p-2.5 pl-3 bg-canvas border border-line rounded-lg text-base text-fg appearance-none focus:outline-none focus:border-accent focus:ring-[3px] focus:ring-accent-subtle transition-[border-color,box-shadow] duration-fast ease-out; }
+
+/* 两视图叠放：容器高度由日历自然高度决定（含图例折行），列表内滚、日历永不滚；
+   列表分支 contain:size 不参与行高贡献，行高恒由日历分支决定 */
+.record-body { display: grid; }
+.record-body > * { grid-area: 1 / 1; min-height: 0; }
+.record-list { contain: size; }
 </style>

@@ -6,7 +6,7 @@ const NAME_MAP = { 清明: '清明节', 端午: '端午节', 中秋: '中秋节'
 /** 休/班 的界面文案（DaySheet 等详情处使用；字形由 HolidayBadge 组件统一渲染） */
 export const HOLIDAY_TYPE_LABELS = { holiday: '法定假日', workday: '调休补班' }
 
-/** 休/班 的字形（HolidayBadge 与月摘要共用，避免多处写「休」「班」字面量） */
+/** 休/班 的字形（HolidayBadge 统一渲染，避免多处写「休」「班」字面量） */
 export const HOLIDAY_TYPE_MARKS = { holiday: '休', workday: '班' }
 
 /**
@@ -29,36 +29,4 @@ export function holidayFor(dateKey) {
   if (!detail.name.includes(',')) return null
   const raw = detail.name.split(',')[1]
   return { name: NAME_MAP[raw] || raw, type: detail.work ? 'workday' : 'holiday' }
-}
-
-/**
- * 某个月的休/班摘要（月历下方一行）。固定顺序：先全部「休」（按日期），再全部「班」。
- * 连续的同类型日期合并成区间；休的多个节日不合并（名称不同则另起一段）。
- *
- * 例：2026-10 → '休 1–7 国庆节 · 班 10'
- *
- * @param {number} year 年（如 2026）
- * @param {number} month 月（1-12）
- * @returns {string} 该月没有休/班时为 ''
- */
-export function monthHolidaySummary(year, month) {
-  const totalDays = new Date(year, month, 0).getDate()
-  const runs = { holiday: [], workday: [] }
-
-  for (let day = 1; day <= totalDays; day++) {
-    const key = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-    const info = holidayFor(key)
-    if (!info) continue
-    const list = runs[info.type]
-    const last = list[list.length - 1]
-    const sameBlock = last && last.end === day - 1 && (info.type !== 'holiday' || last.name === info.name)
-    if (sameBlock) last.end = day
-    else list.push({ start: day, end: day, name: info.name })
-  }
-
-  const span = run => (run.start === run.end ? `${run.start}` : `${run.start}–${run.end}`)
-  return [
-    ...runs.holiday.map(run => `${HOLIDAY_TYPE_MARKS.holiday} ${span(run)} ${run.name}`),
-    ...runs.workday.map(run => `${HOLIDAY_TYPE_MARKS.workday} ${span(run)}`),
-  ].join(' · ')
 }

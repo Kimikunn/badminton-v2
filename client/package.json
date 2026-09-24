@@ -16,7 +16,6 @@
     "lucide-vue-next": "^1.0.0",
     "pinia": "^2.2.0",
     "tailwindcss": "^4.3.0",
-    "vant": "^4.10.2",
     "vue": "^3.5.0",
     "vue-chartjs": "^5.3.3",
     "vue-router": "^4.4.0"

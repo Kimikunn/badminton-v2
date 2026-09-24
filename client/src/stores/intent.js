@@ -20,17 +20,6 @@ export const MONITOR_STATUS_LABELS = {
   paused: '已暂停'
 }
 
-// 日历格子文案：格子太窄放不下全称，压缩到 2-3 字
-export const MONITOR_CELL_LABELS = {
-  expired: '已过期',
-  awaiting_verify: '需验证',
-  fulfilled: '已锁到',
-  pending_release: '待放票',
-  waiting: '等待',
-  watching: '监控中',
-  paused: '已暂停'
-}
-
 // 徽标配色（design §4.4）：awaiting_verify warning / fulfilled success / watching accent
 // / pending_release+waiting info（项目无 info 令牌，用 Badge 的 blue）/ paused muted
 export const MONITOR_BADGE_VARIANT = {
@@ -43,7 +32,7 @@ export const MONITOR_BADGE_VARIANT = {
   paused: 'muted'
 }
 
-// 日历徽标聚合优先级：首个命中即为准，顺序即契约（design.md §4.2 / PRD 状态模型）；
+// 日历徽标聚合优先级：段序即契约（design.md §4.2 / PRD 状态模型）；
 // expired 不参与（过去日不渲染徽标）
 export const BADGE_PRIORITY = [
   'awaiting_verify',
@@ -55,15 +44,18 @@ export const BADGE_PRIORITY = [
 ]
 
 /**
- * 纯函数：把某天的多条监控折叠成一个徽标。
- * status = 优先级最高的一条；count = 当天参与聚合的监控总条数（日历上用角标展示）。
- * expired 与不可用日都不参与（过去日不渲染徽标，不可用走 X 覆盖）。
+ * 纯函数：把某天的多条监控聚合为状态数组（日历格子每条监控一根色条）。
+ * 两态契约（2026-09-23）：日历只表达「监控中（深蓝）/ 待放票（含等待放票，浅蓝）」两种语义，
+ * 瞬态交给推送——awaiting_verify（系统此刻在盯）映射为 watching 蓝条；
+ * fulfilled（已锁到，推送负责支付引导）/ expired / paused 不生成段。
+ * 按 BADGE_PRIORITY 排序（排序只影响段顺序），段序稳定 = 优先级序。
  */
-export function aggregateDayBadge(monitors) {
-  const active = (monitors || []).filter(m => m.status && m.status !== 'expired')
-  if (!active.length) return null
-  const status = BADGE_PRIORITY.find(s => active.some(m => m.status === s))
-  return status ? { status, count: active.length } : null
+export function aggregateDayBars(monitors) {
+  const order = new Map(BADGE_PRIORITY.map((s, i) => [s, i]))
+  return (monitors || [])
+    .filter(m => m.status && m.status !== 'expired' && m.status !== 'paused' && m.status !== 'fulfilled')
+    .map(m => (m.status === 'awaiting_verify' ? 'watching' : m.status))
+    .sort((a, b) => (order.get(a) ?? BADGE_PRIORITY.length) - (order.get(b) ?? BADGE_PRIORITY.length))
 }
 
 export const useIntentStore = defineStore('intent', () => {
@@ -94,7 +86,7 @@ export const useIntentStore = defineStore('intent', () => {
   }
 
   function badgeFor(date) {
-    return aggregateDayBadge(monitorsByDate.value.get(date))
+    return aggregateDayBars(monitorsByDate.value.get(date))
   }
 
   function upsertMonitor(monitor) {

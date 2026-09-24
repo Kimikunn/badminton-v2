@@ -1,27 +1,29 @@
 <script setup>
 /**
- * BookingCalendar — 订场月历（Vant 4 Calendar 包装）
+ * BookingCalendar — 订场月历（自绘固定单月，ADR 0003）
  *
- * 骨架（月份区间 / 中文星期 / 网格 / 触控滚动）全部交给 Vant Calendar；本组件只做三件事：
- * 1. formatter 把领域状态写进日格子（不可用 → disabled + 红底；今天/过去 → 加类）；
- * 2. 三个插槽渲染标记：#text 日期数字带 data-date（e2e 锚点 + 今天色环钩子），
- *    #top-info 休/班 或 不可用 X（+ 多条监控角标），#bottom-info 监控胶囊或订场圆点；
- * 3. IntersectionObserver 跟踪滚动容器里可见比例最大的月份，驱动下方月摘要。
- *    （Vant 的 monthShow 只对「首次进入视口」的月份触发，回滚不再发，不能用于跟踪当前月。）
+ * 骨架自绘：一次只渲染一个月，‹›箭头切月（不支持滚动）。月份区间：
+ * 上限 = 今天所在月 +6；下限 = 最早订场记录所在月（无记录则今天所在月），到边禁用箭头。
+ * 视觉语言（research/mockup-v3.html 定稿）：
+ * - 监控 = 底部多段色条（每条监控一根 4px 段，段序 = BADGE_PRIORITY 优先级序；
+ *   两态契约 2026-09-23：只有监控中深蓝 / 待放票浅蓝，瞬态（已锁到）不生成段；
+ *   已暂停/已过期不生成段；不可用日与过去日无条）；
+ * - 填色 = 今天实心 accent 蓝（优先）/ 不可用 danger 红淡底+数字划线 / 订场 success 绿淡底；
+ *   过去日整格 opacity .35 淡化且不可点；
+ * - 休/班 = 数字右上 8px 小字（复用 HolidayBadge xs，字形语义沿用 HOLIDAY_TYPE_MARKS）。
+ * 日期数字永远 flex 几何居中：色条/休班/图例全部绝对定位或独立行，不进数字排版流。
+ * 网格恒 6 行 42 格（R13）：首行空位渲染上月末尾日期、尾部空位渲染下月开头日期（day-adj，纯视觉淡化）。
  *
- * @props {Array} records - 订场记录（date/startTime/endTime），用于圆点与当月总小时
+ * @props {Array} records - 订场记录（date/startTime/endTime），用于绿底与当月总小时
  * @props {Set<string>} unavailableDateSet - 不可用日期（YYYY-MM-DD）
- * @props {Map<string, {status, count}>} monitorStatusByDate - 每天折叠后的监控徽标
+ * @props {Map<string, string[]>} monitorStatusByDate - 每天监控状态数组（段序=优先级序）
  *
  * @events select-day - 点击今天及以后某天（不可用日同样上抛，由 DaySheet 处理）
  */
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import { Calendar } from 'vant'
-import 'vant/lib/calendar/style/index'
-import { X } from 'lucide-vue-next'
-import { holidayFor, monthHolidaySummary } from '@/utils/holiday'
-import { MONITOR_CELL_LABELS } from '@/stores/intent'
+import { ref, computed } from 'vue'
+import { holidayFor } from '@/utils/holiday'
 import HolidayBadge from '@/components/venue/HolidayBadge.vue'
+import CalendarInfoBar from '@/components/venue/CalendarInfoBar.vue'
 
 const props = defineProps({
   records: { type: Array, default: () => [] },
@@ -31,18 +33,16 @@ const props = defineProps({
 
 const emit = defineEmits(['select-day'])
 
-// 格子版监控配色（语义与 store 的 MONITOR_BADGE_VARIANT 一一对应）
-const MONITOR_PILL_CLASS = {
-  awaiting_verify: 'bg-warning-subtle text-warning',
-  fulfilled: 'bg-success-subtle text-success',
-  watching: 'bg-accent-subtle text-accent',
-  pending_release: 'bg-badge-blue-bg text-badge-blue',
-  waiting: 'bg-badge-blue-bg text-badge-blue',
-  paused: 'bg-surface-hover text-fg-muted',
+// 色条配色（两态契约 2026-09-23：awaiting_verify 已在聚合层映射为 watching；
+// fulfilled 为瞬态不生成段，推送负责支付引导，故不出现在映射——色值全部走现有 token）：
+// 监控中=badge-blue 深蓝 / 待放票（含等待放票）=accent 浅蓝（2026-09-23 用户定：两蓝拉开深浅）
+const MONITOR_BAR_CLASS = {
+  watching: 'bar-watching',
+  pending_release: 'bar-waiting',
+  waiting: 'bar-waiting',
 }
 
-const calendarRef = ref(null)
-const rootEl = ref(null)
+const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日']
 
 function dateKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -51,15 +51,6 @@ function dateKey(d) {
 const today = new Date()
 today.setHours(0, 0, 0, 0)
 const todayKey = dateKey(today)
-
-// 日历区间：本月 1 号 → 6 个月后的月末。
-// 起点取「本月 1 号」而不是 Vant 默认的「今天」：当月已过去的日子要由 .day-past 淡化，
-// 不能被 Vant 当越界 disabled（否则和不可用日的红字混淆），测试库里的不可用日也才渲染得出来。
-const minDate = new Date(today.getFullYear(), today.getMonth(), 1)
-const maxDate = new Date(today.getFullYear(), today.getMonth() + 7, 0)
-
-// 当前可见月（IntersectionObserver 跟踪）；初值 = 今天所在月，与首屏一致
-const currentMonth = ref({ year: today.getFullYear(), month: today.getMonth() + 1 })
 
 const bookingMap = computed(() => {
   const m = new Map()
@@ -72,87 +63,91 @@ const bookingMap = computed(() => {
   return m
 })
 
-// 日历区间内每天的领域信息：formatter 与插槽共用，避免每个格子重复查表/重复算节假日
+// 月份区间：minMonth=最早订场记录月（无 records 则今天所在月）；maxMonth=今天+6 月
+const minMonth = computed(() => {
+  if (!bookingMap.value.size) return { year: today.getFullYear(), month: today.getMonth() + 1 }
+  const earliest = [...bookingMap.value.keys()].sort()[0]
+  return { year: +earliest.slice(0, 4), month: +earliest.slice(5, 7) }
+})
+
+const maxMonth = computed(() => {
+  const d = new Date(today.getFullYear(), today.getMonth() + 6, 1)
+  return { year: d.getFullYear(), month: d.getMonth() + 1 }
+})
+
+// 当前显示月；首屏 = 今天所在月
+const cur = ref({ year: today.getFullYear(), month: today.getMonth() + 1 })
+
+const monthIndex = m => m.year * 12 + (m.month - 1)
+const atMin = computed(() => monthIndex(cur.value) <= monthIndex(minMonth.value))
+const atMax = computed(() => monthIndex(cur.value) >= monthIndex(maxMonth.value))
+
+function navMonth(delta) {
+  const d = new Date(cur.value.year, cur.value.month - 1 + delta, 1)
+  const next = { year: d.getFullYear(), month: d.getMonth() + 1 }
+  if (monthIndex(next) < monthIndex(minMonth.value)) return
+  if (monthIndex(next) > monthIndex(maxMonth.value)) return
+  cur.value = next
+}
+
+// 当前显示月每天的领域信息：格子渲染与图例共用，避免每格重复查表
 const metaByKey = computed(() => {
   const map = new Map()
-  const monitorMap = props.monitorStatusByDate
-  const cursor = new Date(minDate)
-  while (cursor <= maxDate) {
-    const key = dateKey(cursor)
+  const { year, month } = cur.value
+  const days = new Date(year, month, 0).getDate()
+  for (let d = 1; d <= days; d++) {
+    const key = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    const isToday = key === todayKey
+    const isPast = key < todayKey
+    const unavailable = props.unavailableDateSet.has(key)
     map.set(key, {
-      unavailable: props.unavailableDateSet.has(key),
+      key,
+      day: d,
+      unavailable,
       holiday: holidayFor(key),
       bookings: bookingMap.value.get(key) || [],
-      monitor: monitorMap.get(key) || null,
-      isToday: key === todayKey,
-      isPast: key < todayKey,
+      bars: unavailable || isPast ? [] : (props.monitorStatusByDate.get(key) || []),
+      isToday,
+      isPast,
     })
-    cursor.setDate(cursor.getDate() + 1)
   }
   return map
 })
 
-// Vant 逐日定制：只改 type/className；领域信息挂到 item.meta 上供插槽读取（Vant 原样透传）
-function formatter(item) {
-  const meta = metaByKey.value.get(dateKey(item.date))
-  if (!meta) return item
-  if (meta.unavailable) return { ...item, meta, type: 'disabled', className: 'day-unavail' }
-  if (meta.isToday) return { ...item, meta, className: 'day-today' }
-  if (meta.isPast) return { ...item, meta, className: 'day-past' }
-  return { ...item, meta }
-}
+const monthDays = computed(() => [...metaByKey.value.values()])
 
-// 点今天及以后 → select-day（不可用日也上抛，DaySheet 里可取消标记）；过去日忽略。
-// Vant 的 select 给 Date，clickDisabledDate 给日对象，这里统一取 date。
-function onSelect(payload) {
-  const date = payload instanceof Date ? payload : payload?.date
-  if (!date) return
-  const key = dateKey(date)
-  if (key < todayKey) return
-  emit('select-day', key)
-  // 本日历不是「选择日期」而是「打开某天面板」：清掉 Vant 的选中态，避免留下一个高亮方块
-  calendarRef.value?.reset(null)
-}
+// 当月 1 号在周一开头网格里的前置空位数
+const leadCount = computed(() => (new Date(cur.value.year, cur.value.month - 1, 1).getDay() + 6) % 7)
 
-// --- 当前可见月跟踪：监听日历滚动容器里各月份区块的可见比例 ---
-let observer = null
-const ratios = new Map()
+// 固定 6 行 42 格：首行空位补上月日期、尾部空位补下月日期（Apple 日历做法），高度恒定、切月不变高
+const tailCount = computed(() => 42 - leadCount.value - monthDays.value.length)
 
-function setupMonthObserver() {
-  const body = rootEl.value?.querySelector('.van-calendar__body')
-  if (!body || typeof IntersectionObserver === 'undefined') return
-  const months = body.querySelectorAll('.van-calendar__month')
-  if (!months.length) return
+// 上月最后 leadCount 天的「日」数字（升序；跨年由 Date 构造自动处理，如 1 月 → 去年 12 月）
+const prevLeadDays = computed(() => {
+  const d = new Date(cur.value.year, cur.value.month - 1, 0).getDate()
+  return Array.from({ length: leadCount.value }, (_, i) => d - leadCount.value + i + 1)
+})
 
-  observer = new IntersectionObserver((entries) => {
-    for (const entry of entries) ratios.set(entry.target, entry.intersectionRatio)
-    let bestEl = null
-    let bestRatio = 0
-    for (const [el, ratio] of ratios) {
-      if (ratio > bestRatio) {
-        bestRatio = ratio
-        bestEl = el
-      }
-    }
-    const key = bestEl?.querySelector('[data-date]')?.getAttribute('data-date')
-    if (key) currentMonth.value = { year: +key.slice(0, 4), month: +key.slice(5, 7) }
-  }, { root: body, threshold: Array.from({ length: 21 }, (_, i) => i / 20) })
+// 下月开头 tailCount 天的「日」数字（升序；跨年由 Date 构造自动处理，如 12 月 → 次年 1 月）
+const nextTailDays = computed(() => Array.from({ length: tailCount.value }, (_, i) => i + 1))
 
-  for (const month of months) {
-    ratios.set(month, 0)
-    observer.observe(month)
+function cellClass(meta) {
+  return {
+    'day-today': meta.isToday,
+    'day-unavail': meta.unavailable,
+    'day-book': meta.bookings.length > 0,
+    'day-past': meta.isPast,
   }
 }
 
-onMounted(() => {
-  // 等 Vant 首屏渲染完成后再挂 IO（此时月份区块高度已就位）
-  requestAnimationFrame(setupMonthObserver)
-})
-
-onBeforeUnmount(() => observer?.disconnect())
+// 点今天及以后 → select-day（不可用日也上抛，DaySheet 里可取消标记）；过去日不可点
+function onSelect(meta) {
+  if (meta.isPast) return
+  emit('select-day', meta.key)
+}
 
 const monthTotalHours = computed(() => {
-  const prefix = `${currentMonth.value.year}-${String(currentMonth.value.month).padStart(2, '0')}`
+  const prefix = `${cur.value.year}-${String(cur.value.month).padStart(2, '0')}`
   let total = 0
   for (const r of props.records) {
     if (!r.date || !r.date.startsWith(prefix)) continue
@@ -163,183 +158,111 @@ const monthTotalHours = computed(() => {
   return total
 })
 
-// 当前可见月的节日摘要（格子只显示 休/班 角标，节日名在这里给一次；点某天看 DaySheet 详情）
-const holidaySummary = computed(() => monthHolidaySummary(currentMonth.value.year, currentMonth.value.month))
-
-// 图例只解释两个**日期维度**的标记（订场圆点 / 不可用 X）；监控状态不列进来
-// （2026-09-17 用户定：格子上的监控徽标自己会说话，图例里堆状态只是噪音）
+// 图例固定（2026-09-23，UI 逐月一致）：不再按当月数据筛选。
+// 左组=日期填色（今天/订场/不可用），右组=监控色条（监控中/待放票）；2026-09-23 用户定：订场介绍在左、监控介绍在右
+// 第十二轮：信息栏抽成 CalendarInfoBar（左组 sw 色块、右组 barleg 色条），总时长恒显示（0h 占位）
+const legendLeft = [
+  { cls: 'leg-today', label: '今天' },
+  { cls: 'leg-book', label: '订场' },
+  { cls: 'leg-unavail', label: '不可用' },
+]
+const legendRight = [
+  { cls: 'bar-watching', label: '监控中' },
+  { cls: 'bar-waiting', label: '待放票' },
+]
 </script>
 
 <template>
-  <div ref="rootEl" class="venue-calendar flex flex-col gap-3 h-full">
-    <Calendar
-      ref="calendarRef"
-      class="flex-1 min-h-0"
-      :poppable="false"
-      type="single"
-      :show-confirm="false"
-      :show-title="false"
-      :show-subtitle="false"
-      :show-mark="false"
-      :default-date="null"
-      :allow-same-day="true"
-      :first-day-of-week="1"
-      :row-height="64"
-      :min-date="minDate"
-      :max-date="maxDate"
-      :lazy-render="false"
-      :formatter="formatter"
-      @select="onSelect"
-      @click-disabled-date="onSelect"
-    >
-      <!-- 日期数字：data-date 是 e2e 锚点，也是今天色环的样式钩子 -->
-      <template #text="item">
-        <span class="day-number" :data-date="dateKey(item.date)">{{ item.text }}</span>
-      </template>
-
-      <!-- 上排：休/班 徽标；不可用日换成 X；多条监控在右上角标条数 -->
-      <template #top-info="item">
-        <X v-if="item.meta?.unavailable" :size="12" class="day-x" />
-        <template v-else>
-          <HolidayBadge v-if="item.meta?.holiday" :type="item.meta.holiday.type" size="xs" class="holiday-mark" />
-          <span
-            v-if="item.meta?.monitor && item.meta.monitor.count > 1 && !item.meta.isPast"
-            class="monitor-count"
-          >{{ item.meta.monitor.count }}</span>
-        </template>
-      </template>
-
-      <!-- 下排：监控胶囊优先；没有（或过去日不显示）监控时退回订场圆点 -->
-      <template #bottom-info="item">
-        <span
-          v-if="item.meta && !item.meta.unavailable && !item.meta.isPast && item.meta.monitor"
-          class="monitor-pill"
-          :class="MONITOR_PILL_CLASS[item.meta.monitor.status]"
-        >{{ MONITOR_CELL_LABELS[item.meta.monitor.status] }}</span>
-        <span v-else-if="item.meta && !item.meta.unavailable && item.meta.bookings.length" class="day-dots">
-          <span v-for="(b, j) in item.meta.bookings.slice(0, 3)" :key="j" class="day-dot" />
-        </span>
-      </template>
-    </Calendar>
-
-    <!-- Info bar：只列日期维度的标记（订场圆点 / 不可用）+ 当月总时长（与日历网格左缘对齐，字号与摘要一致） -->
-    <div v-if="bookingMap.size || unavailableDateSet.size" class="flex items-center justify-between text-2xs text-fg-muted">
-      <div class="flex items-center gap-3">
-        <span v-if="bookingMap.size" class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-accent" /> 有订场</span>
-        <span v-if="unavailableDateSet.size" class="flex items-center gap-1.5"><X :size="10" class="text-danger" /> 不可用</span>
+  <div class="venue-calendar flex flex-col">
+    <div class="cal-head">
+      <div class="month-title">{{ cur.month }}月 <small>{{ cur.year }}</small></div>
+      <div class="month-nav">
+        <button type="button" aria-label="上一月" :disabled="atMin" @click="navMonth(-1)">‹</button>
+        <button type="button" aria-label="下一月" :disabled="atMax" @click="navMonth(1)">›</button>
       </div>
-      <span v-if="monthTotalHours" class="font-medium text-fg-secondary">{{ monthTotalHours }}h</span>
     </div>
 
-    <!-- 当前可见月节日摘要：格子只显示 休/班 角标，节日名在这里给一次（点某天看 DaySheet 详情） -->
-    <div v-if="holidaySummary" class="holiday-summary text-2xs text-fg-muted">{{ currentMonth.month }}月：{{ holidaySummary }}</div>
+    <div class="weekdays">
+      <span v-for="w in WEEKDAYS" :key="w">{{ w }}</span>
+    </div>
+
+    <div class="cal-grid">
+      <div v-for="(d, i) in prevLeadDays" :key="'lead-' + i" class="cal-day day-adj">
+        <span class="num">{{ d }}</span>
+      </div>
+      <div
+        v-for="meta in monthDays"
+        :key="meta.key"
+        class="cal-day"
+        :class="cellClass(meta)"
+        :data-date="meta.key"
+        @click="onSelect(meta)"
+      >
+        <span class="num">{{ meta.day }}</span>
+        <HolidayBadge v-if="meta.holiday" :type="meta.holiday.type" size="xs" class="holi-mark" />
+        <span v-if="meta.bars.length" class="bars">
+          <i v-for="(s, i) in meta.bars" :key="i" :class="MONITOR_BAR_CLASS[s]" />
+        </span>
+      </div>
+      <div v-for="(d, i) in nextTailDays" :key="'tail-' + i" class="cal-day day-adj">
+        <span class="num">{{ d }}</span>
+      </div>
+    </div>
+
+    <CalendarInfoBar :left="legendLeft" :right="legendRight" :hours="monthTotalHours" />
   </div>
 </template>
 
 <style scoped>
-/* Vant Calendar 变量映射到项目 token（自定义属性会继承进 .van-calendar 子树） */
-.venue-calendar {
-  --van-calendar-background: transparent;
-  --van-calendar-header-shadow: none;
-  --van-text-color: var(--color-fg);
-  --van-text-color-2: var(--color-fg-secondary);
-  --van-text-color-3: var(--color-fg-muted);
-  --van-calendar-day-disabled-color: oklch(0.55 0.22 25 / 0.45);
+/* 月份头：标题 + ‹›箭头（到边界 disabled） */
+.cal-head { display: flex; align-items: center; justify-content: space-between; padding: 0 2px 10px; }
+.month-title { font-size: 17px; font-weight: 700; color: var(--color-fg); }
+.month-title small { font-size: 12px; font-weight: 500; color: var(--color-fg-muted); margin-left: 4px; }
+.month-nav { display: flex; gap: 8px; }
+.month-nav button {
+  width: 32px; height: 32px; border-radius: 9999px; border: 1px solid var(--color-line);
+  background: var(--color-surface); color: var(--color-fg-secondary); font-size: 15px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
 }
+.month-nav button:disabled { opacity: 0.3; }
 
-.dark .venue-calendar {
-  --van-calendar-day-disabled-color: oklch(0.72 0.16 25 / 0.5);
-}
+/* 星期行 */
+.weekdays { display: grid; grid-template-columns: repeat(7, 1fr); margin-bottom: 4px; }
+.weekdays span { text-align: center; font-size: 10px; color: var(--color-fg-muted); padding: 4px 0; }
 
-/* 日历高度由外层 .record-view 容器决定（列表/日历同高），这里填满剩余空间即可 */
-.venue-calendar :deep(.van-calendar) {
-  height: 100%;
+/* 网格 */
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px 0; }
+.cal-day {
+  position: relative; height: 52px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; overflow: hidden;
 }
+.cal-day:active { filter: brightness(0.96); }
 
-/* 不可用：红底方块（沿用旧 X 方块语义）；X 在 top-info */
-.venue-calendar :deep(.van-calendar__day.day-unavail) {
-  background: var(--color-danger-subtle);
-  border-radius: 8px;
-}
+/* 填色（类优先级：today > unavail > book，按此顺序声明） */
+.day-book { background: var(--color-success-subtle); }
+.day-unavail { background: var(--color-danger-subtle); }
+.day-today { background: var(--color-accent); }
+.day-past { opacity: 0.35; pointer-events: none; }
+/* 相邻月填充格：过去日同款淡化，纯视觉（无 data-date、无领域标记、不可点） */
+.day-adj { opacity: 0.35; pointer-events: none; }
 
-/* 过去日：整格淡化（不走 Vant disabled，否则数字灰会被误读成不可用） */
-.venue-calendar :deep(.van-calendar__day.day-past) {
-  opacity: 0.45;
-}
+/* 日期数字：永远 flex 居中（标记不进排版流） */
+.num { font-size: 15px; line-height: 1; font-weight: 500; color: var(--color-fg); }
+.day-today .num { color: var(--color-fg-inverse); font-weight: 700; }
+.day-unavail .num { color: var(--color-danger); text-decoration: line-through; text-decoration-thickness: 1.5px; }
 
-/* 日期数字：固定圆形盒，保证整月同一基线 */
-.day-number {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 24px;
-  height: 24px;
-  padding: 0 4px;
-  border-radius: 9999px;
-  line-height: 1;
-}
+/* 监控色条：absolute 贴底并排，不影响数字位置 */
+.bars { position: absolute; left: 20%; right: 20%; bottom: 7px; display: flex; gap: 2px; height: 4px; border-radius: 2px; overflow: hidden; }
+.bars i { flex: 1; border-radius: 2px; }
+/* 两态契约 2026-09-23：监控中（watching）=badge-blue 深蓝 / 待放票（pending_release/waiting）=浅蓝；瞬态不生成段。
+   单一事实来源：--cal-bar-waiting 定义在 .venue-calendar 根（含 .dark 变体，2026-09-23 用户定「比 accent 明显更浅」），
+   格内 .bars i 与子组件 CalendarInfoBar 的 barleg 图例共同引用同名 var */
+.venue-calendar { --cal-bar-waiting: oklch(0.78 0.13 225); }
+.dark .venue-calendar { --cal-bar-waiting: oklch(0.85 0.10 215); }
+.bar-watching { background: var(--color-badge-blue); }
+.bar-waiting { background: var(--cal-bar-waiting); }
 
-/* 今天：Vant 原生选中态语言——实心 accent 圆 + 反白数字（不再用描边色环） */
-.day-today .day-number {
-  background: var(--color-accent);
-  color: var(--color-fg-inverse);
-  font-weight: 600;
-}
-
-.day-x {
-  display: block;
-  margin: 0 auto;
-  color: var(--color-danger);
-  opacity: 0.7;
-}
-
-/* 休/班 徽标：限宽居中（否则作为 flex 项会撑满整宽，盒与右上角监控条数角标重叠报警） */
-.holiday-mark {
-  width: max-content;
-  margin-inline: auto;
-}
-
-/* 订场圆点（无监控时）：数字行下方 */
-.day-dots {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-}
-.day-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 9999px;
-  background: var(--color-accent);
-}
-
-/* 监控胶囊：贴底内缩，3 字标签不截断、不越出格子 */
-.monitor-pill {
-  display: inline-block;
-  max-width: 100%;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  padding: 1px 4px;
-  border-radius: 9999px;
-  font-size: 9px;
-  line-height: 10px;
-  font-weight: 500;
-}
-
-/* 多条监控角标：右上角 */
-.monitor-count {
-  position: absolute;
-  top: -4px;
-  right: 4px;
-  min-width: 12px;
-  height: 12px;
-  padding: 0 3px;
-  border-radius: 9999px;
-  background: var(--color-fg);
-  color: var(--color-fg-inverse);
-  font-size: 8px;
-  font-weight: 600;
-  line-height: 12px;
-  text-align: center;
-}
+/* 休/班：数字右上小字（HolidayBadge xs 提供 8px 字形与配色，这里只定位） */
+.holi-mark { position: absolute; top: 3px; right: 4px; }
 </style>
