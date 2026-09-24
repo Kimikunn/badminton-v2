@@ -15,6 +15,8 @@ services:
       - ./server/database:/app/server/database
       - ./server/uploads:/app/server/uploads
       - ./server/runtime:/app/server/runtime
+      # 自愈用的 docker 套接字（仅 restart warp 一个容器）
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - NODE_ENV=production
       - PORT=3000
@@ -22,6 +24,12 @@ services:
       - ADMIN_TOKEN=${ADMIN_TOKEN:-}
       # 场馆出站走 WARP 链路（绕主服务器 IP 的风控封禁）；置空则直连
       - GYM_PROXY_URL=${GYM_PROXY_URL:-http://warp-gost:8080}
+      # 风控自愈：全失败轮自动重启 warp 换出口 IP（最小间隔 10 分钟）
+      - GYM_PROXY_ROTATE_CMD=${GYM_PROXY_ROTATE_CMD:-docker restart badminton-warp}
+      - GYM_PROXY_ROTATE_MIN_INTERVAL_MS=${GYM_PROXY_ROTATE_MIN_INTERVAL_MS:-600000}
+    volumes:
+      # 自愈用的 docker 套接字（仅 restart warp 一个容器）
+      - /var/run/docker.sock:/var/run/docker.sock
 
   # Cloudflare WARP：给订场请求提供与主服务器不同的免费出口 IP
   warp:

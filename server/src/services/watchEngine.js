@@ -276,11 +276,17 @@ async function notifyTokenInvalid(env) {
 }
 
 /** 连续拉取失败告警（监控可能已失效）：连败阈值触发一次，恢复后清零 */
-async function notifyPollFailure(env, failCount) {
+async function notifyPollFailure(env, failCount, rotateResult = null) {
   const flags = intentService.getFlags();
   if (flags.pollFailureNotified) return;
+  let rotateNote = '';
+  if (rotateResult && rotateResult.rotated) {
+    rotateNote = '\n已自动重启代理容器更换出口 IP（10 分钟最多一次），下一轮尝试新出口。';
+  } else if (rotateResult && rotateResult.skipped === 'rate_limited') {
+    rotateNote = '\n出口 IP 最近已轮换过（10 分钟限频），若持续失败可手动更换出口。';
+  }
   const result = await notifyWith(env, '订场监控告警',
-    `**场馆接口连续 ${consecutivePollFailures} 轮拉取失败**（本轮 ${failCount} 个日期全部失败），监控与锁场可能已失效，请检查服务器网络或场馆接口状态。`);
+    `**场馆接口连续 ${consecutivePollFailures} 轮拉取失败**（本轮 ${failCount} 个日期全部失败），监控与锁场可能已失效，请检查服务器网络或场馆接口状态。${rotateNote}`);
   if (result.success) {
     intentService.setPollFailureNotified(true);
   } else {
@@ -447,9 +453,10 @@ async function maybeStartBurst(env, intents) {
     }
     // 出数失败：告警一次，并入常规节奏继续等
     logger.error(`watchEngine.burst - ${date} 放票数据连续 ${BURST_MAX_ATTEMPTS} 次拉取失败，本轮放弃`);
+    const rotateResult = await Promise.resolve(venueHttp.rotateProxyEgress());
     entry.burstDoneAt = Date.now();
     await notifyWith(env, '订场监控告警',
-      `**9 点抢场失败**：${date} 放票数据连续 ${BURST_MAX_ATTEMPTS} 次拉取失败，请检查网络或场馆接口状态，必要时手动订场。`);
+      `**9 点抢场失败**：${date} 放票数据连续 ${BURST_MAX_ATTEMPTS} 次拉取失败，请检查网络或场馆接口状态，必要时手动订场。${rotateResult && rotateResult.rotated ? '\n已自动更换代理出口 IP，可等待常规节奏重试。' : ''}`);
     entry.mode = 'normal';
     entry.nextFetchAt = Date.now() + env.pollIntervalSec * 1000;
   } finally {
@@ -549,9 +556,11 @@ async function runTick() {
   // 也不清零——否则外网被间歇性阻断时（部分轮 403/部分超时）告警标记会被误清，
   // 导致"告警 → 误判恢复 → 再告警"反复推送。
   if (due.length > 0 && failedFetches === due.length) {
+    // 走代理时先自愈一次：重启代理容器换出口 IP（馆方常临时封共享出口 IP）
+    const rotateResult = venueHttp.rotateProxyEgress();
     consecutivePollFailures += 1;
     if (consecutivePollFailures >= POLL_FAILURE_ALERT_THRESHOLD) {
-      await notifyPollFailure(env, failedFetches);
+      await notifyPollFailure(env, failedFetches, rotateResult);
     }
   } else if (hadSuccess) {
     consecutivePollFailures = 0;
@@ -642,6 +651,7 @@ function resetEngineState() {
   consecutivePollFailures = 0;
   signerWarned = false;
   plan.clear();
+  venueHttp.resetRotateState();
   pendingEvaluation.clear();
   rcRetrying.clear();
   lastSweepDate = null;

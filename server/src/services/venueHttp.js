@@ -58,4 +58,45 @@ async function paceOutbound() {
   if (ms > 0) await sleep(ms);
 }
 
-module.exports = { venueFetch, outboundDispatcher, paceOutbound };
+// === 代理出口自动轮换（风控自愈） ===
+// 场馆会临时封禁共享出口 IP（WARP/机房段），表现为整站 TCP 超时。
+// 重启 WARP 容器即可换到出口池里的新 IP（已实测验证）：由 watchEngine 在
+// "轮内全部日期拉取失败"时调用，每 GYM_PROXY_ROTATE_MIN_INTERVAL_MS 至多换一次。
+
+const { exec } = require('child_process');
+const logger = require('../utils/logger');
+
+let lastRotateAt = 0;
+let rotateCount = 0;
+const ROTATE_CMD_TIMEOUT_MS = 60_000;
+
+/**
+ * 触发代理出口轮换（执行 GYM_PROXY_ROTATE_CMD，如 'docker restart badminton-warp'）。
+ * 有速率限制：未到最小间隔返回 skipped，避免风控持续期间狂换 IP。
+ * 尽力而为：命令失败只记日志，不抛出（告警链路不能被自愈动作打断）。
+ */
+function rotateProxyEgress({ force = false } = {}) {
+  const cmd = process.env.GYM_PROXY_ROTATE_CMD;
+  if (!process.env.GYM_PROXY_URL || !cmd) return { skipped: 'not_configured' };
+  const minMs = Number(process.env.GYM_PROXY_ROTATE_MIN_INTERVAL_MS || 10 * 60_000);
+  const now = Date.now();
+  if (!force && now - lastRotateAt < minMs) return { skipped: 'rate_limited' };
+  lastRotateAt = now;
+  rotateCount += 1;
+  // 换出口后丢弃旧连接，避免复用被拉黑 IP 的 keep-alive 连接
+  proxyUrlLoaded = '';
+  proxyAgent = null;
+  exec(cmd, { timeout: ROTATE_CMD_TIMEOUT_MS }, (err) => {
+    if (err) logger.error(`venueHttp.rotate - 出口轮换命令执行失败: ${err.message}`);
+    else logger.info(`venueHttp.rotate - 代理出口已轮换（第 ${rotateCount} 次）`);
+  });
+  return { rotated: true, count: rotateCount };
+}
+
+/** 测试用：重置轮换状态 */
+function resetRotateState() {
+  lastRotateAt = 0;
+  rotateCount = 0;
+}
+
+module.exports = { venueFetch, outboundDispatcher, paceOutbound, rotateProxyEgress, resetRotateState };

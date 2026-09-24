@@ -1,7 +1,7 @@
 FROM node:22-alpine
 
 # 时区数据（容器 TZ=Asia/Shanghai，alpine 默认不带 zoneinfo）
-RUN apk add --no-cache tzdata
+RUN apk add --no-cache tzdata docker-cli
 
 WORKDIR /app
 
