@@ -353,6 +353,7 @@ async function deleteEditingVenue() {
             :key="r.id"
             :record="r"
             :player-name="playersStore.getPlayerName(r.playerId)"
+            :player-avatar="playersStore.getPlayerById(r.playerId)?.avatar"
             show-date
             clickable
             @click="openEdit(r)"
