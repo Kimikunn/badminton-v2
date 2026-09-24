@@ -514,8 +514,14 @@ async function runTick() {
   // 避免一轮 4 个请求连发;0 = 关闭限制（测试）。
   const baseline = prepare('SELECT COUNT(*) AS cnt FROM watch_slot_state').get().cnt === 0;
   const now = Date.now();
+  // politeness：只拉"有启用意图覆盖"的日期——没意图盯的日期拉了也没人消费，
+  // 纯粹触发场馆风控（意图展开在窗口内的日期由 expandIntentDates 决定）
+  const coveredDates = new Set();
+  for (const intent of intents) {
+    for (const d of intent.dates) coveredDates.add(d);
+  }
   const dueAll = [...plan.values()]
-    .filter(e => e.mode === 'normal' && e.nextFetchAt <= now)
+    .filter(e => e.mode === 'normal' && e.nextFetchAt <= now && coveredDates.has(e.date))
     .sort((a, b) => a.nextFetchAt - b.nextFetchAt);
   const duePerTick = Number(process.env.GYM_DUE_PER_TICK ?? 2);
   const due = duePerTick > 0 ? dueAll.slice(0, duePerTick) : dueAll;

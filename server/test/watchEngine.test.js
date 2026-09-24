@@ -407,27 +407,27 @@ test('告警后中间轮全部 403/失败但无一成功：不清零标记，不
   assert.equal(notifiedFlags().p, 0);
 });
 
-test('GYM_DUE_PER_TICK：每 tick 轮转限拉 N 个日期，其余留到下轮（对场馆限流礼貌）', async (t) => {
+test('GYM_DUE_PER_TICK：每 tick 轮转限拉 N 个覆盖日期，其余留到下轮（对场馆限流礼貌）', async (t) => {
   resetEngine();
   kit.configureEnv();
   process.env.GYM_DUE_PER_TICK = '2';
   makeIntent({ date: kit.datePlus(1) });
+  makeIntent({ date: kit.datePlus(2) });
   mockTime(t, 8, 0, { mockTimeout: true });
 
   let fetchStub = kit.leaseAndPushFetch(() => kit.emptyLease());
   kit.stubFetch(fetchStub);
   await watchEngine.tick();
-  assert.equal(fetchStub.leaseCalls.length, 2, '第 1 轮只拉最早到期的 2 个日期');
+  assert.equal(fetchStub.leaseCalls.length, 2, '第 1 轮只拉覆盖日期里最早到期的 2 个');
 
-  // 第 2 轮补拉剩下 2 个
+  // 第 2 轮：到期日期又到期，仍限 2 个
   await advancePastPollInterval(t);
   await watchEngine.tick();
-  assert.equal(fetchStub.leaseCalls.length, 4, '第 2 轮拉另外 2 个日期');
+  assert.equal(fetchStub.leaseCalls.length, 4, '仍按 2 个/轮 推进');
 
-  // 第 3 轮起恢复 2 个/轮 的稳态节奏
   await advancePastPollInterval(t);
   await watchEngine.tick();
-  assert.equal(fetchStub.leaseCalls.length, 6, '仍按 2 个/轮 节奏推进，不超配额');
+  assert.equal(fetchStub.leaseCalls.length, 6, '不超配额');
 
   process.env.GYM_DUE_PER_TICK = '0';
 });
@@ -465,21 +465,21 @@ test('有 auto_lock 意图但签名私钥未配置 → 每进程告警一次，�
 test('09:00 前新放票日按常规节奏拉取（不 burst）', async (t) => {
   resetEngine();
   kit.configureEnv();
-  makeIntent({ date: kit.datePlus(BOOKING_WINDOW_DAYS - 1) }); // 覆盖新放票日
+  const target = kit.datePlus(2);
+  makeIntent({ date: target });
   mockTime(t, 8, 0, { mockTimeout: true });
 
   const fetchStub = kit.leaseAndPushFetch(() => kit.emptyLease());
   kit.stubFetch(fetchStub);
   await watchEngine.tick();
 
-  // 4 天各拉取一次，新放票日不重复拉（无 1s 连发）
+  // 只拉意图覆盖的日期（没意图盯的日期不轮询，避免无意义触发风控）
   const byDate = new Map();
   for (const c of fetchStub.leaseCalls) {
     const d = new URL(c.url).searchParams.get('date');
     byDate.set(d, (byDate.get(d) || 0) + 1);
   }
-  assert.equal(byDate.size, BOOKING_WINDOW_DAYS);
-  assert.ok([...byDate.values()].every(n => n === 1));
+  assert.deepEqual([...byDate.entries()], [[target, 1]]);
   // 基线播种，不推送
   assert.equal(kit.PUSH_CALLS.length, 0);
 });
@@ -620,7 +620,7 @@ test('burst：无意图覆盖新放票日则不 burst', async (t) => {
 
   const release = kit.datePlus(BOOKING_WINDOW_DAYS - 1);
   const releaseCalls = fetchStub.leaseCalls.filter(c => c.url.includes(`date=${release}`));
-  assert.equal(releaseCalls.length, 1); // 只按常规节奏拉一次
+  assert.equal(releaseCalls.length, 0); // 新放票日没有意图覆盖：根本不拉取
 });
 
 // === 引擎级回流：锁到即停 + 回流记账（不跟踪支付） ===
