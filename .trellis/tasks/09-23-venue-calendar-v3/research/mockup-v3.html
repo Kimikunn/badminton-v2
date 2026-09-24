@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>订场日历草图 v3 — 色条(监控) + 填色(今天/订场/不可用)</title>
+<style>
+:root {
+  --accent: oklch(0.65 0.18 220);
+  --accent-subtle: oklch(0.65 0.18 220 / 0.14);
+  --success: oklch(0.62 0.19 145);
+  --success-subtle: oklch(0.62 0.19 145 / 0.14);
+  --warning: oklch(0.70 0.18 80);
+  --warning-subtle: oklch(0.70 0.18 80 / 0.14);
+  --danger: oklch(0.55 0.22 25);
+  --danger-subtle: oklch(0.55 0.22 25 / 0.10);
+  --blue: oklch(0.62 0.14 250);
+  --blue-subtle: oklch(0.62 0.14 250 / 0.14);
+  --surface: oklch(1.00 0.002 220);
+  --surface-hover: oklch(0.93 0.005 220);
+  --line: oklch(0.88 0.005 220);
+  --fg: oklch(0.18 0.005 220);
+  --fg-secondary: oklch(0.42 0.005 220);
+  --fg-muted: oklch(0.58 0.003 220);
+  --fg-inverse: oklch(0.98 0.002 220);
+}
+.dark {
+  --accent: oklch(0.72 0.16 210);
+  --accent-subtle: oklch(0.72 0.16 210 / 0.18);
+  --success: oklch(0.70 0.15 145);
+  --success-subtle: oklch(0.70 0.15 145 / 0.15);
+  --warning: oklch(0.78 0.15 80);
+  --warning-subtle: oklch(0.78 0.15 80 / 0.15);
+  --danger: oklch(0.65 0.20 25);
+  --danger-subtle: oklch(0.65 0.20 25 / 0.12);
+  --blue: oklch(0.70 0.12 250);
+  --blue-subtle: oklch(0.70 0.12 250 / 0.15);
+  --surface: oklch(0.20 0.005 220);
+  --surface-hover: oklch(0.24 0.005 220);
+  --line: oklch(0.25 0.005 220);
+  --fg: oklch(0.95 0.005 220);
+  --fg-secondary: oklch(0.75 0.005 220);
+  --fg-muted: oklch(0.60 0.003 220);
+  --fg-inverse: oklch(0.18 0.005 220);
+}
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+body {
+  font-family: -apple-system, "PingFang SC", "Noto Sans SC", sans-serif;
+  background: var(--surface); color: var(--fg);
+  max-width: 420px; margin: 0 auto; padding: 16px 12px 40px;
+  min-height: 100vh;
+}
+h1 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.sub { font-size: 11px; color: var(--fg-muted); margin-bottom: 14px; line-height: 1.5; }
+
+/* 月份头 */
+.month-head { display: flex; align-items: center; justify-content: space-between; padding: 0 2px 10px; }
+.month-title { font-size: 17px; font-weight: 700; }
+.month-title small { font-size: 12px; font-weight: 500; color: var(--fg-muted); margin-left: 4px; }
+.nav { display: flex; gap: 8px; }
+.nav button {
+  width: 32px; height: 32px; border-radius: 9999px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--fg-secondary); font-size: 15px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.nav button:disabled { opacity: .3; }
+
+/* 星期行 */
+.weekdays { display: grid; grid-template-columns: repeat(7, 1fr); margin-bottom: 4px; }
+.weekdays span { text-align: center; font-size: 10px; color: var(--fg-muted); padding: 4px 0; }
+
+/* 网格 */
+.grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px 0; }
+.cell {
+  position: relative; height: 52px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; overflow: hidden;
+}
+.cell:active { filter: brightness(.96); }
+/* 数字永远几何居中：色条/图例一律绝对定位贴边，不进排版流 */
+.num { font-size: 15px; line-height: 1; color: var(--fg); font-weight: 500; }
+.cell.past { opacity: .35; pointer-events: none; }
+.cell.today { background: var(--accent); }
+.cell.today .num { color: var(--fg-inverse); font-weight: 700; }
+.cell.unavail { background: var(--danger-subtle); }
+.cell.unavail .num { color: var(--danger); text-decoration: line-through; text-decoration-thickness: 1.5px; }
+.cell.out { opacity: 0; pointer-events: none; }
+
+/* 订场记录：未来 = 绿色填色；过去 = 淡绿 */
+.cell.booking { background: var(--success-subtle); }
+.cell.past.booking { background: var(--success-subtle); opacity: .5; }
+/* 今天 + 订场记录：今天的实心蓝底优先 */
+.cell.today.booking { background: var(--accent); opacity: 1; }
+
+/* 监控：底部细色条（保持 v1 方案 A 不变），绝对定位贴底、不影响数字位置 */
+.bars { position: absolute; left: 20%; right: 20%; bottom: 7px; display: flex; gap: 2px; height: 4px; border-radius: 2px; overflow: hidden; }
+.bars i { flex: 1; border-radius: 2px; }
+.bar-watching { background: var(--accent); }
+.bar-await { background: var(--warning); }
+.bar-locked { background: var(--success); }
+.bar-waiting { background: var(--blue); }
+
+/* 休/班：数字右上小字（绝对定位，不进排版流） */
+.holi { position: absolute; top: 3px; right: 4px; font-size: 8px; line-height: 1; color: var(--fg-muted); z-index: 1; }
+.holi.rest { color: var(--danger); }
+/* 今天数字在同色底上：色环由实心底承担，数字自身不用再描边 */
+
+/* 月头下方的信息栏：图例 + 当月总时长 */
+.infobar { display: flex; align-items: center; justify-content: space-between; padding: 0 2px 8px; font-size: 11px; color: var(--fg-muted); }
+.infobar .items { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.infobar .item { display: flex; align-items: center; gap: 5px; }
+.infobar .sw { width: 12px; height: 12px; border-radius: 4px; flex-shrink: 0; }
+.infobar .item i.barleg { width: 12px; height: 4px; border-radius: 2px; }
+.infobar .hours { font-weight: 500; color: var(--fg-secondary); }
+
+/* 深色切换 */
+.theme-toggle { position: fixed; top: 12px; right: 12px; font-size: 11px; border: 1px solid var(--line); background: var(--surface); color: var(--fg-secondary); border-radius: 9999px; padding: 5px 10px; cursor: pointer; }
+</style>
+</head>
+<body>
+<button class="theme-toggle" onclick="document.documentElement.classList.toggle('dark');document.body.classList.toggle('dark')">深色</button>
+
+<h1>订场日历 · 草图 v3</h1>
+<p class="sub">监控 = 底部色条；今天 = 蓝底 · 未来订场 = 绿底 · 过去订场 = 淡绿底 · 不可用 = 红底划线（填色语言）。<br>不可用日不显示监控条。</p>
+
+<div class="month-head">
+  <div class="month-title" id="mTitle">9月 <small>2026</small></div>
+  <div class="nav">
+    <button id="prevBtn" onclick="nav(-1)">‹</button>
+    <button id="nextBtn" onclick="nav(1)">›</button>
+  </div>
+</div>
+<div class="weekdays"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+<div class="infobar" id="infobar"></div>
+<div class="grid" id="grid"></div>
+
+<script>
+// st = 监控状态数组（一天可多条）；bk = 订场记录条数
+const DATA = {
+  '2026-07': {
+    '11': { bk: 1 },
+    '20': { bk: 1 },
+  },
+  '2026-09': {
+    '3':  { st: ['watching'] },
+    '7':  { bk: 1 },
+    '8':  { st: ['await_verify'] },
+    '12': { st: ['fulfilled'] },
+    '14': { bk: 2 },
+    '15': { unavail: true },
+    '17': { st: ['watching', 'await_verify'] },
+    '24': { st: ['waiting'] },
+    '25': { holi: ['班', ''] },
+    '26': { st: ['watching'] },
+    '28': { unavail: true },
+  },
+  '2026-10': {
+    '1': { holi: ['休', '国庆节'] },
+    '2':  { bk: 1 },
+    '5': { st: ['await_verify'] },
+    '9': { holi: ['班', ''] },
+    '10': { st: ['watching', 'await_verify'] },
+    '14': { st: ['fulfilled'] },
+    '18': { unavail: true },
+    '22': { st: ['waiting'] },
+    '24': { st: ['pending_release'] },
+    '27': { st: ['watching'] },
+    '30': { bk: 1 },
+  },
+};
+const TODAY = { y: 2026, m: 9, d: 23 };
+const MAX = { y: 2027, m: 3 }; // 监控最长 +6 个月
+let cur = { y: 2026, m: 9 };
+
+// 回翻下限 = 最早订场记录所在月（真实实现取订场记录最早日期）
+const MINS = Object.keys(DATA).sort();
+const MIN = { y: +MINS[0].slice(0, 4), m: +MINS[0].slice(5, 7) };
+
+const BAR = { watching: 'bar-watching', await_verify: 'bar-await', fulfilled: 'bar-locked', pending_release: 'bar-waiting', waiting: 'bar-waiting' };
+
+function render() {
+  document.getElementById('mTitle').innerHTML = `${cur.m}月 <small>${cur.y}</small>`;
+  document.getElementById('prevBtn').disabled = (cur.y === MIN.y && cur.m === MIN.m);
+  document.getElementById('nextBtn').disabled = (cur.y === MAX.y && cur.m === MAX.m);
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  const first = new Date(cur.y, cur.m - 1, 1);
+  const lead = (first.getDay() + 6) % 7;
+  const days = new Date(cur.y, cur.m, 0).getDate();
+  const key = `${cur.y}-${String(cur.m).padStart(2, '0')}`;
+  const data = DATA[key] || {};
+  for (let i = 0; i < lead; i++) grid.appendChild(Object.assign(document.createElement('div'), { className: 'cell out' }));
+  for (let d = 1; d <= days; d++) {
+    const cell = document.createElement('div');
+    const isPast = cur.y < TODAY.y || (cur.y === TODAY.y && (cur.m < TODAY.m || (cur.m === TODAY.m && d < TODAY.d)));
+    const isToday = cur.y === TODAY.y && cur.m === TODAY.m && d === TODAY.d;
+    const info = data[d] || {};
+    const cls = ['cell'];
+    if (isPast) cls.push('past');
+    if (isToday) cls.push('today');
+    if (info.unavail) cls.push('unavail');
+    if (info.bk) cls.push('booking');
+    cell.className = cls.join(' ');
+    let inner = `<span class="num">${d}</span>`;
+    if (info.holi) inner += `<span class="holi ${info.holi[0] === '休' ? 'rest' : ''}">${info.holi[0]}</span>`;
+    // 监控色条：单条 = 一根；多条 = 多段并排；不可用日不显示
+    if (info.st && info.st.length && !info.unavail) {
+      inner += `<span class="bars">${info.st.map(s => `<i class="${BAR[s]}"></i>`).join('')}</span>`;
+    }
+    cell.innerHTML = inner;
+    grid.appendChild(cell);
+  }
+  // 信息栏：随当月实际出现的语义动态出现；总时长示例（真实版由订场记录计算）
+  const vals = Object.values(data);
+  const has = k => vals.some(v => v.st && v.st.includes(k));
+  document.getElementById('infobar').innerHTML = `
+    <div class="items">
+      <span class="item"><span class="sw" style="background:var(--accent)"></span>今天</span>
+      ${vals.some(v => v.bk) ? '<span class="item"><span class="sw" style="background:var(--success-subtle)"></span>订场记录（过去=淡绿）</span>' : ''}
+      ${has('await_verify') ? '<span class="item"><i class="barleg" style="background:var(--warning)"></i>需验证</span>' : ''}
+      ${has('fulfilled') ? '<span class="item"><i class="barleg" style="background:var(--success)"></i>已锁到</span>' : ''}
+      ${has('watching') ? '<span class="item"><i class="barleg" style="background:var(--accent)"></i>监控中</span>' : ''}
+      ${(has('waiting') || has('pending_release')) ? '<span class="item"><i class="barleg" style="background:var(--blue)"></i>待放票/等待放票</span>' : ''}
+      ${vals.some(v => v.unavail) ? '<span class="item"><span class="sw" style="background:var(--danger-subtle)"></span>不可用</span>' : ''}
+    </div>
+    <span class="hours">12h</span>`;
+}
+function nav(d) {
+  let m = cur.m + d, y = cur.y;
+  if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; }
+  cur = { y, m }; render();
+}
+render();
+</script>
+</body>
+</html>

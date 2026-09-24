@@ -1,0 +1,5 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "质量检查基准"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Quality Check 入口"}
+{"file": ".trellis/spec/frontend/date-holidays.md", "reason": "R15/R16 第四轮：列表预览改 5 行 + 查看更多/收起同位切换、相邻月填充 .day-adj 契约（无 data-date、不可点、无标记）已录入"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "R13-R16：.record-body 固定高 424px、5 行预览 +10/收起、42 格相邻月填充（v3 轮更新，替换旧的 7 行/自然高度描述）"}
