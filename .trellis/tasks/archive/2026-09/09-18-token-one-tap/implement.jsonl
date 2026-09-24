@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/backend/api-routes.md", "reason": "新增 PAC/状态/CA 三条公开读路由与原有写路由分层、响应契约、Content-Type 约定"}
+{"file": ".trellis/spec/backend/logging.md", "reason": "转接模块的异常与拒绝必须走 pino logger，不得 console.log、不得冒泡崩进程"}
+{"file": ".trellis/spec/backend/testing.md", "reason": "proxyRelay 用 node:test + 原始 socket 测 CONNECT 转接；API 测试用 supertest；GYM_RUNTIME_DIR 隔离"}
+{"file": ".trellis/spec/backend/auth.md", "reason": "三条新路由均为公开读且不得泄露 token 片段；写通道仍走既有鉴权"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "TokenRefreshPanel.vue 的 SFC 结构、props/JSDoc、Button 原语与双主题令牌配色"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "客户端风格与验证命令；PWA 缓存对 /api 读取的影响"}
+{"file": ".trellis/tasks/09-18-token-one-tap/design.md", "reason": "转接契约、PAC 生成规则、三条路由与面板交互时序（实现必须与此一致）"}

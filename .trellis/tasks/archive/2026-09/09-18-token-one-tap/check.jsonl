@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/testing.md", "reason": "验收要跑 cd server && npm test，核对新增用例覆盖域名校验/鉴权/损坏文件容错，且既有用例不回归"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "跑 npm run build + npx playwright test，核对无 console.log/裸 button/设计令牌配色"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "核对入口组件与设置小节 UI 与既有组件模式一致（props 声明、双主题、无横向溢出）"}
+{"file": ".trellis/spec/backend/auth.md", "reason": "确认 PUT 无 admin token 时 401、GET 不泄露任何敏感值"}
+{"file": ".trellis/tasks/09-18-token-one-tap/prd.md", "reason": "逐条对照 AC1-AC7；真机项（AC1/AC3）需用户手测结果回填"}
