@@ -407,6 +407,31 @@ test('告警后中间轮全部 403/失败但无一成功：不清零标记，不
   assert.equal(notifiedFlags().p, 0);
 });
 
+test('GYM_DUE_PER_TICK：每 tick 轮转限拉 N 个日期，其余留到下轮（对场馆限流礼貌）', async (t) => {
+  resetEngine();
+  kit.configureEnv();
+  process.env.GYM_DUE_PER_TICK = '2';
+  makeIntent({ date: kit.datePlus(1) });
+  mockTime(t, 8, 0, { mockTimeout: true });
+
+  let fetchStub = kit.leaseAndPushFetch(() => kit.emptyLease());
+  kit.stubFetch(fetchStub);
+  await watchEngine.tick();
+  assert.equal(fetchStub.leaseCalls.length, 2, '第 1 轮只拉最早到期的 2 个日期');
+
+  // 第 2 轮补拉剩下 2 个
+  await advancePastPollInterval(t);
+  await watchEngine.tick();
+  assert.equal(fetchStub.leaseCalls.length, 4, '第 2 轮拉另外 2 个日期');
+
+  // 第 3 轮起恢复 2 个/轮 的稳态节奏
+  await advancePastPollInterval(t);
+  await watchEngine.tick();
+  assert.equal(fetchStub.leaseCalls.length, 6, '仍按 2 个/轮 节奏推进，不超配额');
+
+  process.env.GYM_DUE_PER_TICK = '0';
+});
+
 test('有 auto_lock 意图但签名私钥未配置 → 每进程告警一次，锁场静默跳过', async (t) => {
   resetEngine();
   kit.configureEnv({ withKey: false });

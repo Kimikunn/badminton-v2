@@ -509,10 +509,16 @@ async function runTick() {
   // 新放票日 burst（09:00 起，出数即止）
   await maybeStartBurst(env, intents);
 
-  // 常规节奏：拉取到期日期
+  // 常规节奏：拉取到期日期（取数计划：常规节奏 + 新放票日 burst）
+  // politeness：每 tick 最多拉 GYM_DUE_PER_TICK 个日期（轮转往前推进），
+  // 避免一轮 4 个请求连发;0 = 关闭限制（测试）。
   const baseline = prepare('SELECT COUNT(*) AS cnt FROM watch_slot_state').get().cnt === 0;
   const now = Date.now();
-  const due = [...plan.values()].filter(e => e.mode === 'normal' && e.nextFetchAt <= now);
+  const dueAll = [...plan.values()]
+    .filter(e => e.mode === 'normal' && e.nextFetchAt <= now)
+    .sort((a, b) => a.nextFetchAt - b.nextFetchAt);
+  const duePerTick = Number(process.env.GYM_DUE_PER_TICK ?? 2);
+  const due = duePerTick > 0 ? dueAll.slice(0, duePerTick) : dueAll;
   let failedFetches = 0;
   let hadSuccess = false; // 本轮至少一个日期拉到有效数据（才允许清零 token 告警标记）
   let notified = 0;

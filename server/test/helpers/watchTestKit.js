@@ -48,9 +48,10 @@ function configureEnv({ withKey = false } = {}) {
   process.env.GYM_TOKEN_USER = 'wxtoken-secret-9999';
   process.env.PUSH_TYPE = 'pushplus';
   process.env.PUSH_TOKEN = 'pp-token-abcd1234';
-  // 出站礼貌间隔关掉，保持用例快跑（间隔逻辑单独测）
+  // 出站礼貌间隔与每 tick 拉取配额关掉，保持既有用例语义（4 天一轮全拉）
   process.env.GYM_OUTBOUND_SPACING_MIN_MS = '0';
   process.env.GYM_OUTBOUND_SPACING_MAX_MS = '0';
+  process.env.GYM_DUE_PER_TICK = '0';
   if (withKey) process.env.GYM_SIGN_PRIVATE_KEY = TEST_PRIVATE_KEY;
 }
 
