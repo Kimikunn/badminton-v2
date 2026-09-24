@@ -652,3 +652,38 @@ standard/s2/s3 的 calcRankings 只按大分排序的 bug 修复：新增共享�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 19: 订场日历 v3：自绘固定单月 + 两态色条/填色统一视觉
+
+**Date**: 2026-09-24
+**Task**: 订场日历 v3：自绘固定单月 + 两态色条/填色统一视觉
+**Branch**: `master`
+
+### Summary
+
+十二轮草图迭代定稿并上线：弃 Vant Calendar 改自绘固定单月（‹›切月、恒 6 行、相邻月灰字填充、容器高度=日历自然高度永不滚动）；监控日历收敛为两态色条（监控中深蓝/待放票浅蓝），瞬态交给推送、DaySheet 保留明细；订场记录列表回生产版结构（SegmentedControl 右上角、全量展示+内滚、等高切换不跳动）；图例分组固定并抽成 CalendarInfoBar 组件（0h 占位）；修 transition-all 拖住 visibility 的切页延迟；e2e 68 通过；生产 :8088 已部署新日历。ADR 0003 + CONTEXT.md 契约同步
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a05bb94` | (see git log) |
+| `9d71f67` | (see git log) |
+| `6e56857` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
