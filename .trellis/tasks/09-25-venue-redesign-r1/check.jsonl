@@ -1,1 +1,4 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/frontend/design-system.md", "reason": "验收基准：§10 契约逐条 + §11 图标 + §12 handoff 检查单 A-H"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "每层验证命令与回归口径"}
+{"file": ".trellis/tasks/archive/2026-09/09-25-mobile-design-system/baseline/interactions.md", "reason": "行为基线：换肤后交互逐项不缺失的对照表"}
+{"file": ".trellis/tasks/archive/2026-09/09-25-mobile-design-system/baseline/refs/venue-sketch-final.png", "reason": "视觉验收：五帧对照（深色）"}

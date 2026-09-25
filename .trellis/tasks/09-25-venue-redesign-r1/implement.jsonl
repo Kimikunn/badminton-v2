@@ -1,1 +1,7 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/frontend/design-system.md", "reason": "实现的唯一设计依据：§0 工作流、§2 导航/大字 tab、§3 触控、§10 Apple Sports 风格契约、§11 图标规范、§12 双轨对齐+handoff 检查单"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Sheet+Input+toast 表单模式、UI 原语复用规则（④表单/⑤设置 Sheet 重组要用）"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "验证命令、PWA cache caution、对比度规则"}
+{"file": ".trellis/spec/frontend/date-holidays.md", "reason": "DaySheet 节假日 chip 用 chinese-days，holidayFor 契约勿破坏"}
+{"file": ".trellis/tasks/archive/2026-09/09-25-mobile-design-system/baseline/refs/venue-sketch-final.png", "reason": "五视图目标形态（定稿草图，逐帧对照）"}
+{"file": ".trellis/tasks/archive/2026-09/09-25-mobile-design-system/baseline/refs/apple-sports-breakdown.md", "reason": "Apple Sports 原则/交互逻辑出处（§10 的上游依据）"}
+{"file": ".trellis/tasks/archive/2026-09/09-25-mobile-design-system/baseline/interactions.md", "reason": "交互行为基线清单（Phase 4 逐项对照不缺失）"}
