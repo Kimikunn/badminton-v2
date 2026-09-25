@@ -18,6 +18,7 @@ backend. Backend conventions live in the sibling layer
 |-------|-------------|--------|
 | [Directory Structure](./directory-structure.md) | `client/src` layout, `@` alias, domain folders | Filled |
 | [Component Guidelines](./component-guidelines.md) | `<script setup>` SFCs, UI primitives, the Sheet+Input+toast form pattern | Filled |
+| [Mobile Design System](./design-system.md) | 布局契约/导航/触控/glass 规则/屏型配方/**Apple Sports 风格契约 §10**/图标规范 §11/handoff 检查单 §12/逐屏改版工作流 — **改版前必读** | Filled |
 | [Composable Guidelines](./hook-guidelines.md) | `useX` composables, singleton vs per-call state | Filled |
 | [Date & Holiday Data](./date-holidays.md) | `chinese-days` 节日/调休约定：`holidayFor` 契约、逗号判定、数据范围与升级 | Filled |
 | [State Management](./state-management.md) | Pinia setup stores, lazy `init()`, api client envelope | Filled |
