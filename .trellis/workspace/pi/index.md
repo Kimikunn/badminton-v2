@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 19
-- **Last Active**: 2026-09-24
+- **Total Sessions**: 20
+- **Last Active**: 2026-09-25
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~689 | Active |
+| `journal-1.md` | ~724 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 20 | 2026-09-25 | 移动端设计系统定稿：Apple Sports 风格契约 + 订场屏草图 + 实现任务规划 | `89aa576`, `0650c6e`, `4465b10` | `master` |
 | 19 | 2026-09-24 | 订场日历 v3：自绘固定单月 + 两态色条/填色统一视觉 | `a05bb94`, `9d71f67`, `6e56857` | `master` |
 | 18 | 2026-09-23 | 订场日历换用 Vant 4 Calendar | `2d7a5ee` | `master` |
 | 17 | 2026-09-22 | 订场日历节假日（chinese-days 休/班 + 节日名） | `f242db6` | `master` |

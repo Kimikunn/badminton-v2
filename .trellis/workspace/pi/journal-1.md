@@ -687,3 +687,38 @@ standard/s2/s3 的 calcRankings 只按大分排序的 bug 修复：新增共享�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 20: 移动端设计系统定稿：Apple Sports 风格契约 + 订场屏草图 + 实现任务规划
+
+**Date**: 2026-09-25
+**Task**: 移动端设计系统定稿：Apple Sports 风格契约 + 订场屏草图 + 实现任务规划
+**Branch**: `master`
+
+### Summary
+
+修复 iOS 26 WebKit tabbar 漂移（main 内滚+absolute tabbar）并保滚动语义（前进置顶/返回恢复）。产出 design-system.md：§7 屏型配方回填 Apple Sports、§10 风格契约（三档层级/深度用颜色/状态色语义/左缘色条/管理收进 Sheet/一屏一 CTA）、§11 图标规范（lucide、Trash2→Trash、编辑蓝/删除红、PWA 扫读行静默删除+confirm）、§12 双轨对齐+handoff 检查单。订场屏草图五帧定稿（venue-sketch-final.png：列表/日历/DaySheet/新增表单/设置 Sheet），用户拍板：分组 header 灰 muted、完成钮底部全宽、CTA 订场绿、右上圆形图标钮、深色优先浅色后补（前提=严禁写死深色值）。创建实现任务 09-25-venue-redesign-r1（planning，待新会话执行）。未决：无。遗留：用户自己在改 rules 连胜奖励（comboStardust/s6，未提交）。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `89aa576` | (see git log) |
+| `0650c6e` | (see git log) |
+| `4465b10` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
