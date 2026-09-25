@@ -149,7 +149,7 @@ export const SOUL_RULES = [
 export const COMBO_SCORING_RULES = [
   { id: 'format', title: '赛制', text: '下篇共 3 轮固定组合赛：AB vs CD、AC vs BD、AD vs BC，每轮打满 7 局。' },
   { id: 'base', title: '小分星尘', text: '每个小分（每局获胜）得 2 星尘。' },
-  { id: 'streak', title: '连胜奖励', text: '连胜 2 局 +1、连胜 3 局 +1、连胜 4 局 +2（随连胜累积）。' },
+  { id: 'streak', title: '连胜奖励', text: '连胜 2 局 +1、连胜 3 局 +1、连胜 4 局 +2（随连胜累积，7 连胜累计 +8）。' },
   { id: 'breaker', title: '终结奖励', text: '终结对方 2 连胜及以上 +3 星尘。' },
   { id: 'cards', title: '宝库结算卡', text: '阻碍/进击/星尘卡的结算效果自动并入星尘：进击使本局获胜额外获得一次连胜计数；阻碍使对方本局获胜无法获得终结分；星尘卡获胜 +2（净胜 ≥7 再 +1）、失败阻挡对方一次连胜计数。同局冲突时高阶奖励优先生效（星尘卡/阻碍先于进击）。' },
   { id: 'tie', title: '同分裁决', text: '星尘相同时按第 7 局 → 第 1 局的逐局净胜分比较，分差大者胜出。' },
@@ -378,7 +378,8 @@ function getActiveEffects(roundNo, context = {}) {
 }
 
 // 连胜奖励表（同 comboStardust BONUS，索引 = 连胜长度，封顶 7）
-const STREAK_BONUS = [0, 0, 1, 2, 4, 5, 6, 6]
+// 里程碑 +1/+1/+2 循环累积：2:+1, 3:+2, 4:+4, 5:+5, 6:+6, 7:+8
+const STREAK_BONUS = [0, 0, 1, 2, 4, 5, 6, 8]
 
 // 在修正后的胜方序列上计算某一方的连胜/终结奖励。
 // neutral 项（被星尘卡挡下的胜）：仍可终结对方连胜（产生终结 +3，除非被阻碍压制），

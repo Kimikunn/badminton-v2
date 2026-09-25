@@ -140,8 +140,8 @@ export function calcComboRoundStats(match, getGamesByMatch, perspective = 'a') {
   const closeStreak = () => {
     if (currentWinner !== ourSide) return
     // 硬编码连胜规则：只结算到7局
-    // 1:+0, 2:+1, 3:+2, 4:+4, 5:+5, 6:+6, 7:+6
-    const BONUS = [0, 0, 1, 2, 4, 5, 6, 6]
+    // 里程碑 +1/+1/+2 循环累积：1:+0, 2:+1, 3:+2, 4:+4, 5:+5, 6:+6, 7:+8
+    const BONUS = [0, 0, 1, 2, 4, 5, 6, 8]
     if (currentLength >= 2) {
       streakBonus += BONUS[currentLength]
     }
