@@ -63,9 +63,11 @@ const routes = [
 const router = createRouter({
   history: createWebHistory('/'),
   routes,
-  scrollBehavior(to, from, savedPosition) {
-    if (savedPosition) return savedPosition
-    return { top: 0 }
+  // Window never scrolls (App.vue uses <main> as the only scroll container,
+  // to dodge the iOS 26 fixed-positioning bug). Scroll save/restore per route
+  // is done in App.vue's route watcher.
+  scrollBehavior() {
+    return false
   }
 })
 

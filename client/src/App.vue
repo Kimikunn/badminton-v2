@@ -76,45 +76,58 @@ watch(route, (to, from) => {
 })
 
 // ── Scroll-based header hide ──
+// iOS 26 WebKit bug (#297779): document scrolling + position:fixed bottom bar
+// drifts when scrolled. So the shell never scrolls on window — <main> (mainEl)
+// is the only scroll container and the tabbar is a pinned flex child.
+const mainEl = ref(null)
 const headerHidden = ref(false)
 let lastScrollY = 0
-let ticking = false
 
 function onScroll() {
-  if (ticking) return
-  ticking = true
-  requestAnimationFrame(() => {
-    const y = window.scrollY
-    // Only hide on detail pages (depth > 0)
-    const isDetailPage = (route.meta.depth ?? 0) > 0
-    if (!isDetailPage) {
+  const y = mainEl.value ? mainEl.value.scrollTop : 0
+  // Only hide on detail pages (depth > 0)
+  const isDetailPage = (route.meta.depth ?? 0) > 0
+  if (!isDetailPage) {
+    headerHidden.value = false
+  } else {
+    const delta = y - lastScrollY
+    if (delta > 8 && y > 60) {
+      headerHidden.value = true
+    } else if (delta < -5) {
       headerHidden.value = false
-    } else {
-      const delta = y - lastScrollY
-      if (delta > 8 && y > 60) {
-        headerHidden.value = true
-      } else if (delta < -5) {
-        headerHidden.value = false
-      }
     }
-    lastScrollY = y
-    ticking = false
-  })
+  }
+  lastScrollY = y
 }
 
-onMounted(() => {
-  window.addEventListener('scroll', onScroll, { passive: true })
-})
-onUnmounted(() => {
-  window.removeEventListener('scroll', onScroll)
-  destroyTheme()
-})
+// Per-route scroll restore (replaces vue-router scrollBehavior, which only
+// handles window scrolling). The new page mounts after the out-in leave
+// transition finishes, so restore in the transition's @enter hook.
+// Semantics: push (forward) → scroll to top; pop (back) → restore saved pos.
+// NOTE: watch(route) passes from===to (same reactive object), so navigation
+// bookkeeping uses router.afterEach which gets distinct to/from.
+const scrollPositions = new Map()
+let pendingScrollTop = 0
+let lastNavPosition = window.history.state?.position ?? 0
 
-// Reset header on route change
-watch(route, () => {
+router.afterEach((to, from) => {
   headerHidden.value = false
   lastScrollY = 0
+  const navPosition = router.options.history.state.position ?? 0
+  const isBack = navPosition < lastNavPosition
+  lastNavPosition = navPosition
+  // START_LOCATION (initial nav) has no matched records — nothing to save
+  if (mainEl.value && from.matched.length) {
+    scrollPositions.set(from.path, mainEl.value.scrollTop)
+  }
+  pendingScrollTop = isBack ? (scrollPositions.get(to.path) ?? 0) : 0
 })
+
+function restoreScroll() {
+  if (mainEl.value) {
+    mainEl.value.scrollTop = pendingScrollTop
+  }
+}
 
 const tabs = [
   { key: 'home', label: '首页', icon: Home, route: '/' },
@@ -134,6 +147,10 @@ const handleTabClick = (tab) => {
   router.push(tab.route)
 }
 
+onUnmounted(() => {
+  destroyTheme()
+})
+
 onMounted(async () => {
   initTheme()
   try {
@@ -145,7 +162,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="app-shell min-h-dvh bg-canvas text-fg" :class="{ dark: isDark }">
+  <div class="app-shell relative h-dvh flex flex-col overflow-hidden bg-canvas text-fg" :class="{ dark: isDark }">
     <!-- Loading -->
     <div v-if="isInitializing" class="flex flex-col items-center justify-center min-h-dvh gap-4 text-fg-secondary">
       <div class="w-8 h-8 border-[3px] border-line border-t-[var(--color-accent)] rounded-full animate-spin"></div>
@@ -156,7 +173,7 @@ onMounted(async () => {
     <template v-else>
       <!-- Header — iOS 26 Liquid Glass -->
       <header
-        class="sticky top-0 z-50 flex items-center justify-between px-4 transition-transform duration-300 ease-out liquid-header"
+        class="shrink-0 z-50 flex items-center justify-between px-4 transition-transform duration-300 ease-out liquid-header"
         :class="headerHidden ? '-translate-y-full' : 'translate-y-0'"
         style="padding-top: env(safe-area-inset-top, 0px); min-height: calc(var(--header-height) + env(safe-area-inset-top, 0px))"
       >
@@ -192,17 +209,25 @@ onMounted(async () => {
         </div>
       </header>
 
-      <!-- Content — extra bottom padding for floating tab bar -->
-      <main class="p-4" :class="{ 'pb-[calc(80px+var(--safe-bottom))]': showTab }">
+      <!-- Content — the only scroll container (window never scrolls).
+           Bottom padding reserves space under the floating tabbar overlay. -->
+      <main
+        ref="mainEl"
+        class="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4"
+        :class="{ 'pb-[calc(84px+var(--safe-bottom))]': showTab }"
+        @scroll.passive="onScroll"
+      >
         <router-view v-slot="{ Component }">
-          <transition :name="transitionName" mode="out-in">
+          <transition :name="transitionName" mode="out-in" @enter="restoreScroll">
             <component :is="Component" :key="route.path" />
           </transition>
         </router-view>
       </main>
 
-      <!-- TabBar — iOS 26 Liquid Glass floating capsule -->
-      <nav v-if="showTab" class="fixed bottom-0 left-0 right-0 z-50 pointer-events-none flex justify-center safe-bottom">
+      <!-- TabBar — iOS 26 Liquid Glass floating capsule.
+           Absolute overlay (root layout never scrolls, so the iOS fixed-element
+           bug doesn't apply); wrapper lets clicks pass through to content. -->
+      <nav v-if="showTab" class="absolute bottom-0 left-0 right-0 z-50 pointer-events-none flex justify-center safe-bottom">
         <div class="liquid-tabbar pointer-events-auto">
           <button
             v-for="tab in tabs"
