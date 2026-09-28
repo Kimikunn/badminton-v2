@@ -587,7 +587,7 @@ onMounted(async () => { await ensureStarted(); isLoading.value = false })
       </div>
 
       <!-- S6 下篇：随时卡（暂停卡/名刀/高级暂停卡）使用入口 -->
-      <Card v-if="anytimeRows.length" padding="sm">
+      <Card v-if="postGameRows.length" padding="sm">
         <div class="flex flex-col gap-3">
           <div class="flex items-center gap-2">
             <Zap :size="14" class="text-fg-secondary shrink-0" />
