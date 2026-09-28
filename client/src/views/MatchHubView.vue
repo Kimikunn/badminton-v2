@@ -12,7 +12,7 @@ import { useSeasonsStore, useMatchesStore, usePlayersStore } from '@/stores'
 import { STATUS } from '@/constants'
 import { getRule } from '@/rules'
 import { KING_FORMS, TREASURY_CARDS, getComboLabelsByRound, getSoulSeedMap, getSoulTierLabel, getTierCap, getAllowedPicks, getPlayerPickCount, isComboBondComplete } from '@/rules/s6'
-import { getSoulSeedMap as getS7SoulSeedMap } from '@/rules/s7'
+import { getSoulSeedMap as getS6pSoulSeedMap } from '@/rules/s6p'
 import { useSeasonTheme } from '@/composables/useSeasonTheme'
 import { useSeasonSelector } from '@/composables/useSeasonSelector'
 import { useViewAccent } from '@/composables/useViewAccent'
@@ -97,12 +97,12 @@ const beforeRoundRequirement = computed(() =>
     ? currentRule.value.getBeforeRoundRequirement(nextRoundNo.value)
     : beforeRoundLifecycle.value
 )
-// S6/S7 同族：组合赛机制相同（S7=独立成季 1-3 轮，数据键 s7）
-const isS7Season = computed(() => currentSeason.value?.ruleId === 's7')
-const comboDataKey = computed(() => (isS7Season.value ? 's7' : 's6'))
+// S6/S6+ 同族：组合赛机制相同（S6+=延长赛 1-2 轮，数据键 s6p）
+const isS6pSeason = computed(() => currentSeason.value?.ruleId === 's6p')
+const comboDataKey = computed(() => (isS6pSeason.value ? 's6p' : 's6'))
 const isFixedComboRound = computed(() => {
   const ruleId = currentSeason.value?.ruleId
-  if (ruleId === 's7') return nextRoundNo.value >= 1 && nextRoundNo.value <= 3
+  if (ruleId === 's6p') return nextRoundNo.value >= 1 && nextRoundNo.value <= 2
   return (ruleId === 's4' || ruleId === 's6') && nextRoundNo.value >= 5
 })
 const supportsRandomPairings = computed(() => !isFixedComboRound.value)
@@ -365,8 +365,8 @@ const requiresSoulBond = computed(() =>
   beforeRoundRequirement.value?.required &&
   beforeRoundRequirement.value?.type === 'soul_bond'
 )
-const soulComboLabels = computed(() => (isS7Season.value ? getRule(comboDataKey.value).getComboLabelsByRound(nextRoundNo.value) : getComboLabelsByRound(nextRoundNo.value)))
-const soulSeeds = computed(() => (isS7Season.value ? getS7SoulSeedMap(currentSeason.value) : getSoulSeedMap(currentSeason.value)) || {})
+const soulComboLabels = computed(() => (isS6pSeason.value ? getRule(comboDataKey.value).getComboLabelsByRound(nextRoundNo.value) : getComboLabelsByRound(nextRoundNo.value)))
+const soulSeeds = computed(() => (isS6pSeason.value ? getS6pSoulSeedMap(currentSeason.value) : getSoulSeedMap(currentSeason.value)) || {})
 const soulBondData = computed(() =>
   currentSeason.value?.comebackData?.[comboDataKey.value]?.soulBond?.[String(nextRoundNo.value)] || {}
 )
@@ -432,9 +432,16 @@ function getUsedRerollCount(playerId, source) {
   return used
 }
 
-// 选手可用的重投令牌（凯旋 / S5 贯穿碎片）
+// 选手可用的重投令牌（凯旋 / S5 贯穿碎片 / S6+ 重置骰子）
 function getRerollTokens(playerId) {
-  if (isS7Season.value) return [] // S7 独立成季：无凯旋/碎片重投来源
+  if (isS6pSeason.value) {
+    // 重置骰子：来源 S6 赛季前两名组合的选手，整季各 1 次（服务端 reset_dice 来源校验）
+    const holders = currentSeason.value?.comebackData?.s6p?.resetDice || []
+    if (!holders.includes(playerId)) return []
+    return [{ source: 'reset_dice', name: '重置骰子', total: 1 }]
+      .map(token => ({ ...token, remaining: token.total - getUsedRerollCount(playerId, token.source) }))
+      .filter(token => token.remaining > 0)
+  }
   const tokens = []
   if (triumphTop2.value.includes(playerId)) {
     tokens.push({ source: 'triumph', name: '凯旋', total: 1 })
@@ -450,6 +457,29 @@ function getRerollTokens(playerId) {
 
 function rollLocalDice(count) {
   return Array.from({ length: count }, () => Math.floor(Math.random() * 6) + 1)
+}
+
+// === S6+ 奇招：本轮幸运数与待选选手 ===
+const s6pLuckyNumber = computed(() =>
+  currentSeason.value?.comebackData?.s6p?.lucky?.[String(nextRoundNo.value)] ?? null)
+const luckyPendingPlayerIds = computed(() => {
+  if (!isS6pSeason.value || !soulActiveRolled.value) return []
+  return (soulActiveCombo.value?.rolls || [])
+    .filter(roll => roll.luckyHit && !roll.luckyChoice)
+    .map(roll => roll.playerId)
+})
+const luckySubmitting = ref(false)
+async function submitLuckyChoice(playerId, choice) {
+  if (!soulComboLabel.value) return
+  luckySubmitting.value = true
+  try {
+    const payload = { roundNo: nextRoundNo.value, comboLabel: soulComboLabel.value, playerId, choice }
+    if (choice === 'reroll') payload.dice = rollLocalDice(1)[0]
+    const res = await seasonsStore.recordAction(currentSeason.value.id, 's6p_lucky_choice', payload)
+    if (!res?.success) throw new Error(res?.error || '奇招选择提交失败')
+    toast.show(choice === 'reroll' ? '奇招：已重掷一次' : '奇招：总点数 +1', 'success')
+  } catch (e) { toast.show(e.message || '奇招选择提交失败', 'error') }
+  luckySubmitting.value = false
 }
 
 // 选择投 1/2 次后立即在本地掷骰（提交前可重掷，不消耗任何服务端状态）
@@ -485,7 +515,7 @@ async function submitSoulRoll(playerId) {
   if (!staging?.dice?.length) return
   soulSubmitting.value = true
   try {
-    const res = await seasonsStore.recordAction(currentSeason.value.id, isS7Season.value ? 's7_soul_roll' : 's6_soul_roll', {
+    const res = await seasonsStore.recordAction(currentSeason.value.id, isS6pSeason.value ? 's6p_soul_roll' : 's6_soul_roll', {
       roundNo: nextRoundNo.value,
       comboLabel: soulComboLabel.value,
       playerId,
@@ -520,7 +550,7 @@ async function startSoulReroll(playerId, token) {
 async function submitSoulPick(playerId, cardId) {
   soulSubmitting.value = true
   try {
-    const res = await seasonsStore.recordAction(currentSeason.value.id, isS7Season.value ? 's7_soul_pick' : 's6_soul_pick', {
+    const res = await seasonsStore.recordAction(currentSeason.value.id, isS6pSeason.value ? 's6p_soul_pick' : 's6_soul_pick', {
       roundNo: nextRoundNo.value,
       comboLabel: soulComboLabel.value,
       playerId,
@@ -545,7 +575,7 @@ async function submitReforge(keptDice) {
   if (!state) return
   soulSubmitting.value = true
   try {
-    const res = await seasonsStore.recordAction(currentSeason.value.id, isS7Season.value ? 's7_reforge' : 's6_reforge', {
+    const res = await seasonsStore.recordAction(currentSeason.value.id, isS6pSeason.value ? 's6p_reforge' : 's6_reforge', {
       roundNo: nextRoundNo.value,
       comboLabel: soulComboLabel.value,
       playerId: state.playerId,
@@ -561,9 +591,11 @@ async function submitReforge(keptDice) {
   }
 }
 
-// 可选奖励卡片（重铸走专门流程、天选自动触发，均不在选择网格中）
+// 可选奖励卡片（重铸走专门流程、天选自动触发，均不在选择网格中；
+// 按赛季过滤规则可用性：月白/绯红仅 S6+，高级暂停卡仅 S6）
 const PICKABLE_CARD_IDS = Object.values(TREASURY_CARDS)
   .filter(card => card.tier !== 'chosen' && card.id !== 'reforge')
+  .filter(card => !card.rules || card.rules.includes(currentSeason.value?.ruleId))
   .map(card => card.id)
 
 // 卡片对某选手是否可点：返回 null 表示可选，否则为禁用原因
@@ -594,9 +626,9 @@ function generatePreview() {
   if (parts.length < 4) return []
 
   if (isFixedComboRound.value) {
-    // S4：按选手 ID 排序；S6/S7：按灵魂契合种子口径（seeds 或服务端同款 ID 排序兜底）
-    const seedMap = isS7Season.value ? getS7SoulSeedMap(currentSeason.value) : getSoulSeedMap(currentSeason.value)
-    const ordered = (currentSeason.value?.ruleId === 's6' || isS7Season.value)
+    // S4：按选手 ID 排序；S6/S6+：按灵魂契合种子口径（seeds 或服务端同款 ID 排序兜底）
+    const seedMap = isS6pSeason.value ? getS6pSoulSeedMap(currentSeason.value) : getSoulSeedMap(currentSeason.value)
+    const ordered = (currentSeason.value?.ruleId === 's6' || isS6pSeason.value)
       ? Object.values(seedMap || {})
       : [...parts].sort()
     if (ordered.length < 4) return []
@@ -608,7 +640,7 @@ function generatePreview() {
       6: { teamA: [ordered[0], ordered[2]], teamB: [ordered[1], ordered[3]] },
       7: { teamA: [ordered[0], ordered[3]], teamB: [ordered[1], ordered[2]] }
     }
-    return [combos[nextRoundNo.value] || combos[isS7Season.value ? 1 : 5]]
+    return [combos[nextRoundNo.value] || combos[isS6pSeason.value ? 1 : 5]]
   }
 
   const [a,b,c,d] = [...parts].sort(() => Math.random() - 0.5)
@@ -967,6 +999,12 @@ onMounted(() => {
         <div class="flex flex-col gap-4">
           <p class="text-sm text-fg-secondary">组合双方各选投 1 次或 2 次（2 次以第二次为准），点数求和（同点 +1）解锁王之宝库阶层并选择奖励。两个组合均完成后才能创建本轮。</p>
 
+          <!-- S6+ 奇招：本轮幸运数 -->
+          <div v-if="isS6pSeason && s6pLuckyNumber" class="flex items-center gap-2 p-2.5 rounded-lg bg-accent-subtle border border-accent/30">
+            <span class="text-xs text-fg-secondary">本轮奇招数（投掷命中可选奖励）</span>
+            <span class="text-sm font-bold text-accent">{{ s6pLuckyNumber }}</span>
+          </div>
+
           <!-- 组合切换 -->
           <SegmentedControl
             v-model="soulComboLabel"
@@ -987,12 +1025,31 @@ onMounted(() => {
                 <Badge v-else variant="muted" size="sm">待投掷</Badge>
               </div>
 
-              <!-- 已提交的点数 -->
-              <div v-if="getSoulRoll(soulActiveCombo, pid)" class="flex items-center gap-2 flex-wrap">
-                <DiceChip v-for="(d, i) in getSoulRoll(soulActiveCombo, pid).dice" :key="i" :value="d" size="md" />
-                <span class="text-xs text-fg-muted">判定 <span class="text-sm font-bold text-fg">{{ getSoulRoll(soulActiveCombo, pid).used }}</span></span>
-                <Badge v-if="getSoulRoll(soulActiveCombo, pid).rollChoice === 2" variant="muted" size="sm">第二次为准</Badge>
-                <Badge v-if="getSoulRoll(soulActiveCombo, pid).reforged" variant="accent" size="sm">已重铸</Badge>
+              <!-- 已提交的点数（含 S6+ 奇招二选一，嵌套其中不破坏 v-if/v-else-if 链） -->
+              <div v-if="getSoulRoll(soulActiveCombo, pid)" class="flex flex-col gap-2">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <DiceChip v-for="(d, i) in getSoulRoll(soulActiveCombo, pid).dice" :key="i" :value="d" size="md" />
+                  <span class="text-xs text-fg-muted">判定 <span class="text-sm font-bold text-fg">{{ getSoulRoll(soulActiveCombo, pid).used }}</span></span>
+                  <Badge v-if="getSoulRoll(soulActiveCombo, pid).rollChoice === 2" variant="muted" size="sm">第二次为准</Badge>
+                  <Badge v-if="getSoulRoll(soulActiveCombo, pid).reforged" variant="accent" size="sm">已重铸</Badge>
+                  <Badge v-if="isS6pSeason && getSoulRoll(soulActiveCombo, pid).luckyHit && !getSoulRoll(soulActiveCombo, pid).luckyChoice" variant="warning" size="sm">奇招命中</Badge>
+                </div>
+
+                <div
+                  v-if="isS6pSeason && getSoulRoll(soulActiveCombo, pid).luckyHit && !getSoulRoll(soulActiveCombo, pid).luckyChoice"
+                  class="flex gap-2 flex-wrap"
+                >
+                  <button
+                    class="px-3 py-1.5 rounded-lg border border-warning text-warning text-xs font-medium cursor-pointer transition-all duration-fast active:scale-95"
+                    :disabled="luckySubmitting"
+                    @click="submitLuckyChoice(pid, 'reroll')"
+                  >奇招 · 重新投掷一次</button>
+                  <button
+                    class="px-3 py-1.5 rounded-lg border border-warning text-warning text-xs font-medium cursor-pointer transition-all duration-fast active:scale-95"
+                    :disabled="luckySubmitting"
+                    @click="submitLuckyChoice(pid, 'plus1')"
+                  >奇招 · 总点数 +1</button>
+                </div>
               </div>
 
               <!-- 本地暂存：选次数 → 掷骰 → 提交 -->
@@ -1037,7 +1094,7 @@ onMounted(() => {
 
             <!-- 天选 -->
             <div v-if="soulActiveRolled && soulActiveCombo.unlockTier === 'chosen'" class="p-3 rounded-lg bg-warning-subtle border border-warning/30">
-              <p class="text-sm font-semibold text-warning">天选达成！该组合本轮 7 局每局 2:0 开局（自动触发，不占选择次数）</p>
+              <p class="text-sm font-semibold text-warning">天选达成！该组合本轮 7 局每局 {{ isS6pSeason ? '1:0' : '2:0' }} 开局（自动触发，不占选择次数）</p>
             </div>
 
             <!-- 重投入口（选奖前可用） -->

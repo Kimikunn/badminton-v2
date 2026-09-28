@@ -107,7 +107,7 @@ function startMatch(req, res) {
     if (round?.status === ROUND_STATUS.COMPLETED) return validationError(res, '该轮次已完成');
   }
 
-  // 局前记录门控：组合轮每局开始前需 4 名选手完成局前暗选（S6/S7）
+  // 局前记录门控：组合轮每局开始前需录入选手完成局前暗选（S6/S6+）
   const blocked = matchService.getMatchStartBlock(match);
   if (blocked) return validationError(res, blocked.error);
 

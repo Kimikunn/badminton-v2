@@ -65,14 +65,14 @@ export const SEASON_PRESETS = [
     description: '启用 S6 上篇王选掷骰与王形态（黛青/绯红/月白）规则。'
   },
   {
-    key: 's7-kings-continuation',
-    code: 'S7',
-    label: '王权之续',
-    ruleId: 's7',
-    totalRounds: 3,
+    key: 's6p-extension',
+    code: 'S6+',
+    label: '延长赛',
+    ruleId: 's6p',
+    totalRounds: 2,
     bestOf: 3,
     color: 'sunset',
-    description: 'S6 下篇独立成季：3 轮固定组合赛、灵魂契合与王之宝库。'
+    description: 'S6 赛季延长赛：2 轮固定组合赛（种子按 S6 最终排名）、灵魂契合（奇招/重置骰子）与王之宝库。'
   }
 ]
 

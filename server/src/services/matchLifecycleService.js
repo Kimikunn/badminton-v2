@@ -55,7 +55,7 @@ function ensureMatchGames(matchId) {
   return getMatchGames(matchId);
 }
 
-// 规则开局门控（S6/S7 组合轮：每局开始前需 4 名选手完成局前暗选）。
+// 规则开局门控（S6/S6+ 组合轮：每局开始前需录入选手完成局前暗选）。
 // 返回 { error } 或 null；目标 = 待晋升的下一局（第一局 pending 局）。
 function getGameStartBlock(match) {
   if (!match?.season_id) return null;

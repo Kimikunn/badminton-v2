@@ -525,6 +525,9 @@ function recordSoulPick(ctx, input = {}) {
   const cardId = String(input.cardId || '').trim();
   const card = cardFlow.TREASURY_CARDS[cardId];
   if (!card) return { validationError: '无效的宝库奖励' };
+  if (card.rules && !card.rules.includes(ctx.season?.rule_id)) {
+    return { validationError: '该奖励不适用于本赛季' };
+  }
   if (cardId === 'chosen') return { validationError: '天选达成即自动触发，无需选择' };
   if (cardId === 'reforge') return { validationError: '重铸请使用重铸操作' };
   if (card.tier > getTierCap(combo.unlockTier)) return { validationError: '该奖励尚未解锁' };

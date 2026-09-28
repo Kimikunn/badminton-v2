@@ -135,7 +135,7 @@ function getS4ComboPairing(roundNo, participants) {
 }
 
 function getComboPairingFromOrder(roundNo, ordered) {
-  // S7（1-3 轮）与 S6 下篇（5-7 轮）同一条固定轮换
+  // S6+（1-2 轮）与 S6 下篇（5-7 轮）同一条固定轮换
   const combos = {
     1: { teamA: [ordered[0], ordered[1]], teamB: [ordered[2], ordered[3]] },
     2: { teamA: [ordered[0], ordered[2]], teamB: [ordered[1], ordered[3]] },
@@ -150,8 +150,8 @@ function getComboPairingFromOrder(roundNo, ordered) {
 // 组合种子顺序：S6 优先读 comeback_data.s6.seeds（上篇前 4，
 // 灵魂契合首次投掷时持久化），缺省退化为选手 ID 排序（同 S4 口径）。
 function getComboSeedOrder(season, participants) {
-  if (season.rule_id === RULE_ID.S7) {
-    const seeds = parseJson(season.comeback_data, {}).s7?.seeds;
+  if (season.rule_id === RULE_ID.S6P) {
+    const seeds = parseJson(season.comeback_data, {}).s6p?.seeds;
     if (seeds?.A && seeds?.B && seeds?.C && seeds?.D) {
       return [seeds.A, seeds.B, seeds.C, seeds.D];
     }
@@ -170,8 +170,8 @@ function getComboPairing(season, roundNo, participants) {
 }
 
 function isComboRound(season, roundNo) {
-  if (season.rule_id === RULE_ID.S7) {
-    return Number(roundNo) >= 1 && Number(roundNo) <= 3;
+  if (season.rule_id === RULE_ID.S6P) {
+    return Number(roundNo) >= 1 && Number(roundNo) <= 2;
   }
   return (season.rule_id === RULE_ID.S4 || season.rule_id === RULE_ID.S6) && Number(roundNo) >= 5;
 }
@@ -180,7 +180,7 @@ function validateRoundPairings(season, roundNo, pairings) {
   if (pairings === undefined || pairings === null) return null;
   if (!Array.isArray(pairings)) return '对阵必须是数组';
   if (isComboRound(season, roundNo)) {
-    if (season.rule_id === RULE_ID.S7) return 'S7组合赛轮次不支持随机对阵';
+    if (season.rule_id === RULE_ID.S6P) return 'S6+组合赛轮次不支持随机对阵';
     return season.rule_id === RULE_ID.S6 ? 'S6组合赛轮次不支持随机对阵' : 'S4组合赛轮次不支持随机对阵';
   }
   if (pairings.length !== 3) return '标准轮次必须包含 3 场对阵';

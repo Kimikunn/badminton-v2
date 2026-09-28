@@ -1,11 +1,11 @@
 /**
- * s7.js — S7-王权之续（2026-09-28 新增赛季类型；显示层规则模块）
+ * s6p.js — S6+ 延长赛（2026-09-28 由 S7-王权之续更名；显示层规则模块）
  *
- * 语义 = S6 下半赛季（组合赛阶段）独立成季：3 轮固定轮换组合赛，灵魂契合 +
- * 王之宝库 + 组合星尘。**无上篇/王选/王权/凯旋重投/月白黛青绯红**。
- * 以 s7.js 为底本 copy-adapt：组合轮 1-3（S6 为 5-7）、数据键 comebackData.s7、
- * 动作前缀 s7_*；种子缺省=选手 ID 排序（首次灵魂投掷时服务端持久化）。
- * 共享常量（宝库卡目录/阶层/契合规则/星尘规则）与 s6 同源，随本模块再导出。
+ * 语义 = S6（王权之争）的赛季延长赛：2 轮固定轮换组合赛（种子 A-D 由来源 S6
+ * 最终排名映射，缺省退化为选手 ID 排序），灵魂契合 + 王之宝库 + 组合星尘。
+ * 新增机制见服务端 s6p.js 头注释（奇招幸运数 / 重置骰子 / 月白·绯红宝库卡 /
+ * 天选每局 1:0 / 两轮总星尘冠军与净胜分裁决）。
+ * 数据键 comebackData.s6p、动作前缀 s6p_*；共享常量与 s6 同源，随本模块再导出。
  */
 import { STATUS } from '@/constants'
 import { TREASURY_CARDS, TREASURY_TIERS, CARD_PLAY_RULES, PRE_GAME_CARDS, POST_GAME_CARDS, ANYTIME_CARDS, BLAST_TARGET_SCORE, BLAST_MAX_SCORE, getTierCap, activationState, activationLabel } from './comboCards'
@@ -17,22 +17,19 @@ import {
 } from './comboStardust'
 
 const COMBO_ROUND_MIN = 1
-const COMBO_ROUND_MAX = 3
+const COMBO_ROUND_MAX = 2
 
 // 下篇组合固定对阵（与 S4 同一轮换；label 为视角方，opponentLabel 为对手）
 const COMBO_CONFIGS = [
   { roundNo: 1, label: 'AB', opponentLabel: 'CD', seedKeys: ['A', 'B'], opponentSeedKeys: ['C', 'D'], perspective: 'a' },
   { roundNo: 2, label: 'AC', opponentLabel: 'BD', seedKeys: ['A', 'C'], opponentSeedKeys: ['B', 'D'], perspective: 'a' },
-  { roundNo: 3, label: 'AD', opponentLabel: 'BC', seedKeys: ['A', 'D'], opponentSeedKeys: ['B', 'C'], perspective: 'a' },
   { roundNo: 1, label: 'CD', opponentLabel: 'AB', seedKeys: ['C', 'D'], opponentSeedKeys: ['A', 'B'], perspective: 'b' },
-  { roundNo: 2, label: 'BD', opponentLabel: 'AC', seedKeys: ['B', 'D'], opponentSeedKeys: ['A', 'C'], perspective: 'b' },
-  { roundNo: 3, label: 'BC', opponentLabel: 'AD', seedKeys: ['B', 'C'], opponentSeedKeys: ['A', 'D'], perspective: 'b' }
+  { roundNo: 2, label: 'BD', opponentLabel: 'AC', seedKeys: ['B', 'D'], opponentSeedKeys: ['A', 'C'], perspective: 'b' }
 ]
 
 const COMBO_LABELS_BY_ROUND = {
   1: ['AB', 'CD'],
-  2: ['AC', 'BD'],
-  3: ['AD', 'BC']
+  2: ['AC', 'BD']
 }
 
 
@@ -42,27 +39,28 @@ const COMBO_LABELS_BY_ROUND = {
 
 // 灵魂契合规则文案（规则 Sheet 展示用）
 export const SOUL_RULES = [
-  { id: 'roll', title: '灵魂投掷', text: '下篇每轮比赛前，组合双方各进行一次灵魂判定：可选投骰 1 次或 2 次，投 2 次时以第二次点数为准。' },
+  { id: 'roll', title: '灵魂投掷', text: '每轮比赛前，组合双方各进行一次灵魂判定：可选投骰 1 次或 2 次，投 2 次时以第二次点数为准。' },
   { id: 'total', title: '总点数', text: '双方点数之和为判定结果；双方点数相同时，总点数 +1。' },
+  { id: 'lucky', title: '奇招', text: '每轮灵魂契合前随机产生一个幸运数（1-6，建季即定）：灵魂投掷计分值命中该数的选手可二选一——重新投掷一次（新值替换原值）或该组合总点数 +1；选择须在该轮选奖前完成。' },
   { id: 'tier', title: '阶层解锁', text: '按总点数解锁王之宝库：3-6 第一阶、7-9 第二阶、10-12 第三阶、13 触发天选。解锁高阶仍可选低阶奖励。' },
   { id: 'pick', title: '奖励选择', text: '每人只可选 1 次；双方点数相同时，后投掷的选手可额外选 1 次；同一奖励不可重复选择。' },
-  { id: 'reroll', title: '重投', text: '凯旋：上篇最终前两名各获得 1 次重投机会。S5 赛季每拥有一个贯穿碎片的选手可任意时刻重投 1 次。奖励选择完成后无法重投。' },
+  { id: 'reroll', title: '重置骰子', text: '来源 S6 赛季前两名的组合，其选手每人拥有一颗重置骰子：整季可重掷一次本人灵魂投掷（新值替换原值，不占奖励选择次数）。奖励选择完成后无法重掷。' },
   { id: 'reforge', title: '重铸', text: '解锁第二阶（总点数 7-9）后可选择重铸：重投一次骰子并二选一留用，立刻生效并占用一次奖励选择。' },
-  { id: 'chosen', title: '天选', text: '总点数 13 达成天选：7 局比赛每局 2:0 开局。达成即自动触发，不消耗奖励选择次数。' }
+  { id: 'chosen', title: '天选', text: '总点数 13 达成天选：7 局比赛每局 1:0 开局。达成即自动触发，不消耗奖励选择次数。' }
 ]
 
 // 下篇组合星尘计分规则文案（规则 Sheet 展示用，口径同 ./comboStardust）
 export const COMBO_SCORING_RULES = [
-  { id: 'format', title: '赛制', text: '下篇共 3 轮固定组合赛：AB vs CD、AC vs BD、AD vs BC，每轮打满 7 局。' },
+  { id: 'format', title: '赛制', text: 'S6+ 延长赛共 2 轮固定组合赛：AB vs CD、AC vs BD（对阵由来源 S6 最终排名定种子），每轮打满 7 局。' },
   { id: 'base', title: '小分星尘', text: '每个小分（每局获胜）得 2 星尘。' },
   { id: 'streak', title: '连胜奖励', text: '连胜 2 局 +1、连胜 3 局 +1、连胜 4 局 +2（随连胜累积，7 连胜累计 +8）。' },
   { id: 'breaker', title: '终结奖励', text: '终结对方 2 连胜及以上 +3 星尘。' },
   { id: 'cards', title: '宝库结算卡', text: '阻碍/进击/星尘卡的结算效果自动并入星尘：进击使本局获胜额外获得一次连胜计数；阻碍使对方本局获胜无法获得终结分；星尘卡获胜 +2（净胜 ≥7 再 +1）、失败阻挡对方一次连胜计数。同局冲突时高阶奖励优先生效（星尘卡/阻碍先于进击）。' },
-  { id: 'tie', title: '同分裁决', text: '星尘相同时按第 7 局 → 第 1 局的逐局净胜分比较，分差大者胜出。' },
-  { id: 'champion', title: '最强组合', text: '三轮结束后星尘最多的组合为最强组合。' }
+  { id: 'tie', title: '同分裁决', text: '两轮总星尘相同者，先比最后一把净胜分，再比倒数第二把净胜分，分差大者胜出。' },
+  { id: 'champion', title: '冠军', text: '两轮结束后总星尘最高的选手为 S6+ 冠军（同星尘按最后一把、再倒数第二把的净胜分裁决）。' }
 ]
 
-// S7 无上篇：恒 false
+// S6+ 无上篇：恒 false
 export function isTopRound(roundNo) {
   return false
 }
@@ -103,40 +101,40 @@ export function isComboBondComplete(combo) {
     getPlayerPickCount(combo, roll.playerId) === getAllowedPicks(combo, roll.playerId))
 }
 
-function getS7Data(context = {}) {
-  return context?.season?.comebackData?.s7 || {}
+function getS6PData(context = {}) {
+  return context?.season?.comebackData?.s6p || {}
 }
 
-// S7 无王选：恒 null（保留接口形状，调用方零改动）
+// S6+ 无王选：恒 null（保留接口形状，调用方零改动）
 export function getKingOrder(context = {}) {
   return null
 }
 
-// S7 无王选：某轮王恒 null
+// S6+ 无王选：某轮王恒 null
 function getTopKing(roundNo, context = {}) {
   return null
 }
 
-// S7 无王权：恒空数组（保留接口形状）
+// S6+ 无王权：恒空数组（保留接口形状）
 export function calcTopRoundKingRights(context = {}) {
   return []
 }
 
 // 灵魂契合种子口径（与服务端 deriveSeeds 一致）：优先读已持久化的
-// comebackData.s7.seeds，缺省时按选手 ID 排序。灵魂契合 Sheet 必须用这个口径，
+// comebackData.s6p.seeds，缺省时按选手 ID 排序。灵魂契合 Sheet 必须用这个口径，
 // 否则服务端会校验"该选手不属于此组合"。
 export function getSoulSeedMap(season) {
-  const seeds = season?.comebackData?.s7?.seeds
+  const seeds = season?.comebackData?.s6p?.seeds
   if (seeds?.A && seeds?.B && seeds?.C && seeds?.D) return seeds
   const sorted = [...(season?.participants || [])].sort()
   if (sorted.length < 4) return null
   return { A: sorted[0], B: sorted[1], C: sorted[2], D: sorted[3] }
 }
 
-// 排名展示用种子口径：优先读 s7.seeds，缺省按选手 ID 排序（与服务端
-// deriveSeeds 一致——S7 无上篇可推导，直接取参赛序）
+// 排名展示用种子口径：优先读 s6p.seeds，缺省按选手 ID 排序（与服务端
+// deriveSeeds 一致——S6+ 无上篇可推导，直接取参赛序）
 function getComboSeedMap(context = {}) {
-  const seeds = getS7Data(context)?.seeds
+  const seeds = getS6PData(context)?.seeds
   if (seeds?.A && seeds?.B && seeds?.C && seeds?.D) return seeds
   const sorted = [...(context?.participants || context?.season?.participants || [])].sort()
   if (sorted.length < 4) return null
@@ -166,14 +164,14 @@ function otherSide(side) {
 // getComboLabelForSide / roundCreationService 对阵方向一致）的 treasury 与存储器 carry
 function getComboPhaseState(roundNo, context = {}) {
   if (!isComboRound(roundNo)) return null
-  const s7 = getS7Data(context)
+  const s6p = getS6PData(context)
   const labels = COMBO_LABELS_BY_ROUND[Number(roundNo)]
   if (!labels) return null
   return {
     labels,
-    treasuryA: s7.treasury?.[labels[0]] || null,
-    treasuryB: s7.treasury?.[labels[1]] || null,
-    carry: s7.storageCarry?.[context?.match?.id] || null
+    treasuryA: s6p.treasury?.[labels[0]] || null,
+    treasuryB: s6p.treasury?.[labels[1]] || null,
+    carry: s6p.storageCarry?.[context?.match?.id] || null
   }
 }
 
@@ -185,9 +183,10 @@ function findRevealedActivations(treasury, matchId, gameNo, side) {
     && entry.matchId === matchId && entry.gameNo === gameNo && entry.side === side)
 }
 
-// 本局已亮出的暗选效果（镜像服务端 getActiveEffects）：值为生效方 'a'/'b'/null
+// 本局已亮出的暗选效果（镜像服务端 getActiveEffects）：值为生效方 'a'/'b'/null；
+// yuebai 为被作用方（其本局获胜需赛点后连拿两分）、feihong 为启用方（15 分后每球 2 分）
 function getActiveEffects(roundNo, context = {}) {
-  const effects = { blast: null, block: null, charge: null, stardust: null, storage: null, chosenA: false, chosenB: false }
+  const effects = { blast: null, block: null, charge: null, stardust: null, storage: null, yuebai: null, feihong: null, chosenA: false, chosenB: false }
   const combo = getComboPhaseState(roundNo, context)
   if (!combo) return effects
   effects.chosenA = combo.treasuryA?.chosen === true
@@ -327,9 +326,9 @@ function applyTreasurySettlement(match, getGamesByMatch, perspective, treasuryBy
 }
 
 export default {
-  id: 's7',
-  name: 'S6赛季规则',
-  description: '王权之续：3 轮固定组合赛、灵魂契合与王之宝库（S6 下篇独立成季）',
+  id: 's6p',
+  name: 'S6+ 延长赛规则',
+  description: 'S6 延长赛：2 轮固定组合赛、灵魂契合（含奇招/重置骰子）与王之宝库',
   lifecycle: {
     beforeRound: {
       type: 'soul_bond',
@@ -382,11 +381,11 @@ export default {
 
   getSoulBond(roundNo, context) {
     if (!isComboRound(roundNo)) return {}
-    return getS7Data(context)?.soulBond?.[String(roundNo)] || {}
+    return getS6PData(context)?.soulBond?.[String(roundNo)] || {}
   },
 
   getTreasury(comboLabel, context) {
-    return getS7Data(context)?.treasury?.[comboLabel] || null
+    return getS6PData(context)?.treasury?.[comboLabel] || null
   },
 
   getComboSeedMap(context) {
@@ -407,7 +406,7 @@ export default {
     const rows = buildComboRankings(definitions, matches, getGamesByMatch, rounds)
 
     // 切片三：在基础星尘之上叠加结算卡修正（星尘优先排序，同 S4 口径）
-    const treasury = getS7Data(context)?.treasury || {}
+    const treasury = getS6PData(context)?.treasury || {}
     const adjusted = rows.map(row => {
       const labels = COMBO_LABELS_BY_ROUND[row.roundNo]
       const match = row.matchId ? matches.find(item => item.id === row.matchId) : null
@@ -459,13 +458,13 @@ export default {
   getPendingSecretState(matchId, gameNo, context = {}) {
     const roundNo = Number(context?.round?.roundNo ?? context?.roundNo)
     return sharedCards.getPendingSecretState(
-      getS7Data(context), COMBO_LABELS_BY_ROUND[roundNo] || [],
+      getS6PData(context), COMBO_LABELS_BY_ROUND[roundNo] || [],
       context?.match || {}, matchId, gameNo
     )
   },
 
   getPlayerPreGameCards(playerId, comboLabel, context = {}) {
-    return sharedCards.getPlayerPreGameCards(getS7Data(context), comboLabel, playerId)
+    return sharedCards.getPlayerPreGameCards(getS6PData(context), comboLabel, playerId)
   },
 
   getComboTieStatus(matches, getGamesByMatch, rounds, context) {
@@ -572,7 +571,7 @@ export default {
     })
     const comboRankings = this.calcComboRankings(matches, getGamesByMatch, rounds, comboContext)
     const tieStatus = this.getComboTieStatus(matches, getGamesByMatch, rounds, comboContext)
-    const s7Data = getS7Data(context)
+    const s7Data = getS6PData(context)
 
     return {
       buffs: [

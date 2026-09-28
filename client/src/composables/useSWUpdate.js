@@ -16,15 +16,21 @@ import { ref, onMounted, onUnmounted } from 'vue'
 export function useSWUpdate() {
   const updateReady = ref(false)
   let controllerChangeHandler = null
+  // 接管前页面是否已有 SW 控制：onMounted 时快照（首次注册为 null）
+  let hadController = false
 
   function refreshApp() {
     window.location.reload()
   }
 
   function onControllerChange() {
-    // 新的 SW 已接管页面，但页面 JS/CSS 仍是旧版本
-    // 提示用户刷新以加载新资源
-    updateReady.value = true
+    // 仅当接管前页面已有 SW 控制时才是「更新」；
+    // 首次注册（controller 为 null）的接管是正常初始化，不应提示刷新
+    if (hadController) {
+      updateReady.value = true
+    } else {
+      hadController = true
+    }
   }
 
   function checkWaitingWorker() {
@@ -53,6 +59,9 @@ export function useSWUpdate() {
 
   onMounted(() => {
     if (!('serviceWorker' in navigator)) return
+
+    // 快照：页面加载时是否已有 SW 在控制（首次访问为 null）
+    hadController = !!navigator.serviceWorker.controller
 
     // 监听 SW 接管事件
     controllerChangeHandler = onControllerChange

@@ -5,7 +5,7 @@ import { usePlayersStore, useMatchesStore, useSeasonsStore } from '@/stores'
 import { STATUS, BEST_OF_OPTIONS } from '@/constants'
 import { getRule } from '@/rules'
 import s6Rule, { KING_FORMS, TREASURY_CARDS, POST_GAME_CARDS } from '@/rules/s6'
-import s7Rule from '@/rules/s7'
+import s6pRule from '@/rules/s6p'
 import Card from '@/components/ui/Card.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
@@ -65,10 +65,10 @@ const kingFormHint = computed(() => {
 })
 
 // ---- S6 下篇（王之宝库卡片效果执行）----
-const isS7Season = computed(() => season.value?.ruleId === 's7')
-const comboRule = computed(() => (isS7Season.value ? s7Rule : s6Rule))
+const isS6pSeason = computed(() => season.value?.ruleId === 's6p')
+const comboRule = computed(() => (isS6pSeason.value ? s6pRule : s6Rule))
 const isS6Combo = computed(() =>
-  ['s6', 's7'].includes(season.value?.ruleId) && !!round.value && comboRule.value.isComboRound(round.value.roundNo)
+  ['s6', 's6p'].includes(season.value?.ruleId) && !!round.value && comboRule.value.isComboRound(round.value.roundNo)
 )
 const s6Context = computed(() => ({ season: season.value, match: match.value, round: round.value }))
 const matchTreasury = computed(() =>
@@ -127,7 +127,7 @@ async function submitSecret(cardId) {
   if (!secretState.value || !secretPlayer.value || secretSubmitting.value) return
   secretSubmitting.value = true
   try {
-    await seasonsStore.recordAction(season.value.id, isS7Season.value ? 's7_card_activate' : 's6_card_activate', {
+    await seasonsStore.recordAction(season.value.id, isS6pSeason.value ? 's6p_card_activate' : 's6_card_activate', {
       matchId: matchId.value,
       gameNo: secretState.value.gameNo,
       playerId: secretPlayer.value.playerId,
@@ -176,8 +176,15 @@ const effectHints = computed(() => {
   if (effects.charge) hints.push({ id: 'charge', text: `进击：${sideName(effects.charge)}本局获胜额外获得一次连胜计数` })
   if (effects.stardust) hints.push({ id: 'stardust', text: `星尘卡：${sideName(effects.stardust)}本局获胜 +2 星尘（净胜 ≥7 再 +1），失败阻挡对方一次连胜计数` })
   if (effects.storage) hints.push({ id: 'storage', text: `存储器：${sideName(effects.storage)}本局结束后录入额外球得分（胜 5 球 / 负 3 球）` })
-  if (effects.chosenA) hints.push({ id: 'chosenA', text: `天选：${sideName('a')}每局 2:0 开局` })
-  if (effects.chosenB) hints.push({ id: 'chosenB', text: `天选：${sideName('b')}每局 2:0 开局` })
+  if (effects.yuebai) {
+    const blocked = effects.yuebai === 'a' ? 'b' : 'a'
+    hints.push({ id: 'yuebai', text: `月白：${sideName(blocked)}本局获胜需在赛点后连拿两分（胜方至少 ${targetScore.value + 1} 分）` })
+  }
+  if (effects.feihong) hints.push({ id: 'feihong', text: `绯红：任一方到达 15 分后，${sideName(effects.feihong)}得分每球计 2 分` })
+  // 天选开局分：S6=2:0（沿用），S6+=1:0（更新说明）
+  const chosenOpening = isS6pSeason.value ? 1 : 2
+  if (effects.chosenA) hints.push({ id: 'chosenA', text: `天选：${sideName('a')}每局 ${chosenOpening}:0 开局` })
+  if (effects.chosenB) hints.push({ id: 'chosenB', text: `天选：${sideName('b')}每局 ${chosenOpening}:0 开局` })
   if (bladeUsedSide.value) hints.push({ id: 'blade', text: '名刀已启用：下一球对方得分无效' })
   return hints
 })
@@ -213,7 +220,7 @@ async function recordPostGameUse(side, card) {
   if (!ok) return
   cardUsing.value = true
   try {
-    await seasonsStore.recordAction(season.value.id, isS7Season.value ? 's7_card_use' : 's6_card_use', {
+    await seasonsStore.recordAction(season.value.id, isS6pSeason.value ? 's6p_card_use' : 's6_card_use', {
       matchId: matchId.value,
       side,
       cardId: card.cardId,
@@ -256,7 +263,7 @@ async function submitStorage(prompt) {
   }
   storageSubmitting.value = true
   try {
-    await seasonsStore.recordAction(season.value.id, isS7Season.value ? 's7_storage_record' : 's6_storage_record', {
+    await seasonsStore.recordAction(season.value.id, isS6pSeason.value ? 's6p_storage_record' : 's6_storage_record', {
       matchId: matchId.value,
       gameNo: prompt.gameNo,
       side: prompt.side,
@@ -293,7 +300,7 @@ async function handleRift(gamesToRevert) {
         entry.timing === 'pre_game' && entry.cardId === 'rift' && !entry.consumed))
     const payload = { matchId: matchId.value, games: gamesToRevert }
     if (riftEntries.length === 1 && riftEntries[0].playerId) payload.playerId = riftEntries[0].playerId
-    await seasonsStore.recordAction(season.value.id, isS7Season.value ? 's7_rift' : 's6_rift', payload)
+    await seasonsStore.recordAction(season.value.id, isS6pSeason.value ? 's6p_rift' : 's6_rift', payload)
     await matchesStore.init({ force: true })
     toast.show(`已回溯 ${gamesToRevert} 局`, 'success')
   } catch (e) { toast.show(e.message, 'error') }
@@ -371,6 +378,30 @@ function validationOptions(winner = selectedWinner.value) {
   }
 }
 
+// S6+ 月白局：被作用方获胜须在赛点后连拿两分（胜方至少 target+1；
+// 29:29 后按标准规则 30:29 逃生）。覆盖基础口径的验证结果。
+function applyYuebaiOverride(a, b) {
+  // effects.yuebai = 启用方；被作用方 = 对方（其获胜需赛点后连拿两分）
+  const holder = gameConfig.value.activeEffects?.yuebai
+  if (holder !== 'a' && holder !== 'b') return
+  const blocked = holder === 'a' ? 'b' : 'a'
+  if (a === b) return
+  const winner = a > b ? 'a' : 'b'
+  if (winner !== blocked) return
+  const wScore = Math.max(a, b)
+  const lScore = Math.min(a, b)
+  if (wScore >= maxScore.value) return
+  if (wScore < targetScore.value + 1 || wScore - lScore < 2) {
+    const result = {
+      canEnd: false,
+      winner: null,
+      reason: `月白局：${blocked === 'a' ? 'A' : 'B'} 方获胜需在赛点后连拿两分（胜方至少 ${targetScore.value + 1} 分）`
+    }
+    currentValidation.validation.value = result
+    currentValidation.errorMessage.value = result.reason
+  }
+}
+
 // 比分录入提示（编辑弹窗占位文案）
 const scoreRuleHint = computed(() =>
   gameConfig.value.activeEffects?.blast ? '爆破局先到 11 分结束（封顶 12，每球 2 分）' : '需符合21分制规则'
@@ -395,6 +426,7 @@ watch([scoreA, scoreB, selectedWinner], ([a, b]) => {
     return
   }
   currentValidation.validateGameScore(a, b, validationOptions())
+  applyYuebaiOverride(a, b)
 })
 
 // 实时验证编辑框比分
@@ -431,8 +463,9 @@ function openEndConfirm() {
   if (a === 0 && b === 0) { toast.show('请先记录比分', 'warning'); return }
 
   const result = currentValidation.validateGameScore(a, b, validationOptions())
-  if (!result.canEnd) {
-    toast.show(result.reason, 'warning')
+  applyYuebaiOverride(a, b)
+  if (!currentValidation.isValid.value) {
+    toast.show(currentValidation.errorMessage.value || result.reason, 'warning')
     return
   }
   showEndConfirm.value = true

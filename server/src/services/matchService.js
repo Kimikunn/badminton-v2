@@ -105,7 +105,7 @@ function deleteMatch(match) {
   });
 }
 
-// 开赛门控（S6/S7 组合轮：局前暗选未集齐时拒绝开始）
+// 开赛门控（S6/S6+ 组合轮：局前暗选未集齐时拒绝开始）
 function getMatchStartBlock(match) {
   return getGameStartBlock(match);
 }

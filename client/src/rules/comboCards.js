@@ -1,5 +1,5 @@
 /**
- * comboCards.js — S6/S7 共享的宝库卡常量与展示层工具（2026-09-28 抽取）
+ * comboCards.js — S6/S6+ 共享的宝库卡常量与展示层工具（2026-09-28 抽取）
  *
  * 两个生命周期（与服务端 comboCardFlow.js 同口径）：
  *   - **局前记录（pre_game）**：阻碍/进击/存储器/时空裂隙/星尘卡/爆破——
@@ -9,23 +9,25 @@
  *     高级暂停卡——实际对局中人工启用，效果线下执行；**在该局结束后补记**
  *     使用次数（带 gameNo 归属该局，每条消耗 1 次库存）。
  *
- * s6.js/s7.js 从本模块再导出；展示层 activationState 兼容两种 timing。
+ * s6.js/s6p.js 从本模块再导出；展示层 activationState 兼容两种 timing。
  */
 
 // 王之宝库卡片目录（口径与服务端一致；uses 为每张卡的库存次数，
 // reforge/chosen 不进库存：重铸立刻生效，天选自动触发）
 export const TREASURY_CARDS = {
-  pause: { id: 'pause', name: '暂停卡', tier: 1, uses: 3, condition: '随时', effect: '暂停 45 秒' },
+  pause: { id: 'pause', name: '暂停卡', tier: 1, uses: 3, condition: '随时', effect: '暂停 30 秒，回来后可选发球方和场地，无法被其他暂停卡覆盖' },
   blade: { id: 'blade', name: '名刀', tier: 1, uses: 3, condition: '随时', effect: '启用后下一球对方得分无效' },
   block: { id: 'block', name: '阻碍', tier: 1, uses: 1, condition: '每局开始前', effect: '对方本局获胜无法获得终结分' },
   charge: { id: 'charge', name: '进击', tier: 1, uses: 1, condition: '每局开始前', effect: '本局获胜额外获得一次连胜计数' },
-  pause_plus: { id: 'pause_plus', name: '高级暂停卡', tier: 2, uses: 3, condition: '随时', effect: '暂停 45 秒，回来后可选发球方和场地，无法被其他高级暂停卡覆盖' },
+  pause_plus: { id: 'pause_plus', name: '高级暂停卡', tier: 2, uses: 3, rules: ['s6'], condition: '随时', effect: '暂停 45 秒，回来后可选发球方和场地，无法被其他高级暂停卡覆盖' },
   reforge: { id: 'reforge', name: '重铸', tier: 2, uses: 0, condition: '立刻生效', effect: '重投一次骰子并二选一留用，占用一次奖励选择' },
   storage: { id: 'storage', name: '存储器', tier: 2, uses: 2, condition: '每局开始前', effect: '本局获胜额外再打 5 球、失败 3 球，启用方得分累积到下一局开局' },
+  yuebai: { id: 'yuebai', name: '月白', tier: 2, uses: 2, rules: ['s6p'], condition: '每局开始前', effect: '此局对方赛点后需连拿两分才能获胜' },
+  feihong: { id: 'feihong', name: '绯红', tier: 2, uses: 2, rules: ['s6p'], condition: '每局开始前', effect: '到达 15 分后，启用方得分每球计 2 分' },
   rift: { id: 'rift', name: '时空裂隙', tier: 3, uses: 1, condition: '每局开始前', effect: '回溯到 1 局或 2 局前；第七局打完后本轮立刻结束，无法回溯' },
   stardust: { id: 'stardust', name: '星尘卡', tier: 3, uses: 1, condition: '每局开始前', effect: '本局获胜 +2 星尘，净胜 ≥7 再 +1；失败可阻挡对方一次连胜计数' },
   blast: { id: 'blast', name: '爆破', tier: 3, uses: 2, condition: '每局开始前', effect: '每球得 2 分，直到一方到达 11 分' },
-  chosen: { id: 'chosen', name: '天选', tier: 'chosen', uses: 0, condition: '达成即自动触发', effect: '7 局比赛每局 2:0 开局，不消耗奖励选择次数' }
+  chosen: { id: 'chosen', name: '天选', tier: 'chosen', uses: 0, condition: '达成即自动触发', effect: '7 局比赛每局 1:0 开局，不消耗奖励选择次数' }
 }
 
 // 宝库阶层（解锁所需总点数）
@@ -54,7 +56,7 @@ export const CARD_PLAY_RULES = [
 ]
 
 
-// ── 局前暗选状态（逐人，s6/s7 共用）──
+// ── 局前暗选状态（逐人，s6/s6p 共用）──
 // required = 选手手上有可用局前卡（本人选到且库存 >0）；无可用卡的选手免录入
 // （门控不要求其提交，UI 显示「无需录入」）。allSubmitted 仅统计 required 选手。
 export function getPendingSecretState(state, labels, match, matchId, gameNo) {

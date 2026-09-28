@@ -4,7 +4,7 @@
  * 语义 = S6 下半赛季独立成季：3 轮固定轮换组合赛（每轮 1 场 2v2、PA7）。
  * 面板链：总排名（个人 胜/负/大分）→ 轮次进度 → ① 灵魂契合（掷骰/总点数/解锁阶层）
  *   → ② 王之宝库（库存剩余 + 卡片激活状态）→ ③ 组合星尘榜（VS 对阵 + 星尘排名
- *   + 最强组合）。无上篇/王选/王权（getRule('s7') 相应方法恒空）。
+ *   + 最强组合）。无上篇/王选/王权（getRule('s6p') 相应方法恒空）。
  */
 import { ref, computed } from 'vue'
 import Card from '@/components/ui/Card.vue'
@@ -17,7 +17,7 @@ import S1Rankings from '@/components/season/S1Rankings.vue'
 import {
   SOUL_RULES, COMBO_SCORING_RULES,
   TREASURY_CARDS, TREASURY_TIERS, CARD_PLAY_RULES, getSoulTierLabel
-} from '@/rules/s7'
+} from '@/rules/s6p'
 import { Dice5, Handshake, Gem, Trophy } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -32,10 +32,10 @@ const ruleSheet = ref(null)
 const CIRCLED = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧']
 
 // --- Data ---
-const s7Data = computed(() => props.season?.comebackData?.s7 || {})
-const seeds = computed(() => s7Data.value.seeds || {})
-const soulBond = computed(() => s7Data.value.soulBond || {})
-const treasury = computed(() => s7Data.value.treasury || {})
+const s6pData = computed(() => props.season?.comebackData?.s6p || {})
+const seeds = computed(() => s6pData.value.seeds || {})
+const soulBond = computed(() => s6pData.value.soulBond || {})
+const treasury = computed(() => s6pData.value.treasury || {})
 
 const comboRounds = computed(() =>
   [...props.rounds]
@@ -88,16 +88,17 @@ const comboDone = computed(() => comboRounds.value.filter(r => r.status === 'com
 const stageItems = computed(() => [
   {
     label: '轮次',
-    value: comboRounds.value.length ? `${comboDone.value}/${Math.max(comboRounds.value.length, 3)}` : '待开始',
+    value: comboRounds.value.length ? `${comboDone.value}/${totalRounds.value}` : '待开始',
     hint: '灵魂契合 · 组合星尘',
     active: comboRounds.value.length > 0,
-    percent: comboDone.value / 3 * 100
+    percent: totalRounds.value ? comboDone.value / totalRounds.value * 100 : 0
   }
 ])
 
-// 最强组合：3 轮组合赛全部完成后取星尘第一
+// 最强组合：两轮组合赛全部完成后取星尘第一（星尘同分按轮次内净胜分裁决）
+const totalRounds = computed(() => Number(props.season?.totalRounds) || 2)
 const comboChampion = computed(() => {
-  if (comboDone.value < 3 || !props.comboRankings.length) return null
+  if (comboDone.value < totalRounds.value || !props.comboRankings.length) return null
   return props.comboRankings[0]
 })
 

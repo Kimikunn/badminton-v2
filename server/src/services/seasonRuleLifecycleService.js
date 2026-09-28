@@ -2,7 +2,7 @@ const { prepare } = require('../config/db');
 const { parseJson, stringifyJson } = require('../utils/json');
 const { RULE_ID } = require('../constants');
 const s6Rule = require('../rules/s6');
-const s7Rule = require('../rules/s7');
+const s6pRule = require('../rules/s6p');
 
 function getS5RoundMode(dice) {
   return dice === 1 || dice === 6 ? 'mutation' : 'order';
@@ -43,7 +43,7 @@ function getBeforeRoundRequirement(season, roundNo) {
       label: '王选'
     };
   }
-  if (isS6ComboRound(season, roundNo) || isS7ComboRound(season, roundNo)) {
+  if (isS6ComboRound(season, roundNo) || isS6pComboRound(season, roundNo)) {
     return {
       timing: 'beforeRound',
       type: 'soul_bond',
@@ -70,10 +70,10 @@ function getS6SoulBond(season, roundNo) {
   return data.s6?.soulBond?.[String(roundNo)] || null;
 }
 
-// S7-王权之续：1-3 轮即组合赛轮（无上篇）
-function isS7ComboRound(season, roundNo) {
-  return season.rule_id === RULE_ID.S7
-    && Number(roundNo) >= 1 && Number(roundNo) <= 3;
+// S6+ 延长赛：1-2 轮即组合赛轮（无上篇）
+function isS6pComboRound(season, roundNo) {
+  return season.rule_id === RULE_ID.S6P
+    && Number(roundNo) >= 1 && Number(roundNo) <= 2;
 }
 
 function validateBeforeRoundSetup(season, setup, roundNo) {
@@ -88,10 +88,10 @@ function validateBeforeRoundSetup(season, setup, roundNo) {
   }
 
   if (requirement.type === 'soul_bond') {
-    const rule = season.rule_id === RULE_ID.S7 ? s7Rule : s6Rule;
+    const rule = season.rule_id === RULE_ID.S6P ? s6pRule : s6Rule;
     if (!rule.isSoulBondCompleteForRound(season, roundNo)) {
-      return season.rule_id === RULE_ID.S7
-        ? '第七赛季创建轮次前必须先完成两个组合的灵魂契合'
+      return season.rule_id === RULE_ID.S6P
+        ? 'S6+ 延长赛创建轮次前必须先完成两个组合的灵魂契合'
         : '第六赛季创建下篇轮次前必须先完成两个组合的灵魂契合';
     }
     return null;
@@ -122,8 +122,8 @@ function applyBeforeRoundSetup(season, roundNo, setup) {
     return {
       timing: requirement.timing,
       type: requirement.type,
-      soulBond: season.rule_id === RULE_ID.S7
-        ? (parseJson(season.comeback_data, {}).s7?.soulBond?.[String(roundNo)] || null)
+      soulBond: season.rule_id === RULE_ID.S6P
+        ? (parseJson(season.comeback_data, {}).s6p?.soulBond?.[String(roundNo)] || null)
         : getS6SoulBond(season, roundNo)
     };
   }

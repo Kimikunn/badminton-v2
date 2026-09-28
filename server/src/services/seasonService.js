@@ -53,16 +53,31 @@ function missingPlayerIds(playerIds = []) {
 
 function createSeason(data) {
   const id = data.id || seasonId();
+  // S6+ 延长赛：建季即生成每轮奇招幸运数（1-6），并落盘重置骰子持有者
+  //（来源 S6 前两名组合的选手，由创建方传入 resetDicePlayers）
+  let comebackData = data.comebackData ? { ...data.comebackData } : null;
+  if (data.ruleId === RULE_ID.S6P) {
+    comebackData = comebackData || {};
+    const s6p = { ...(comebackData.s6p || {}) };
+    s6p.lucky = { ...(s6p.lucky || {}) };
+    for (const roundNo of [1, 2]) {
+      if (!Number.isInteger(s6p.lucky[String(roundNo)])) {
+        s6p.lucky[String(roundNo)] = 1 + Math.floor(Math.random() * 6);
+      }
+    }
+    s6p.resetDice = Array.isArray(data.resetDicePlayers) ? data.resetDicePlayers : [];
+    comebackData.s6p = s6p;
+  }
   prepare(`INSERT INTO seasons (id, name, total_rounds, best_of, status, participants, rule_id, comeback_data, color)
     VALUES (?, ?, ?, ?, 'ongoing', ?, ?, ?, ?)`)
     .run(
       id,
       data.name,
-      data.totalRounds || (data.ruleId === RULE_ID.S5 ? 9 : 7),
+      data.totalRounds || (data.ruleId === RULE_ID.S5 ? 9 : data.ruleId === RULE_ID.S6P ? 2 : 7),
       data.bestOf || 3,
       stringifyJson(data.participants || []),
       data.ruleId || RULE_ID.STANDARD,
-      data.comebackData ? stringifyJson(data.comebackData) : null,
+      comebackData ? stringifyJson(comebackData) : null,
       data.color || null
     );
 

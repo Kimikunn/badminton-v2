@@ -14,7 +14,7 @@ const SEASON_COLORS = {
   yellow: { hue: 80,  label: '金', light: 'oklch(0.62 0.16 80)',  dark: 'oklch(0.72 0.14 80)' },
   red:    { hue: 20,  label: '红', light: 'oklch(0.52 0.20 20)',  dark: 'oklch(0.65 0.18 20)' },
   orange: { hue: 45,  label: '橙', light: 'oklch(0.60 0.18 45)',  dark: 'oklch(0.70 0.16 45)' },
-  // S7-王权之续：主题色 FF770F（≈oklch(0.72 0.19 49)），对比色 #000026
+  // S6+ 延长赛：主题色 FF770F（≈oklch(0.72 0.19 49)），对比色 #000026
   sunset: { hue: 49,  label: '橙焰', light: 'oklch(0.64 0.19 49)', dark: 'oklch(0.72 0.19 49)', contrast: '#000026' },
 }
 

@@ -1,5 +1,5 @@
 /**
- * comboCardFlow.js — S6/S7 共享的道具卡生命周期（2026-09-28 抽取）
+ * comboCardFlow.js — S6/S6+ 共享的道具卡生命周期（2026-09-28 抽取）
  *
  * 设计：道具卡按「录入/结算时机」分两个生命周期，两个规则共用同一套状态机：
  *   - **局前记录（pre_game）**：阻碍/进击/存储器/时空裂隙/星尘卡/爆破。
@@ -16,13 +16,13 @@
  *     matchId, gameId, gameNo, side, playerId?, cardId, revealed, consumed }
  *
  * 约定：本模块函数只操作传入的 state 对象（调用方负责解析/持久化
- * comeback_data 的对应键），轮次边界校验由 s6/s7 的包装层完成。
+ * comeback_data 的对应键），轮次边界校验由 s6/s6p 的包装层完成。
  */
 const { prepare } = require('../config/db');
 const { parseJson } = require('../utils/json');
 const { MATCH_STATUS, WINNER_SIDE } = require('../constants');
 
-const PRE_GAME_CARDS = ['block', 'charge', 'storage', 'rift', 'stardust', 'blast'];
+const PRE_GAME_CARDS = ['block', 'charge', 'storage', 'rift', 'stardust', 'blast', 'yuebai', 'feihong'];
 // 原「随时卡」：效果线下执行，改为局后补记（生命周期 2）
 const POST_GAME_CARDS = ['pause', 'blade', 'pause_plus'];
 const BLAST_TARGET_SCORE = 11;
@@ -35,9 +35,11 @@ const TREASURY_CARDS = {
   blade: { name: '名刀', tier: 1, uses: 3 },
   block: { name: '阻碍', tier: 1, uses: 1 },
   charge: { name: '进击', tier: 1, uses: 1 },
-  pause_plus: { name: '高级暂停卡', tier: 2, uses: 3 },
+  pause_plus: { name: '高级暂停卡', tier: 2, uses: 3, rules: ['s6'] },
   reforge: { name: '重铸', tier: 2, uses: 0 },
   storage: { name: '存储器', tier: 2, uses: 2 },
+  yuebai: { name: '月白', tier: 2, uses: 2, rules: ['s6p'] },
+  feihong: { name: '绯红', tier: 2, uses: 2, rules: ['s6p'] },
   rift: { name: '时空裂隙', tier: 3, uses: 1 },
   stardust: { name: '星尘卡', tier: 3, uses: 1 },
   blast: { name: '爆破', tier: 3, uses: 2 },
@@ -138,7 +140,7 @@ function isPreGameComplete(state, labels, match, gameNo) {
   return required.every(playerId => submitted.has(playerId));
 }
 
-// 开局门控文案（s6/s7 canStartGame 用）：未集齐时返回错误文案，集齐/非组合轮返回 null
+// 开局门控文案（s6/s6p canStartGame 用）：未集齐时返回错误文案，集齐/非组合轮返回 null
 function preGameGateError(state, labels, match, gameNo) {
   if (!labels) return null;
   if (isPreGameComplete(state, labels, match, gameNo)) return null;
@@ -147,7 +149,7 @@ function preGameGateError(state, labels, match, gameNo) {
   return `第 ${gameNo} 局开始前，持有可用局前卡的选手需完成录入（${required.length} 人待录入）`;
 }
 
-// ── 局前暗选提交（s6_card_activate / s7_card_activate 共享）──
+// ── 局前暗选提交（s6_card_activate / s6p_card_activate 共享）──
 // side 由选手所在比赛队伍推导；该场 4 名选手全部提交后所有记录同时亮出。
 function recordCardActivate(ctx, state, { match, roundNo, labels, input, idPrefix }) {
   const playerId = String(input.playerId || '').trim();
@@ -209,7 +211,7 @@ function recordCardActivate(ctx, state, { match, roundNo, labels, input, idPrefi
   return {};
 }
 
-// ── 局后记录（原 s6_card_use / s7_card_use 共享，语义改为局后结算）──
+// ── 局后记录（原 s6_card_use / s6p_card_use 共享，语义改为局后结算）──
 // 随时卡在实际对局中人工启用；该局结束后按方补记使用次数（每条消耗 1 次库存，
 // 带 gameNo 归属该局）。同一局同卡可多次记录（每次消耗 1 次）。
 function recordPostGameUse(ctx, state, { match, roundNo, labels, input, idPrefix }) {
@@ -257,7 +259,7 @@ function recordPostGameUse(ctx, state, { match, roundNo, labels, input, idPrefix
 // 本局已亮出的暗选效果（客户端提示横幅用）：值为生效方 'a'/'b'/null；
 // chosenA/chosenB 为天选是否作用于对应方。仅统计 revealed 的局前暗选。
 function getActiveEffects(game, combo) {
-  const effects = { blast: null, block: null, charge: null, stardust: null, storage: null, chosenA: false, chosenB: false };
+  const effects = { blast: null, block: null, charge: null, stardust: null, storage: null, yuebai: null, feihong: null, chosenA: false, chosenB: false };
   if (!combo) return effects;
   effects.chosenA = combo.treasuryA?.chosen === true;
   effects.chosenB = combo.treasuryB?.chosen === true;
@@ -278,14 +280,16 @@ function getActiveEffects(game, combo) {
   return effects;
 }
 
-// 组合阶段开局加成：天选每局 +2；存储器 carry 一次性带入（多条按方求和）
-function getComboOpening(state, labels, match) {
+// 组合阶段开局加成：天选每局 +chosenPoints（S6=2，S6+=1，更新说明改为每局 1 分）；
+// 存储器 carry 一次性带入（多条按方求和）
+function getComboOpening(state, labels, match, chosenPoints = 2) {
   const opening = { openingScoreA: 0, openingScoreB: 0 };
   if (!labels || !match) return opening;
+  const points = Number(chosenPoints || 2);
   const treasuryA = state.treasury?.[labels[0]] || null;
   const treasuryB = state.treasury?.[labels[1]] || null;
-  if (treasuryA?.chosen === true) opening.openingScoreA += 2;
-  if (treasuryB?.chosen === true) opening.openingScoreB += 2;
+  if (treasuryA?.chosen === true) opening.openingScoreA += points;
+  if (treasuryB?.chosen === true) opening.openingScoreB += points;
   const carry = state.storageCarry?.[match.id] || null;
   const carries = Array.isArray(carry) ? carry : (carry ? [carry] : []);
   for (const item of carries) {
@@ -312,6 +316,37 @@ function validateBlastGame(config, input) {
     return { canEnd: false, winner: null, reason: `爆破局最高${config.maxScore}分封顶` };
   }
   return { canEnd: true, winner, reason: '' };
+}
+
+// 月白局：被作用方获胜须在赛点后连拿两分——胜方比分至少 target+1
+//（21 分制即 22 分；爆破局 11 分制下即 12 分封顶恰好满足），且净胜 ≥2。
+// 29:29 后按标准规则下一分决胜（30:29 逃生），避免死锁。
+function validateYuebaiMargin(effects, input, config) {
+  // effects.yuebai = 启用方；被作用方 = 对方（其获胜需赛点后连拿两分）
+  const holder = effects?.yuebai;
+  if (holder !== WINNER_SIDE.A && holder !== WINNER_SIDE.B) return null;
+  const blocked = holder === WINNER_SIDE.A ? WINNER_SIDE.B : WINNER_SIDE.A;
+  const scoreA = Number(input.scoreA || 0);
+  const scoreB = Number(input.scoreB || 0);
+  if (scoreA === scoreB) return null;
+  const winner = scoreA > scoreB ? WINNER_SIDE.A : WINNER_SIDE.B;
+  if (winner !== blocked) return null;
+  const wScore = Math.max(scoreA, scoreB);
+  const lScore = Math.min(scoreA, scoreB);
+  const target = Number(config?.targetScore || 21);
+  const maxScore = Number(config?.maxScore || 30);
+  if (wScore >= maxScore) {
+    if (wScore === maxScore && lScore === maxScore - 1) return null;
+    return null;
+  }
+  if (wScore < target + 1 || wScore - lScore < 2) {
+    return {
+      canEnd: false,
+      winner: null,
+      reason: `月白局：${blocked === WINNER_SIDE.A ? 'A' : 'B'} 方获胜需在赛点后连拿两分（胜方至少 ${target + 1} 分）`
+    };
+  }
+  return null;
 }
 
 // 存储器局后记录启用方额外球得分（胜 0-5、负 0-3）。
@@ -439,5 +474,6 @@ module.exports = {
   getComboOpening,
   validateBlastGame,
   recordStorageRecord,
-  recordRift
+  recordRift,
+  validateYuebaiMargin
 };
