@@ -78,6 +78,44 @@ function cardActivate(seasonId, matchId, gameNo, playerId, cardId) {
   return postAction(seasonId, 's6_card_activate', { matchId, gameNo, playerId, cardId });
 }
 
+
+// 局前记录门控（2026-09-28）：组合轮每局开始前需 4 名选手完成局前暗选。
+// 测试用推进：为 gameNo 提交 4 人「不使用」，然后重新 start 触发晋升。
+async function advanceGameWithNullPicks(seasonId, matchId, gameNo, players4) {
+  for (const pid of players4) {
+    await cardActivate(seasonId, matchId, gameNo, pid, null).expect(200);
+  }
+  await api.post(`/api/matches/${matchId}/start`).expect(200);
+  const games = getDbGames(matchId);
+  const current = games.find(g => g.game_no === gameNo);
+  assert.equal(current.status, 'in_progress', `G${gameNo} 应在暗选集齐后进入进行中`);
+  return current;
+}
+
+// 打满一场组合赛：从 gameNo 开始逐局推进（每局之间提交 4 人不使用暗选）
+async function playOutComboMatch(seasonId, matchId, players4, fromGameNo, gameWinners, score = [21, 10]) {
+  const winners = Array.isArray(gameWinners) ? gameWinners : new Array(7).fill(gameWinners)
+  for (let i = 0; i < winners.length; i++) {
+    const gameNo = fromGameNo + i
+    const current = await advanceGameWithNullPicks(seasonId, matchId, gameNo, players4)
+    const side = winners[i]
+    await finishGame(current.id, side === 'a' ? score[0] : score[1], side === 'a' ? score[1] : score[0])
+  }
+}
+
+
+// 局前门控推进（2026-09-28）：为 gameNo 提交 4 人「不使用」暗选并重新 start
+async function resumeGame(seasonId, matchId, gameNo) {
+  for (const pid of ['p1', 'p2', 'p3', 'p4']) {
+    const res = await cardActivate(seasonId, matchId, gameNo, pid, null);
+    // 已为本局提交过暗选（如激活了局前卡）视为就绪，跳过即可
+    if (res.status !== 200 && !/已提交暗选/.test(res.body?.error?.message || '')) {
+      assert.fail(`G${gameNo} ${pid} 局前暗选失败: ${res.body?.error?.message || res.status}`);
+    }
+  }
+  await api.post(`/api/matches/${matchId}/start`).expect(200);
+}
+
 test('s6_card_activate validates window, ownership and reveals after all 4 players submit', async () => {
   const matchId = await setupBottomMatch('TR-ACT', {
     abPicks: [['p1', 'blast'], ['p2', 'storage']],
@@ -161,28 +199,38 @@ test('s6_card_use records anytime cards and exhausts inventory', async () => {
     abPicks: [['p1', 'pause'], ['p2', 'blade']],
     cdPicks: [['p3', 'pause_plus'], ['p4', 'block']]
   });
-  await startMatch(matchId);
+  await resumeGame('S-TR-USE', matchId, 1);
 
-  const preGame = await postAction('S-TR-USE', 's6_card_use', { matchId, side: 'a', cardId: 'block' }).expect(422);
-  assert.match(preGame.body.error.message, /暗选/);
+  // 局后结算：进行中的局不能补记
+  const midGame = await postAction('S-TR-USE', 's6_card_use', { matchId, side: 'a', cardId: 'pause' }).expect(422);
+  assert.match(midGame.body.error.message, /局后结算/);
 
-  await postAction('S-TR-USE', 's6_card_use', { matchId, side: 'a', cardId: 'pause' }).expect(200);
+  // G1 完赛后按 gameNo 补记
+  const games = getDbGames(matchId);
+  await api.put(`/api/games/${games[0].id}/score`).send({ scoreA: 21, scoreB: 10 }).expect(200);
+  await api.post(`/api/games/${games[0].id}/end`).send({}).expect(200);
+
+  const wrongCard = await postAction('S-TR-USE', 's6_card_use', { matchId, side: 'a', cardId: 'block', gameNo: 1 }).expect(422);
+  assert.match(wrongCard.body.error.message, /局后结算卡/);
+
+  await postAction('S-TR-USE', 's6_card_use', { matchId, side: 'a', cardId: 'pause', gameNo: 1 }).expect(200);
   let s6 = getS6Data('S-TR-USE');
   assert.equal(s6.treasury.AB.inventory.pause, 2);
   const entry = s6.treasury.AB.activations.at(-1);
-  assert.equal(entry.timing, 'anytime');
+  assert.equal(entry.timing, 'post_game');
+  assert.equal(entry.gameNo, 1);
   assert.equal(entry.cardId, 'pause');
   assert.equal(entry.side, 'a');
   assert.equal(entry.revealed, true);
   assert.equal(entry.consumed, true);
 
   // 名刀 3 次用尽后拒绝
-  await postAction('S-TR-USE', 's6_card_use', { matchId, side: 'a', cardId: 'blade' }).expect(200);
-  await postAction('S-TR-USE', 's6_card_use', { matchId, side: 'a', cardId: 'blade' }).expect(200);
-  await postAction('S-TR-USE', 's6_card_use', { matchId, side: 'a', cardId: 'blade' }).expect(200);
+  await postAction('S-TR-USE', 's6_card_use', { matchId, side: 'a', cardId: 'blade', gameNo: 1 }).expect(200);
+  await postAction('S-TR-USE', 's6_card_use', { matchId, side: 'a', cardId: 'blade', gameNo: 1 }).expect(200);
+  await postAction('S-TR-USE', 's6_card_use', { matchId, side: 'a', cardId: 'blade', gameNo: 1 }).expect(200);
   s6 = getS6Data('S-TR-USE');
   assert.equal(s6.treasury.AB.inventory.blade, 0);
-  const exhausted = await postAction('S-TR-USE', 's6_card_use', { matchId, side: 'a', cardId: 'blade' }).expect(422);
+  const exhausted = await postAction('S-TR-USE', 's6_card_use', { matchId, side: 'a', cardId: 'blade', gameNo: 1 }).expect(422);
   assert.match(exhausted.body.error.message, /库存不足/);
 });
 
@@ -228,7 +276,8 @@ test('revealed blast switches the game to first-to-11 with cap 12', async () => 
   await api.post(`/api/games/${games[0].id}/end`).send({}).expect(200);
   assert.equal(getDbGames(matchId)[0].winner, 'a');
 
-  // 第二局无爆破暗选，仍按 21 分制校验
+  // 第二局无爆破暗选，仍按 21 分制校验（局前门控推进）
+  await resumeGame('S-TR-BLAST', matchId, 2);
   const second = getDbGames(matchId)[1];
   await api.put(`/api/games/${second.id}/score`).send({ scoreA: 21, scoreB: 18 }).expect(200);
   await api.post(`/api/games/${second.id}/end`).send({}).expect(200);
@@ -242,7 +291,8 @@ test('chosen combo starts every bottom-phase game 2:0', async () => {
   });
   assert.equal(getS6Data('S-TR-CHOSEN').treasury.AB.chosen, true);
 
-  const games = await startMatch(matchId);
+  await resumeGame('S-TR-CHOSEN', matchId, 1);
+  const games = getDbGames(matchId);
   assert.equal(games[0].score_a, 2);
   assert.equal(games[0].score_b, 0);
 
@@ -260,6 +310,7 @@ test('chosen combo starts every bottom-phase game 2:0', async () => {
 
   // 每局都是 2:0 开局
   await finishGame(games[0].id, 22, 20);
+  await resumeGame('S-TR-CHOSEN', matchId, 2);
   const second = getDbGames(matchId)[1];
   assert.equal(second.status, 'in_progress');
   assert.equal(second.score_a, 2);
@@ -276,7 +327,8 @@ test('storage record carries extra-ball points into the next game opening', asyn
   assert.match(noActivation.body.error.message, /存储器暗选记录/);
 
   await cardActivate('S-TR-STORAGE', matchId, 1, 'p1', 'storage').expect(200);
-  const games = await startMatch(matchId);
+  await resumeGame('S-TR-STORAGE', matchId, 1);
+  const games = getDbGames(matchId);
 
   const tooEarly = await postAction('S-TR-STORAGE', 's6_storage_record', { matchId, gameNo: 1, side: 'a', playerId: 'p1', points: 3 }).expect(422);
   assert.match(tooEarly.body.error.message, /尚未结束/);
@@ -288,6 +340,8 @@ test('storage record carries extra-ball points into the next game opening', asyn
   assert.match(overMax.body.error.message, /0-5/);
 
   await postAction('S-TR-STORAGE', 's6_storage_record', { matchId, gameNo: 1, side: 'a', playerId: 'p1', points: 4 }).expect(200);
+  // 门控推进第 2 局：局开始时由 onGameStarted 应用 carry 并清除
+  await resumeGame('S-TR-STORAGE', matchId, 2);
   let s6 = getS6Data('S-TR-STORAGE');
   assert.deepEqual(s6.storageCarry, {});
   const second = getDbGames(matchId)[1];
@@ -300,6 +354,10 @@ test('storage record carries extra-ball points into the next game opening', asyn
 
   // 第 3 局再次暗选存储器（uses=2）；局行已存在 → gameId 回填
   await cardActivate('S-TR-STORAGE', matchId, 3, 'p1', 'storage').expect(200);
+  await cardActivate('S-TR-STORAGE', matchId, 3, 'p2', null).expect(200);
+  await cardActivate('S-TR-STORAGE', matchId, 3, 'p3', null).expect(200);
+  await cardActivate('S-TR-STORAGE', matchId, 3, 'p4', null).expect(200);
+  await api.post(`/api/matches/${matchId}/start`).expect(200);
   s6 = getS6Data('S-TR-STORAGE');
   const thirdEntry = s6.treasury.AB.activations.find(e => e.gameNo === 3);
   assert.equal(thirdEntry.gameId, `${matchId}-G3`);
@@ -314,6 +372,7 @@ test('storage record carries extra-ball points into the next game opening', asyn
   assert.match(loserOverMax.body.error.message, /0-3/);
 
   await postAction('S-TR-STORAGE', 's6_storage_record', { matchId, gameNo: 3, side: 'a', points: 3 }).expect(200);
+  await resumeGame('S-TR-STORAGE', matchId, 4);
   const fourth = getDbGames(matchId)[3];
   assert.equal(fourth.status, 'in_progress');
   assert.equal(fourth.score_a, 3);
@@ -351,7 +410,9 @@ test('s6_rift reverts the last completed games through the shared revert path', 
     abPicks: [['p1', 'rift'], ['p2', 'pause']],
     cdPicks: [['p3', 'pause'], ['p4', 'blade']]
   });
-  const games = await startMatch(matchId);
+  await resumeGame('S-TR-RIFT', matchId, 1);
+  await resumeGame('S-TR-RIFT', matchId, 2);
+  const games = getDbGames(matchId);
   await cardActivate('S-TR-RIFT', matchId, 3, 'p1', 'rift').expect(200);
 
   const badCount = await postAction('S-TR-RIFT', 's6_rift', { matchId, games: 3 }).expect(422);
@@ -396,10 +457,12 @@ test('s6_rift is rejected once game 7 is completed', async () => {
     abPicks: [['p1', 'rift'], ['p2', 'pause']],
     cdPicks: [['p3', 'pause'], ['p4', 'blade']]
   });
-  const games = await startMatch(matchId);
+  await resumeGame('S-TR-RIFT7', matchId, 1);
+  const games = getDbGames(matchId);
   await cardActivate('S-TR-RIFT7', matchId, 7, 'p1', 'rift').expect(200);
-  for (const game of games) {
-    await finishGame(game.id, 21, 10);
+  for (let i = 0; i < games.length; i++) {
+    if (i > 0) await resumeGame('S-TR-RIFT7', matchId, i + 1);
+    await finishGame(games[i].id, 21, 10);
   }
   assert.equal(getDbMatch(matchId).status, 'completed');
 
@@ -454,12 +517,14 @@ test('two same-side storage activations are each recorded and their points add u
   // 同方两人同局各激活存储器
   await cardActivate('S-TR-STORAGE2', matchId, 1, 'p1', 'storage').expect(200);
   await cardActivate('S-TR-STORAGE2', matchId, 1, 'p2', 'storage').expect(200);
-  const games = await startMatch(matchId);
+  await resumeGame('S-TR-STORAGE2', matchId, 1);
+  const games = getDbGames(matchId);
   await finishGame(games[0].id, 21, 10);
 
-  // 下一局已在进行中：两条记录各自直接加分，效果累加
+  // 记录后推进下一局（暗选集齐 → start → onGameStarted 应用 carry，累加语义）
   await postAction('S-TR-STORAGE2', 's6_storage_record', { matchId, gameNo: 1, side: 'a', playerId: 'p1', points: 4 }).expect(200);
   await postAction('S-TR-STORAGE2', 's6_storage_record', { matchId, gameNo: 1, side: 'a', playerId: 'p2', points: 5 }).expect(200);
+  await resumeGame('S-TR-STORAGE2', matchId, 2);
   const second = getDbGames(matchId)[1];
   assert.equal(second.score_a, 9);
   assert.equal(second.score_b, 0);

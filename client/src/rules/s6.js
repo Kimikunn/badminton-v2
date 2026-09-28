@@ -56,6 +56,8 @@
  */
 
 import { STATUS } from '@/constants'
+import { TREASURY_CARDS, TREASURY_TIERS, CARD_PLAY_RULES, PRE_GAME_CARDS, POST_GAME_CARDS, ANYTIME_CARDS, BLAST_TARGET_SCORE, BLAST_MAX_SCORE, getTierCap, activationState, activationLabel } from './comboCards'
+export { TREASURY_CARDS, TREASURY_TIERS, CARD_PLAY_RULES, PRE_GAME_CARDS, POST_GAME_CARDS, ANYTIME_CARDS, BLAST_TARGET_SCORE, BLAST_MAX_SCORE, getTierCap, activationState, activationLabel }
 import standardRule from './standard'
 import {
   buildComboRankings, resolveComboTie, sortComboRankings, getCompletedGames
@@ -94,45 +96,7 @@ export const KING_RULES = [
   { id: 'triumph', title: '凯旋', text: '上篇最终前两名在组合赛中各获得 1 次重新投掷骰子的机会。' }
 ]
 
-// 王之宝库卡片目录（客户端唯一展示文案来源，口径与服务端 TREASURY_CARDS 一致；
-// uses 为每张卡的库存次数，reforge/chosen 不进库存：重铸立刻生效，天选自动触发）
-export const TREASURY_CARDS = {
-  pause: { id: 'pause', name: '暂停卡', tier: 1, uses: 3, condition: '随时', effect: '暂停 45 秒' },
-  blade: { id: 'blade', name: '名刀', tier: 1, uses: 3, condition: '随时', effect: '启用后下一球对方得分无效' },
-  block: { id: 'block', name: '阻碍', tier: 1, uses: 1, condition: '每局开始前', effect: '对方本局获胜无法获得终结分' },
-  charge: { id: 'charge', name: '进击', tier: 1, uses: 1, condition: '每局开始前', effect: '本局获胜额外获得一次连胜计数' },
-  pause_plus: { id: 'pause_plus', name: '高级暂停卡', tier: 2, uses: 3, condition: '随时', effect: '暂停 45 秒，回来后可选发球方和场地，无法被其他高级暂停卡覆盖' },
-  reforge: { id: 'reforge', name: '重铸', tier: 2, uses: 0, condition: '立刻生效', effect: '重投一次骰子并二选一留用，占用一次奖励选择' },
-  storage: { id: 'storage', name: '存储器', tier: 2, uses: 2, condition: '每局开始前', effect: '本局获胜额外再打 5 球、失败 3 球，启用方得分累积到下一局开局' },
-  rift: { id: 'rift', name: '时空裂隙', tier: 3, uses: 1, condition: '每局开始前', effect: '回溯到 1 局或 2 局前；第七局打完后本轮立刻结束，无法回溯' },
-  stardust: { id: 'stardust', name: '星尘卡', tier: 3, uses: 1, condition: '每局开始前', effect: '本局获胜 +2 星尘，净胜分 ≥7 再 +1；失败可阻挡对方一次连胜计数' },
-  blast: { id: 'blast', name: '爆破', tier: 3, uses: 2, condition: '每局开始前', effect: '每球得 2 分，直到一方到达 11 分' },
-  chosen: { id: 'chosen', name: '天选', tier: 'chosen', uses: 0, condition: '达成即自动触发', effect: '7 局比赛每局 2:0 开局，不消耗奖励选择次数' }
-}
 
-// 宝库阶层（解锁所需总点数）
-export const TREASURY_TIERS = [
-  { tier: 1, name: '第一阶', range: '总点数 3-6', cards: ['pause', 'blade', 'block', 'charge'] },
-  { tier: 2, name: '第二阶', range: '总点数 7-9', cards: ['pause_plus', 'reforge', 'storage'] },
-  { tier: 3, name: '第三阶', range: '总点数 10-12', cards: ['rift', 'stardust', 'blast'] },
-  { tier: 'chosen', name: '天选', range: '总点数 13', cards: ['chosen'] }
-]
-
-// 切片三：启用条件分组（与服务端 PRE_GAME_CARDS / ANYTIME_CARDS 一致）
-export const PRE_GAME_CARDS = ['block', 'charge', 'storage', 'rift', 'stardust', 'blast']
-export const ANYTIME_CARDS = ['pause', 'blade', 'pause_plus']
-// 爆破局目标分/封顶分（与服务端 BLAST_TARGET_SCORE / BLAST_MAX_SCORE 一致）
-export const BLAST_TARGET_SCORE = 11
-export const BLAST_MAX_SCORE = 12
-
-// 切片三卡片使用规则文案（规则 Sheet 展示用）
-export const CARD_PLAY_RULES = [
-  { id: 'secret', title: '暗选与亮出', text: '启用条件为"每局开始前"的卡片（阻碍/进击/存储器/时空裂隙/星尘卡/爆破）由 4 名选手在局开始前各自录入本人选择（仅限本人在灵魂契合中选到的卡），也可选择"不使用"；4 人全部提交后同时亮出。第 1 局的暗选必须在比赛开始前完成。' },
-  { id: 'anytime', title: '随时卡', text: '暂停卡/名刀/高级暂停卡在比赛进行中随时启用，记分页记录使用并扣减库存；名刀启用后下一球对方得分无效。' },
-  { id: 'settle', title: '结算卡片', text: '阻碍/进击/星尘卡的效果在局结束后自动并入组合星尘结算；同局冲突时高阶奖励优先生效（星尘卡/阻碍先于进击）。' },
-  { id: 'storage', title: '存储器', text: '该局结束后录入启用方额外球得分（胜 0-5、负 0-3），得分自动累积到下一局开局。' },
-  { id: 'rift', title: '时空裂隙', text: '在记分页执行回溯 1-2 局；第七局打完后本轮立刻结束，无法回溯。' }
-]
 
 // 灵魂契合规则文案（规则 Sheet 展示用）
 export const SOUL_RULES = [
@@ -170,11 +134,6 @@ export function getComboLabelsByRound(roundNo) {
   return COMBO_LABELS_BY_ROUND[Number(roundNo)] || []
 }
 
-// 选奖时的阶层上限：天选视同已解锁第三阶（与服务端 getTierCap 一致）
-export function getTierCap(unlockTier) {
-  if (unlockTier === 'chosen') return 3
-  return Number(unlockTier) || 0
-}
 
 export function getSoulTierLabel(unlockTier) {
   if (unlockTier === 'chosen') return '天选'

@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { usePlayersStore, useMatchesStore, useSeasonsStore } from '@/stores'
 import { STATUS, BEST_OF_OPTIONS } from '@/constants'
 import { getRule } from '@/rules'
-import s6Rule, { KING_FORMS, TREASURY_CARDS, ANYTIME_CARDS } from '@/rules/s6'
+import s6Rule, { KING_FORMS, TREASURY_CARDS, POST_GAME_CARDS } from '@/rules/s6'
 import s7Rule from '@/rules/s7'
 import Card from '@/components/ui/Card.vue'
 import Badge from '@/components/ui/Badge.vue'
@@ -92,7 +92,9 @@ const secretGameNo = computed(() => {
   if (!isS6Combo.value || isMatchOver.value) return null
   if (match.value?.status === STATUS.PENDING) return 1
   if (currentGame.value) return currentGame.value.gameNo + 1
-  return null
+  // 门控挂起：比赛进行中但无进行中的局 → 目标 = 下一待开始的 PENDING 局
+  const pending = games.value.find(g => g.status === STATUS.PENDING)
+  return pending ? pending.gameNo : null
 })
 const secretState = computed(() => {
   const gameNo = secretGameNo.value
@@ -142,6 +144,10 @@ async function submitSecret(cardId) {
 const canStartS6Match = computed(() =>
   isS6Combo.value && match.value?.status === STATUS.PENDING && !!secretState.value?.allSubmitted
 )
+// 门控挂起（比赛进行中、下一局待开始）时的开始门：同口径（该局 4 人暗选集齐）
+const canStartNextGame = computed(() =>
+  isS6Combo.value && !!secretState.value?.allSubmitted
+)
 const startingMatch = ref(false)
 async function handleStartMatch() {
   startingMatch.value = true
@@ -172,28 +178,33 @@ const effectHints = computed(() => {
   return hints
 })
 
-// 随时卡（暂停卡/名刀/高级暂停卡）：比赛进行中按方使用，确认后记录并扣库存
-const anytimeRows = computed(() => {
-  if (!matchTreasury.value || match.value?.status !== STATUS.IN_PROGRESS) return []
+// 局后记录（原「随时卡」）：暂停卡/名刀/高级暂停卡在实际对局中人工启用，
+// 效果线下执行；在该局结束后按方补记使用次数（带 gameNo 归属，服务端校验该局已完赛）
+const settledGame = computed(() => completedGames.value[completedGames.value.length - 1] || null)
+const postGameRows = computed(() => {
+  if (!matchTreasury.value || !isS6Combo.value || isMatchOver.value) return []
+  if (!settledGame.value) return []
+  // 该局已有的局后记录（展示已记次数）
   return ['a', 'b']
-    .map(side => ({
-      side,
-      cards: ANYTIME_CARDS
+    .map(side => {
+      const label = matchTreasury.value.sides[side]?.label
+      const recorded = (matchTreasury.value.sides[side]?.activations || [])
+        .filter(entry => entry.timing !== 'pre_game' && entry.gameNo === settledGame.value.gameNo)
+      const cards = POST_GAME_CARDS
         .map(cardId => ({
           cardId,
           ...TREASURY_CARDS[cardId],
           remaining: matchTreasury.value.sides[side].inventory[cardId] || 0
         }))
-        .filter(card => card.remaining > 0)
-    }))
-    .filter(row => row.cards.length > 0)
+      return { side, label, gameNo: settledGame.value.gameNo, recorded, cards }
+    })
 })
 const cardUsing = ref(false)
-async function useAnytimeCard(side, card) {
+async function recordPostGameUse(side, card) {
   const ok = await confirmAction({
-    title: `使用${card.name}`,
-    message: `${card.effect}\n确认为${sideName(side)}使用 1 次（剩余 ${card.remaining} 次）？`,
-    confirmText: '使用'
+    title: `补记${card.name}（局后记录）`,
+    message: `${card.effect}\n确认${sideName(side)}在 G${settledGame.value.gameNo} 使用 1 次（剩余 ${card.remaining} 次）？`,
+    confirmText: '记录'
   })
   if (!ok) return
   cardUsing.value = true
@@ -201,7 +212,8 @@ async function useAnytimeCard(side, card) {
     await seasonsStore.recordAction(season.value.id, isS7Season.value ? 's7_card_use' : 's6_card_use', {
       matchId: matchId.value,
       side,
-      cardId: card.cardId
+      cardId: card.cardId,
+      gameNo: settledGame.value.gameNo
     })
     if (card.cardId === 'blade') bladeUsedSide.value = side
     toast.show(`${card.name}已记录`, 'success')
@@ -581,15 +593,20 @@ onMounted(async () => { await ensureStarted(); isLoading.value = false })
             <Zap :size="14" class="text-fg-secondary shrink-0" />
             <h3 class="text-xs font-semibold text-fg-secondary uppercase tracking-wide">随时卡</h3>
           </div>
-          <div v-for="row in anytimeRows" :key="row.side" class="flex flex-col gap-1.5">
-            <span class="text-xs text-fg-muted truncate">{{ sideName(row.side) }}</span>
+          <div v-for="row in postGameRows" :key="row.side" class="flex flex-col gap-1.5">
+            <span class="text-xs text-fg-muted truncate">{{ sideName(row.side) }} · G{{ row.gameNo }}</span>
             <div class="flex flex-wrap gap-2">
               <button
                 v-for="card in row.cards" :key="card.cardId"
                 class="px-3 min-h-9 rounded-lg border border-line-light bg-canvas text-sm text-fg-secondary font-medium cursor-pointer transition-all duration-fast active:scale-95 disabled:opacity-50"
                 :disabled="cardUsing"
-                @click="useAnytimeCard(row.side, card)"
+                @click="recordPostGameUse(row.side, card)"
               >{{ card.name }} ×{{ card.remaining }}</button>
+            </div>
+            <div v-if="row.recorded.length" class="flex flex-wrap gap-1.5">
+              <span v-for="entry in row.recorded" :key="entry.id" class="text-2xs text-fg-muted">
+                {{ entry.cardId ? (TREASURY_CARDS[entry.cardId]?.name || entry.cardId) : '' }}
+              </span>
             </div>
           </div>
         </div>
@@ -672,6 +689,13 @@ onMounted(async () => { await ensureStarted(); isLoading.value = false })
         <template v-else-if="hasCurrentGame">
           <Button variant="primary" size="lg" block @click="openEndConfirm">结束本局</Button>
           <Button variant="ghost" size="md" block @click="goBack">暂停</Button>
+        </template>
+        <template v-else-if="isS6Combo && !isMatchOver && secretGameNo">
+          <!-- 门控挂起：下一局暗选未集齐时手动开始（集齐后亮出按钮） -->
+          <Button variant="primary" size="lg" block :disabled="!canStartNextGame" :loading="startingMatch" @click="handleStartMatch">
+            {{ canStartNextGame ? `开始第 ${secretGameNo} 局` : `请先完成 G${secretGameNo} 四人暗选` }}
+          </Button>
+          <Button variant="ghost" size="md" block @click="goBack">返回</Button>
         </template>
         <EmptyState v-else icon="Pause" title="无进行中的局" description="撤回最后一局后重新记分" />
       </div>

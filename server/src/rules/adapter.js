@@ -16,6 +16,7 @@ function normalizeRule(rule, fallbackRule) {
     afterGameCompleted: source.afterGameCompleted || noop,
     onGameReverted: source.onGameReverted || noop,
     onGameStarted: source.onGameStarted || noGameStartEffect,
+    canStartGame: source.canStartGame || null,
     afterRoundRecalculated: source.afterRoundRecalculated || noop,
     recordSeasonAction: source.recordSeasonAction || unsupportedAction
   };

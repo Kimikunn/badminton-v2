@@ -114,3 +114,20 @@ module.exports = {
   isComboRound/随机对阵文案）；⑤ `validators/seasonValidators.js` 白名单；
   ⑥ 客户端 `client/src/rules/s7.js` + index 注册 + S7Rankings + Hub/MatchHub/
   ScoringView 家族分派 + seasonPresets。
+
+
+## 道具卡双生命周期（2026-09-28 重构，comboCardFlow.js 共享模块）
+
+- **局前记录（pre_game）**：阻碍/进击/存储器/时空裂隙/星尘卡/爆破——每局开始前
+  4 名选手逐人录入（本人选到的卡或「不使用」），4 人全部提交后同时亮出，提交即
+  扣库存。**开局硬门控**：`canStartGame` 规则钩子（adapter 透传）被
+  matchLifecycleService.recalculateMatch（自动推进）与 matchesController.startMatch
+  （比赛开始）双重调用——该局 4 人未集齐暗选则局不开始/比赛不开始。
+  客户端集齐后重新调用 POST /matches/:id/start 触发推进。
+- **局后记录（post_game，旧数据兼容 timing='anytime'）**：暂停卡/名刀/高级暂停卡
+  （原「随时卡」）——实际对局中人工启用，效果线下执行；**该局结束后**由记分页按方
+  补记使用次数（`s6_card_use`/`s7_card_use` 带 gameNo，每条消耗 1 次库存，
+  该局必须已完赛；同局同卡可多次记录）。
+- 共享模块：`rules/comboCardFlow.js`（卡目录/两生命周期分组/暗选提交/局后补记/
+  存储器/裂隙/开局门控/爆破校验/组合开局分）；s6.js 与 s7.js 薄包装（仅保留
+  各自的轮次边界与数据键）。客户端对应 `client/src/rules/comboCards.js`。

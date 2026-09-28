@@ -1,6 +1,6 @@
 const { prepare, transaction } = require('../config/db');
 const { SEASON_STATUS } = require('../constants');
-const { ensureMatchGames, recalculateMatch } = require('./matchLifecycleService');
+const { ensureMatchGames, recalculateMatch, getGameStartBlock } = require('./matchLifecycleService');
 const { markRoundInProgress, recalculateRound } = require('./roundLifecycleService');
 const { deleteRuleEventsForMatch } = require('./ruleEventService');
 const { normalizeMatchFormat } = require('../utils/validators');
@@ -105,6 +105,11 @@ function deleteMatch(match) {
   });
 }
 
+// 开赛门控（S6/S7 组合轮：局前暗选未集齐时拒绝开始）
+function getMatchStartBlock(match) {
+  return getGameStartBlock(match);
+}
+
 function startExistingMatch(match) {
   return transaction(() => {
     ensureMatchGames(match.id);
@@ -147,5 +152,6 @@ module.exports = {
   deleteMatch,
   startExistingMatch,
   cancelExistingMatch,
+  getMatchStartBlock,
   isMatchSeasonCompleted
 };

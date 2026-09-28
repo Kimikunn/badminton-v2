@@ -425,10 +425,32 @@ test('season completion writes s6 champion and comboChampion', async () => {
     bestOf: 7, status: 'pending', teamA: ['p1', 'p4'], teamB: ['p2', 'p3']
   });
 
+  // 局前门控推进：每局开始前提交 4 人「不使用」暗选（组合轮 5-7）
+  const players4 = ['p1', 'p2', 'p3', 'p4'];
+  function getMatchGamesStatus() {
+    return prepare('SELECT game_no, status FROM games WHERE match_id = ? ORDER BY game_no').all('M-SB-COMPLETE-7').map(g => `${g.game_no}:${g.status}`).join(',');
+  }
+  // 第 1 局开始前同样需 4 人暗选（不使用）
+  for (const pid of players4) {
+    await postAction('S-SB-COMPLETE', 's6_card_activate', {
+      matchId: 'M-SB-COMPLETE-7', gameNo: 1, playerId: pid, cardId: null
+    }).expect(200);
+  }
   const games = await startMatch('M-SB-COMPLETE-7');
   assert.equal(games.length, 7);
-  for (const game of games) {
-    await finishGame(game.id, 21, 0);
+  for (let i = 0; i < games.length; i++) {
+    if (i > 0) {
+      for (const pid of players4) {
+        const res = await postAction('S-SB-COMPLETE', 's6_card_activate', {
+          matchId: 'M-SB-COMPLETE-7', gameNo: i + 1, playerId: pid, cardId: null
+        });
+        if (res.status !== 200 && !/已提交暗选/.test(res.body?.error?.message || '')) {
+          assert.fail(`G${i + 1} ${pid} 暗选失败: ${res.body?.error?.message || res.status}`);
+        }
+      }
+      await api.post('/api/matches/M-SB-COMPLETE-7/start').expect(200);
+    }
+    await finishGame(games[i].id, 21, 0);
   }
 
   const season = prepare('SELECT status, champion_player_id, comeback_data FROM seasons WHERE id = ?')

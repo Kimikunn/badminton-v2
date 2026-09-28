@@ -55,6 +55,27 @@ function ensureMatchGames(matchId) {
   return getMatchGames(matchId);
 }
 
+// 规则开局门控（S6/S7 组合轮：每局开始前需 4 名选手完成局前暗选）。
+// 返回 { error } 或 null；目标 = 待晋升的下一局（第一局 pending 局）。
+function getGameStartBlock(match) {
+  if (!match?.season_id) return null;
+  const season = prepare('SELECT * FROM seasons WHERE id = ?').get(match.season_id);
+  if (!season) return null;
+  const rule = getRule(season.rule_id);
+  if (typeof rule.canStartGame !== 'function') return null;
+
+  const games = getMatchGames(match.id);
+  const target = games.find(g => g.status === MATCH_STATUS.PENDING);
+  if (!target) return null;
+
+  const round = match.round_id ? prepare('SELECT * FROM rounds WHERE id = ?').get(match.round_id) : null;
+  const ctx = { game: target, match, season, round, ruleId: season.rule_id };
+  ctx.gameConfig = rule.getGameConfig(ctx);
+  ctx.rule = rule;
+  const error = rule.canStartGame(ctx);
+  return error ? { error, game: target } : null;
+}
+
 function recalculateMatch(matchId) {
   const match = getMatch(matchId);
   if (!match) return;
@@ -80,8 +101,13 @@ function recalculateMatch(matchId) {
   if (!active) {
     active = games.find(g => g.status === MATCH_STATUS.PENDING);
     if (active) {
-      prepare('UPDATE games SET status = ? WHERE id = ?').run(MATCH_STATUS.IN_PROGRESS, active.id);
-      applyGameStartRules(active.id);
+      // 局前记录门控：组合轮该局 4 人未集齐暗选时不推进（客户端集齐后重新 start）
+      const blocked = getGameStartBlock(match);
+      if (blocked) active = null;
+      else {
+        prepare('UPDATE games SET status = ? WHERE id = ?').run(MATCH_STATUS.IN_PROGRESS, active.id);
+        applyGameStartRules(active.id);
+      }
     }
   }
 
@@ -92,5 +118,6 @@ function recalculateMatch(matchId) {
 
 module.exports = {
   ensureMatchGames,
-  recalculateMatch
+  recalculateMatch,
+  getGameStartBlock
 };

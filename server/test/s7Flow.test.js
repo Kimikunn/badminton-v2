@@ -82,10 +82,26 @@ test('s7 soul bond round 1 + round creation + combo pairing', async () => {
 
   // 组合赛开打 + 记分（PA7）：AB（p1/p2）胜 CD（p3/p4）
   const matchId = matches[0].id;
-  const games = await startMatch(matchId);
+  const players4 = [teamA[0], teamA[1], teamB[0], teamB[1]];
+  for (const pid of players4) {
+    await postAction(seasonId, 's7_card_activate', { matchId, gameNo: 1, playerId: pid, cardId: null }).expect(200);
+  }
+  await startMatch(matchId);
+  const games = prepare('SELECT * FROM games WHERE match_id = ? ORDER BY game_no').all(matchId);
   assert.equal(games.length, 7);
-  for (const game of games) {
-    await finishGame(game.id, 21, 10);
+  for (let i = 0; i < games.length; i++) {
+    if (i > 0) {
+      for (const pid of players4) {
+        const res = await postAction(seasonId, 's7_card_activate', {
+          matchId, gameNo: i + 1, playerId: pid, cardId: null
+        });
+        if (res.status !== 200 && !/已提交暗选/.test(res.body?.error?.message || '')) {
+          assert.fail(`G${i + 1} ${pid} 暗选失败: ${res.body?.error?.message || res.status}`);
+        }
+      }
+      await api.post(`/api/matches/${matchId}/start`).expect(200);
+    }
+    await finishGame(games[i].id, 21, 10);
   }
   const finished = prepare('SELECT status, winner FROM matches WHERE id = ?').get(matchId);
   assert.equal(finished.winner, 'a');

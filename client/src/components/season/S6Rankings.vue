@@ -123,7 +123,8 @@ const treasuryRows = computed(() =>
 
 // 激活状态展示：局前暗选按 待亮出/已亮出/已消耗；随时卡为 已使用
 function activationState(activation) {
-  if (activation.timing === 'anytime') return '已使用'
+  // post_game/旧 anytime：局后记录即已使用
+  if (activation.timing !== 'pre_game') return '已使用'
   if (activation.consumed) return '已消耗'
   return activation.revealed ? '已亮出' : '待亮出'
 }

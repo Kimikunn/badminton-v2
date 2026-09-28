@@ -49,22 +49,51 @@ async function postAction(request, baseURL, seasonId, actionId, payload, expectO
   return res
 }
 
-// 打完一场比赛：开局后按给定胜方序列逐局记分结束（21 分制）
-async function finishMatch(request, baseURL, matchId, gameWinners) {
+// 局前记录门控：为 gameNo 提交 4 名选手「不使用」暗选并重新 start（下一局推进）
+async function submitNullPicks(request, baseURL, seasonId, matchId, gameNo, players) {
+  for (const pid of players) {
+    const res = await request.post(`${baseURL}/api/seasons/${seasonId}/actions/s6_card_activate`, {
+      headers: adminHeaders(), data: { matchId, gameNo, playerId: pid, cardId: null }
+    })
+    // 已提交过（如上一局门控流程重复提交）视为就绪
+    if (!res.ok() && !/已提交暗选/.test((await res.json())?.error?.message || '')) expect(res.ok()).toBeTruthy()
+  }
   const startRes = await request.post(`${baseURL}/api/matches/${matchId}/start`, { headers: adminHeaders() })
   expect(startRes.ok()).toBeTruthy()
+}
 
-  for (const side of gameWinners) {
+// 打完一场比赛：开局后按给定胜方序列逐局记分结束（21 分制）；
+// 组合轮每局之间提交 4 人「不使用」局前暗选（每局开始前须全部录入）
+async function finishMatch(request, baseURL, matchId, gameWinners, seasonId = null, players = null) {
+  // 比赛已进行中（前一步已 start）则跳过初始 start（门控会盯下一局的暗选）
+  const stateRes = await request.get(`${baseURL}/api/matches/${matchId}`)
+  const matchState = (await stateRes.json()).data?.status
+  if (matchState !== 'in_progress') {
+    // 新比赛：第 1 局开始前需 4 人局前暗选（不使用）——提交后 start
+    if (seasonId && players) {
+      await submitNullPicks(request, baseURL, seasonId, matchId, 1, players)
+    } else {
+      const startRes = await request.post(`${baseURL}/api/matches/${matchId}/start`, { headers: adminHeaders() })
+      expect(startRes.ok()).toBeTruthy()
+    }
+  }
+
+  for (let i = 0; i < gameWinners.length; i++) {
+    const side = gameWinners[i]
     const gamesRes = await request.get(`${baseURL}/api/matches/${matchId}/games`)
     const games = (await gamesRes.json()).data || []
     const current = games.find(g => g.status === 'in_progress')
-    expect(current, `match ${matchId} 应有一局进行中`).toBeTruthy()
+    expect(current, `match ${matchId} G${i + 1} 应有一局进行中`).toBeTruthy()
 
     const score = side === 'a' ? { scoreA: 21, scoreB: 10 } : { scoreA: 10, scoreB: 21 }
     const scoreRes = await request.put(`${baseURL}/api/games/${current.id}/score`, { headers: adminHeaders(), data: score })
     expect(scoreRes.ok()).toBeTruthy()
     const endRes = await request.post(`${baseURL}/api/games/${current.id}/end`, { headers: adminHeaders(), data: {} })
     expect(endRes.ok()).toBeTruthy()
+
+    if (i < gameWinners.length - 1 && seasonId && players) {
+      await submitNullPicks(request, baseURL, seasonId, matchId, i + 2, players)
+    }
   }
 }
 
@@ -297,9 +326,12 @@ test.describe('S6 combo phase (灵魂契合)', () => {
       const liveRow = page.locator('div', { has: page.getByRole('button', { name: '开始' }) }).last()
       await expect(liveRow.getByText(/ vs /)).toHaveCount(1)
 
+      // 局前记录门控：第 1 局开始前 4 人暗选（不使用）后才可开始
+      await submitNullPicks(request, baseURL, seasonId, matches[0].id, 1, players.map(p => p.id))
+
       // 开局后服务端生成 7 局
-      const startRes = await request.post(`${baseURL}/api/matches/${matches[0].id}/start`, { headers: adminHeaders() })
-      expect(startRes.ok()).toBeTruthy()
+      const gamesRes0 = await request.get(`${baseURL}/api/matches/${matches[0].id}/games`)
+      expect(((await gamesRes0.json()).data || [])).toHaveLength(7)
       const gamesRes = await request.get(`${baseURL}/api/matches/${matches[0].id}/games`)
       expect(((await gamesRes.json()).data || [])).toHaveLength(7)
     })
@@ -348,7 +380,7 @@ test.describe('S6 combo phase (灵魂契合)', () => {
       expect(matches).toHaveLength(1)
 
       // AB(a) 4-3 CD(b)：a 三连胜开局，b 两连胜，a 终结后 b 拿下决胜局
-      await finishMatch(request, baseURL, matches[0].id, ['a', 'a', 'a', 'b', 'b', 'a', 'b'])
+      await finishMatch(request, baseURL, matches[0].id, ['a', 'a', 'a', 'b', 'b', 'a', 'b'], seasonId, players.map(p => p.id))
 
       const roundsAfter = await request.get(`${baseURL}/api/rounds?seasonId=${seasonId}`)
       const round5After = ((await roundsAfter.json()).data || []).find(r => r.roundNo === 5)
