@@ -12,7 +12,7 @@
  * - 王之宝库第二阶调整：移除高级暂停卡，新增 月白（对方本局获胜需净胜 2 分）
  *   与 绯红（15 分后启用方得分每球 2 分）
  * - 天选开局分：每局 1:0（原 S6 为 2:0）
- * - 冠军：两轮总星尘最高者夺冠；同星尘看最后一把净胜分，再同看倒数第二把
+ * - 冠军：三轮总星尘最高者夺冠；同星尘看最后一把净胜分，再同看倒数第二把
  *
  * 数据键 comeback_data.s6p（动作 s6p_soul_roll / s6p_soul_pick / s6p_reforge /
  * s6p_card_activate / s6p_card_use / s6p_storage_record / s6p_rift /
@@ -25,10 +25,11 @@ const { RULE_ID, SCORING_MODE, MATCH_STATUS, WINNER_SIDE } = require('../constan
 const cardFlow = require('./comboCardFlow');
 
 const COMBO_ROUND_MIN = 1;
-const COMBO_ROUND_MAX = 2;
+const COMBO_ROUND_MAX = 3;
 const COMBO_LABELS_BY_ROUND = {
   1: ['AB', 'CD'],
-  2: ['AC', 'BD']
+  2: ['AC', 'BD'],
+  3: ['AD', 'BC']
 };
 // 重置骰子（reset_dice）：来源 S6 前两名组合的选手，整季各一次重掷本人灵魂投掷
 // 重置骰子：来源 S6 前两名组合的选手可整季重掷一次本人灵魂投掷
@@ -270,7 +271,7 @@ function getUsedRerolls(s6p, playerId, source) {
 
 function validateComboRound(ctx, roundNo) {
   if (!Number.isInteger(roundNo) || roundNo < COMBO_ROUND_MIN || roundNo > COMBO_ROUND_MAX) {
-    return '灵魂契合仅适用于第 1-2 轮';
+    return '灵魂契合仅适用于第 1-3 轮';
   }
   if (findRound(ctx.season?.id, roundNo)) return '该轮已创建，无法再进行灵魂契合';
   return null;
@@ -495,7 +496,7 @@ function resolveTreasuryMatchContext(ctx, matchId) {
   const round = match.round_id ? prepare('SELECT * FROM rounds WHERE id = ?').get(match.round_id) : null;
   const roundNo = Number(round?.round_no);
   if (!Number.isInteger(roundNo) || roundNo < COMBO_ROUND_MIN || roundNo > COMBO_ROUND_MAX) {
-    return { error: '王之宝库卡片仅适用于第 1-2 轮' };
+    return { error: '王之宝库卡片仅适用于第 1-3 轮' };
   }
   return { match, roundNo };
 }
@@ -556,7 +557,7 @@ function recordRift(ctx, input = {}) {
   return { nextData: { ...data, s6p } };
 }
 
-// 局前记录硬门控：第 1-2 轮每局开始前需录入选手完成局前暗选（含「不使用」）。
+// 局前记录硬门控：第 1-3 轮每局开始前需录入选手完成局前暗选（含「不使用」）。
 function canStartGame(ctx) {
   const roundNo = Number(ctx.round?.round_no);
   if (!Number.isInteger(roundNo) || roundNo < COMBO_ROUND_MIN || roundNo > COMBO_ROUND_MAX) return null;

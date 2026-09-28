@@ -82,7 +82,7 @@ async function finishMatch(request, baseURL, matchId, gameWinners, seasonId = nu
 const CARD_PICK_ORDER = ['暂停卡', '名刀', '阻碍', '进击', '存储器', '月白', '绯红', '时空裂隙', '星尘卡', '爆破']
 
 test.describe('S6+ extension (延长赛)', () => {
-  test('soul bond UI flow with lucky number, PA7 rounds and combo stardust', async ({ page, request, baseURL }) => {
+  test('soul bond UI flow with lucky number, 3 combo rounds and stardust', async ({ page, request, baseURL }) => {
     test.skip(!process.env.PLAYWRIGHT_EXPECT_SEASON_CREATE, 'season creation is not expected in this environment')
     test.setTimeout(180000)
 
@@ -110,7 +110,7 @@ test.describe('S6+ extension (延长赛)', () => {
         data: {
           name: 'S6+ 延长赛',
           ruleId: 's6p',
-          totalRounds: 2,
+          totalRounds: 3,
           participants: players.map(p => p.id)
         }
       })
@@ -240,9 +240,9 @@ test.describe('S6+ extension (延长赛)', () => {
       const kingAction = await postAction(request, baseURL, seasonId, 's6p_king_roll', { order: [] }, false)
       expect(kingAction.status()).toBe(422)
 
-      // 第 3 轮超出两轮边界
+      // 第 4 轮超出三轮边界
       const outOfRange = await postAction(request, baseURL, seasonId, 's6p_soul_roll', {
-        roundNo: 3, comboLabel: 'AB', playerId: a, rollChoice: 1, dice: [3]
+        roundNo: 4, comboLabel: 'AB', playerId: a, rollChoice: 1, dice: [3]
       }, false)
       expect(outOfRange.status()).toBe(422)
 
@@ -253,7 +253,7 @@ test.describe('S6+ extension (延长赛)', () => {
       expect(lateRoll.status()).toBe(422)
     })
 
-    await test.step('finish round 1 and fast-forward round 2 via API', async () => {
+    await test.step('finish round 1 and fast-forward rounds 2-3 via API', async () => {
       const roundsRes = await request.get(`${baseURL}/api/rounds?seasonId=${seasonId}`)
       const round1 = ((await roundsRes.json()).data || []).find(r => r.roundNo === 1)
       const matchesRes = await request.get(`${baseURL}/api/matches?seasonId=${seasonId}`)
@@ -271,8 +271,8 @@ test.describe('S6+ extension (延长赛)', () => {
         const candidates = [1, 2, 3, 4, 5, 6].filter(d => d !== unlucky)
         return [candidates[offset % candidates.length]]
       }
-      for (const roundNo of [2]) {
-        const labels = ['AC', 'BD']
+      for (const roundNo of [2, 3]) {
+        const labels = roundNo === 2 ? ['AC', 'BD'] : ['AD', 'BC']
         for (const label of labels) {
           const ids = label.split('')
           const members = ids.map(key => ({ A: p1, B: p2, C: p3, D: p4 })[key])
@@ -291,10 +291,10 @@ test.describe('S6+ extension (延长赛)', () => {
 
       const roundsAfter = await request.get(`${baseURL}/api/rounds?seasonId=${seasonId}`)
       const rounds = (await roundsAfter.json()).data || []
-      expect(rounds).toHaveLength(2)
+      expect(rounds).toHaveLength(3)
       expect(rounds.every(r => r.status === 'completed')).toBeTruthy()
 
-      // 赛季完成：两轮总星尘冠军落盘
+      // 赛季完成：三轮总星尘冠军落盘
       const seasonRes = await request.get(`${baseURL}/api/seasons/${seasonId}`)
       const season = (await seasonRes.json()).data || {}
       expect(season.status).toBe('completed')

@@ -60,7 +60,7 @@ function createSeason(data) {
     comebackData = comebackData || {};
     const s6p = { ...(comebackData.s6p || {}) };
     s6p.lucky = { ...(s6p.lucky || {}) };
-    for (const roundNo of [1, 2]) {
+    for (const roundNo of [1, 2, 3]) {
       if (!Number.isInteger(s6p.lucky[String(roundNo)])) {
         s6p.lucky[String(roundNo)] = 1 + Math.floor(Math.random() * 6);
       }
@@ -73,7 +73,7 @@ function createSeason(data) {
     .run(
       id,
       data.name,
-      data.totalRounds || (data.ruleId === RULE_ID.S5 ? 9 : data.ruleId === RULE_ID.S6P ? 2 : 7),
+      data.totalRounds || (data.ruleId === RULE_ID.S5 ? 9 : data.ruleId === RULE_ID.S6P ? 3 : 7),
       data.bestOf || 3,
       stringifyJson(data.participants || []),
       data.ruleId || RULE_ID.STANDARD,

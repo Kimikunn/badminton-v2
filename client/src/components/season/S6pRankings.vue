@@ -95,8 +95,8 @@ const stageItems = computed(() => [
   }
 ])
 
-// 最强组合：两轮组合赛全部完成后取星尘第一（星尘同分按轮次内净胜分裁决）
-const totalRounds = computed(() => Number(props.season?.totalRounds) || 2)
+// 最强组合：三轮组合赛全部完成后取星尘第一（星尘同分按轮次内净胜分裁决）
+const totalRounds = computed(() => Number(props.season?.totalRounds) || 3)
 const comboChampion = computed(() => {
   if (comboDone.value < totalRounds.value || !props.comboRankings.length) return null
   return props.comboRankings[0]

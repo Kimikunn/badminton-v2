@@ -97,7 +97,7 @@ const beforeRoundRequirement = computed(() =>
     ? currentRule.value.getBeforeRoundRequirement(nextRoundNo.value)
     : beforeRoundLifecycle.value
 )
-// S6/S6+ 同族：组合赛机制相同（S6+=延长赛 1-2 轮，数据键 s6p）
+// S6/S6+ 同族：组合赛机制相同（S6+=延长赛 1-3 轮，数据键 s6p）
 const isS6pSeason = computed(() => currentSeason.value?.ruleId === 's6p')
 const comboDataKey = computed(() => (isS6pSeason.value ? 's6p' : 's6'))
 const isFixedComboRound = computed(() => {

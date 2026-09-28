@@ -135,7 +135,7 @@ function getS4ComboPairing(roundNo, participants) {
 }
 
 function getComboPairingFromOrder(roundNo, ordered) {
-  // S6+（1-2 轮）与 S6 下篇（5-7 轮）同一条固定轮换
+  // S6+（1-3 轮）与 S6 下篇（5-7 轮）同一条固定轮换
   const combos = {
     1: { teamA: [ordered[0], ordered[1]], teamB: [ordered[2], ordered[3]] },
     2: { teamA: [ordered[0], ordered[2]], teamB: [ordered[1], ordered[3]] },
@@ -171,7 +171,7 @@ function getComboPairing(season, roundNo, participants) {
 
 function isComboRound(season, roundNo) {
   if (season.rule_id === RULE_ID.S6P) {
-    return Number(roundNo) >= 1 && Number(roundNo) <= 2;
+    return Number(roundNo) >= 1 && Number(roundNo) <= 3;
   }
   return (season.rule_id === RULE_ID.S4 || season.rule_id === RULE_ID.S6) && Number(roundNo) >= 5;
 }
