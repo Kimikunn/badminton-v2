@@ -1,6 +1,7 @@
 const standardRule = require('./standard');
 const s5Rule = require('./s5');
 const s6Rule = require('./s6');
+const s7Rule = require('./s7');
 const { RULE_ID } = require('../constants');
 const { normalizeRule } = require('./adapter');
 
@@ -10,7 +11,8 @@ const rawRules = {
   [RULE_ID.S3]: standardRule,
   [RULE_ID.S4]: standardRule,
   [RULE_ID.S5]: s5Rule,
-  [RULE_ID.S6]: s6Rule
+  [RULE_ID.S6]: s6Rule,
+  [RULE_ID.S7]: s7Rule
 };
 
 const rules = Object.fromEntries(

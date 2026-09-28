@@ -63,6 +63,16 @@ export const SEASON_PRESETS = [
     bestOf: 3,
     color: 'purple',
     description: '启用 S6 上篇王选掷骰与王形态（黛青/绯红/月白）规则。'
+  },
+  {
+    key: 's7-kings-continuation',
+    code: 'S7',
+    label: '王权之续',
+    ruleId: 's7',
+    totalRounds: 3,
+    bestOf: 3,
+    color: 'sunset',
+    description: 'S6 下篇独立成季：3 轮固定组合赛、灵魂契合与王之宝库。'
   }
 ]
 
@@ -72,7 +82,8 @@ export const SEASON_COLOR_OPTIONS = [
   { value: 'green', label: '绿色' },
   { value: 'yellow', label: '金色' },
   { value: 'red', label: '红色' },
-  { value: 'orange', label: '橙色' }
+  { value: 'orange', label: '橙色' },
+  { value: 'sunset', label: '橙焰' }
 ]
 
 export function buildPresetSeasonName(preset) {

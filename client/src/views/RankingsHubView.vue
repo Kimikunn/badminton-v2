@@ -22,6 +22,7 @@ const S3Rankings = defineAsyncComponent(() => import('@/components/season/S3Rank
 const S4Rankings = defineAsyncComponent(() => import('@/components/season/S4Rankings.vue'))
 const S5Rankings = defineAsyncComponent(() => import('@/components/season/S5Rankings.vue'))
 const S6Rankings = defineAsyncComponent(() => import('@/components/season/S6Rankings.vue'))
+const S7Rankings = defineAsyncComponent(() => import('@/components/season/S7Rankings.vue'))
 const FriendlyStats = defineAsyncComponent(() => import('@/components/FriendlyStats.vue'))
 
 const seasonsStore = useSeasonsStore()
@@ -112,6 +113,28 @@ const s6TopWinner = computed(() => {
   return s6TopRankings.value[0] || null
 })
 // 王权：上篇每轮最后一名（王第四名时顺延第三名）提供饮料
+// S7-王权之续：组合星尘榜（无上篇/王权，全部轮次即组合轮）
+const s7ComboRankings = computed(() => {
+  if (ruleId.value !== 's7' || !currentSeason.value) return []
+  const rule = getRule('s7')
+  return rule?.calcComboRankings ? rule.calcComboRankings(seasonMatches.value, (mid) => matchesStore.getGamesByMatch(mid), seasonRounds.value, {
+    season: currentSeason.value,
+    participants: currentSeason.value.participants || [],
+    getPlayerById: (id) => playersStore.getPlayerById(id)
+  }) : []
+})
+const s7KingRights = computed(() => {
+  if (ruleId.value !== 's7' || !currentSeason.value) return []
+  const rule = getRule('s7')
+  return rule?.calcTopRoundKingRights ? rule.calcTopRoundKingRights({
+    season: currentSeason.value,
+    rounds: seasonRounds.value,
+    matches: seasonMatches.value,
+    participants: currentSeason.value.participants || [],
+    getGamesByMatch: (mid) => matchesStore.getGamesByMatch(mid),
+    getPlayerById: (id) => playersStore.getPlayerById(id)
+  }) : []
+})
 const s6KingRights = computed(() => {
   if (ruleId.value !== 's6' || !currentSeason.value) return []
   const rule = getRule('s6')
@@ -141,6 +164,7 @@ const s6KingRights = computed(() => {
       <S4Rankings v-else-if="ruleId==='s4'" :rankings="seasonRankings" :season="currentSeason" :rounds="seasonRounds" :matches="seasonMatches" :combo-rankings="s4ComboRankings" :top-winner="s4TopWinner" />
       <S5Rankings v-else-if="ruleId==='s5'" :rankings="seasonRankings" :season="currentSeason" :rounds="seasonRounds" />
       <S6Rankings v-else-if="ruleId==='s6'" :rankings="seasonRankings" :top-rankings="s6TopRankings" :season="currentSeason" :rounds="seasonRounds" :matches="seasonMatches" :combo-rankings="s6ComboRankings" :top-winner="s6TopWinner" :king-rights="s6KingRights" />
+      <S7Rankings v-else-if="ruleId==='s7'" :rankings="seasonRankings" :season="currentSeason" :rounds="seasonRounds" :matches="seasonMatches" :combo-rankings="s7ComboRankings" />
     </template>
 
     <!-- Friendly tab -->

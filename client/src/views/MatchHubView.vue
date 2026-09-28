@@ -12,6 +12,7 @@ import { useSeasonsStore, useMatchesStore, usePlayersStore } from '@/stores'
 import { STATUS } from '@/constants'
 import { getRule } from '@/rules'
 import { KING_FORMS, TREASURY_CARDS, getComboLabelsByRound, getSoulSeedMap, getSoulTierLabel, getTierCap, getAllowedPicks, getPlayerPickCount, isComboBondComplete } from '@/rules/s6'
+import { getSoulSeedMap as getS7SoulSeedMap } from '@/rules/s7'
 import { useSeasonTheme } from '@/composables/useSeasonTheme'
 import { useSeasonSelector } from '@/composables/useSeasonSelector'
 import { useViewAccent } from '@/composables/useViewAccent'
@@ -96,9 +97,14 @@ const beforeRoundRequirement = computed(() =>
     ? currentRule.value.getBeforeRoundRequirement(nextRoundNo.value)
     : beforeRoundLifecycle.value
 )
-const isFixedComboRound = computed(() =>
-  (currentSeason.value?.ruleId === 's4' || currentSeason.value?.ruleId === 's6') && nextRoundNo.value >= 5
-)
+// S6/S7 同族：组合赛机制相同（S7=独立成季 1-3 轮，数据键 s7）
+const isS7Season = computed(() => currentSeason.value?.ruleId === 's7')
+const comboDataKey = computed(() => (isS7Season.value ? 's7' : 's6'))
+const isFixedComboRound = computed(() => {
+  const ruleId = currentSeason.value?.ruleId
+  if (ruleId === 's7') return nextRoundNo.value >= 1 && nextRoundNo.value <= 3
+  return (ruleId === 's4' || ruleId === 's6') && nextRoundNo.value >= 5
+})
 const supportsRandomPairings = computed(() => !isFixedComboRound.value)
 const pairingPreviewNote = computed(() => supportsRandomPairings.value
   ? '随机生成对阵，可重新随机；确认后将按当前预览创建。'
@@ -359,10 +365,10 @@ const requiresSoulBond = computed(() =>
   beforeRoundRequirement.value?.required &&
   beforeRoundRequirement.value?.type === 'soul_bond'
 )
-const soulComboLabels = computed(() => getComboLabelsByRound(nextRoundNo.value))
-const soulSeeds = computed(() => getSoulSeedMap(currentSeason.value) || {})
+const soulComboLabels = computed(() => (isS7Season.value ? getRule(comboDataKey.value).getComboLabelsByRound(nextRoundNo.value) : getComboLabelsByRound(nextRoundNo.value)))
+const soulSeeds = computed(() => (isS7Season.value ? getS7SoulSeedMap(currentSeason.value) : getSoulSeedMap(currentSeason.value)) || {})
 const soulBondData = computed(() =>
-  currentSeason.value?.comebackData?.s6?.soulBond?.[String(nextRoundNo.value)] || {}
+  currentSeason.value?.comebackData?.[comboDataKey.value]?.soulBond?.[String(nextRoundNo.value)] || {}
 )
 const soulRoundComplete = computed(() =>
   soulComboLabels.value.length > 0 &&
@@ -416,7 +422,7 @@ const s5ShardCounts = computed(() => {
 
 // 已消耗的重投次数（跨所有轮次/组合累计）
 function getUsedRerollCount(playerId, source) {
-  const soulBond = currentSeason.value?.comebackData?.s6?.soulBond || {}
+  const soulBond = currentSeason.value?.comebackData?.[comboDataKey.value]?.soulBond || {}
   let used = 0
   Object.values(soulBond).forEach(roundBond => {
     Object.values(roundBond || {}).forEach(combo => {
@@ -428,6 +434,7 @@ function getUsedRerollCount(playerId, source) {
 
 // 选手可用的重投令牌（凯旋 / S5 贯穿碎片）
 function getRerollTokens(playerId) {
+  if (isS7Season.value) return [] // S7 独立成季：无凯旋/碎片重投来源
   const tokens = []
   if (triumphTop2.value.includes(playerId)) {
     tokens.push({ source: 'triumph', name: '凯旋', total: 1 })
@@ -478,7 +485,7 @@ async function submitSoulRoll(playerId) {
   if (!staging?.dice?.length) return
   soulSubmitting.value = true
   try {
-    const res = await seasonsStore.recordAction(currentSeason.value.id, 's6_soul_roll', {
+    const res = await seasonsStore.recordAction(currentSeason.value.id, isS7Season.value ? 's7_soul_roll' : 's6_soul_roll', {
       roundNo: nextRoundNo.value,
       comboLabel: soulComboLabel.value,
       playerId,
@@ -513,7 +520,7 @@ async function startSoulReroll(playerId, token) {
 async function submitSoulPick(playerId, cardId) {
   soulSubmitting.value = true
   try {
-    const res = await seasonsStore.recordAction(currentSeason.value.id, 's6_soul_pick', {
+    const res = await seasonsStore.recordAction(currentSeason.value.id, isS7Season.value ? 's7_soul_pick' : 's6_soul_pick', {
       roundNo: nextRoundNo.value,
       comboLabel: soulComboLabel.value,
       playerId,
@@ -538,7 +545,7 @@ async function submitReforge(keptDice) {
   if (!state) return
   soulSubmitting.value = true
   try {
-    const res = await seasonsStore.recordAction(currentSeason.value.id, 's6_reforge', {
+    const res = await seasonsStore.recordAction(currentSeason.value.id, isS7Season.value ? 's7_reforge' : 's6_reforge', {
       roundNo: nextRoundNo.value,
       comboLabel: soulComboLabel.value,
       playerId: state.playerId,
@@ -587,17 +594,21 @@ function generatePreview() {
   if (parts.length < 4) return []
 
   if (isFixedComboRound.value) {
-    // S4：按选手 ID 排序；S6：按灵魂契合种子口径（s6.seeds 或服务端同款 ID 排序兜底）
-    const ordered = currentSeason.value?.ruleId === 's6'
-      ? Object.values(getSoulSeedMap(currentSeason.value) || {})
+    // S4：按选手 ID 排序；S6/S7：按灵魂契合种子口径（seeds 或服务端同款 ID 排序兜底）
+    const seedMap = isS7Season.value ? getS7SoulSeedMap(currentSeason.value) : getSoulSeedMap(currentSeason.value)
+    const ordered = (currentSeason.value?.ruleId === 's6' || isS7Season.value)
+      ? Object.values(seedMap || {})
       : [...parts].sort()
     if (ordered.length < 4) return []
     const combos = {
+      1: { teamA: [ordered[0], ordered[1]], teamB: [ordered[2], ordered[3]] },
+      2: { teamA: [ordered[0], ordered[2]], teamB: [ordered[1], ordered[3]] },
+      3: { teamA: [ordered[0], ordered[3]], teamB: [ordered[1], ordered[2]] },
       5: { teamA: [ordered[0], ordered[1]], teamB: [ordered[2], ordered[3]] },
       6: { teamA: [ordered[0], ordered[2]], teamB: [ordered[1], ordered[3]] },
       7: { teamA: [ordered[0], ordered[3]], teamB: [ordered[1], ordered[2]] }
     }
-    return [combos[nextRoundNo.value] || combos[5]]
+    return [combos[nextRoundNo.value] || combos[isS7Season.value ? 1 : 5]]
   }
 
   const [a,b,c,d] = [...parts].sort(() => Math.random() - 0.5)

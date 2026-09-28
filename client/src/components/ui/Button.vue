@@ -31,7 +31,7 @@ const sizeClasses = {
 }
 
 const variantClasses = {
-  primary: 'bg-accent text-fg-inverse active:bg-accent-hover',
+  primary: 'bg-accent text-[color:var(--season-contrast,var(--color-fg-inverse))] active:bg-accent-hover',
   secondary: 'bg-surface-hover text-fg active:bg-line',
   danger: 'bg-danger text-fg-inverse active:bg-danger-hover',
   ghost: 'bg-transparent text-fg-secondary active:bg-surface-hover'

@@ -33,7 +33,8 @@ const RULE_ID = {
   S3: 's3',
   S4: 's4',
   S5: 's5',
-  S6: 's6'
+  S6: 's6',
+  S7: 's7'
 };
 
 const SCORING_MODE = {

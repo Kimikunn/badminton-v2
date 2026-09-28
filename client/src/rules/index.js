@@ -9,6 +9,7 @@ import s3Rule from './s3'
 import s4Rule from './s4'
 import s5Rule from './s5'
 import s6Rule from './s6'
+import s7Rule from './s7'
 
 // 规则注册表
 const rules = {
@@ -17,7 +18,8 @@ const rules = {
   s3: s3Rule,
   s4: s4Rule,
   s5: s5Rule,
-  s6: s6Rule
+  s6: s6Rule,
+  s7: s7Rule
 }
 
 /**

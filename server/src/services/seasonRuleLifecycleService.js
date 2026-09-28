@@ -2,6 +2,7 @@ const { prepare } = require('../config/db');
 const { parseJson, stringifyJson } = require('../utils/json');
 const { RULE_ID } = require('../constants');
 const s6Rule = require('../rules/s6');
+const s7Rule = require('../rules/s7');
 
 function getS5RoundMode(dice) {
   return dice === 1 || dice === 6 ? 'mutation' : 'order';
@@ -42,7 +43,7 @@ function getBeforeRoundRequirement(season, roundNo) {
       label: '王选'
     };
   }
-  if (isS6ComboRound(season, roundNo)) {
+  if (isS6ComboRound(season, roundNo) || isS7ComboRound(season, roundNo)) {
     return {
       timing: 'beforeRound',
       type: 'soul_bond',
@@ -69,6 +70,12 @@ function getS6SoulBond(season, roundNo) {
   return data.s6?.soulBond?.[String(roundNo)] || null;
 }
 
+// S7-王权之续：1-3 轮即组合赛轮（无上篇）
+function isS7ComboRound(season, roundNo) {
+  return season.rule_id === RULE_ID.S7
+    && Number(roundNo) >= 1 && Number(roundNo) <= 3;
+}
+
 function validateBeforeRoundSetup(season, setup, roundNo) {
   const requirement = getBeforeRoundRequirement(season, roundNo);
   if (!requirement) return null;
@@ -81,8 +88,11 @@ function validateBeforeRoundSetup(season, setup, roundNo) {
   }
 
   if (requirement.type === 'soul_bond') {
-    if (!s6Rule.isSoulBondCompleteForRound(season, roundNo)) {
-      return '第六赛季创建下篇轮次前必须先完成两个组合的灵魂契合';
+    const rule = season.rule_id === RULE_ID.S7 ? s7Rule : s6Rule;
+    if (!rule.isSoulBondCompleteForRound(season, roundNo)) {
+      return season.rule_id === RULE_ID.S7
+        ? '第七赛季创建轮次前必须先完成两个组合的灵魂契合'
+        : '第六赛季创建下篇轮次前必须先完成两个组合的灵魂契合';
     }
     return null;
   }
@@ -112,7 +122,9 @@ function applyBeforeRoundSetup(season, roundNo, setup) {
     return {
       timing: requirement.timing,
       type: requirement.type,
-      soulBond: getS6SoulBond(season, roundNo)
+      soulBond: season.rule_id === RULE_ID.S7
+        ? (parseJson(season.comeback_data, {}).s7?.soulBond?.[String(roundNo)] || null)
+        : getS6SoulBond(season, roundNo)
     };
   }
 

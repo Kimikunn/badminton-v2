@@ -5,6 +5,7 @@ import { usePlayersStore, useMatchesStore, useSeasonsStore } from '@/stores'
 import { STATUS, BEST_OF_OPTIONS } from '@/constants'
 import { getRule } from '@/rules'
 import s6Rule, { KING_FORMS, TREASURY_CARDS, ANYTIME_CARDS } from '@/rules/s6'
+import s7Rule from '@/rules/s7'
 import Card from '@/components/ui/Card.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
@@ -64,12 +65,14 @@ const kingFormHint = computed(() => {
 })
 
 // ---- S6 下篇（王之宝库卡片效果执行）----
+const isS7Season = computed(() => season.value?.ruleId === 's7')
+const comboRule = computed(() => (isS7Season.value ? s7Rule : s6Rule))
 const isS6Combo = computed(() =>
-  season.value?.ruleId === 's6' && !!round.value && s6Rule.isComboRound(round.value.roundNo)
+  ['s6', 's7'].includes(season.value?.ruleId) && !!round.value && comboRule.value.isComboRound(round.value.roundNo)
 )
 const s6Context = computed(() => ({ season: season.value, match: match.value, round: round.value }))
 const matchTreasury = computed(() =>
-  isS6Combo.value ? s6Rule.getMatchTreasury(matchId.value, s6Context.value) : null
+  isS6Combo.value ? comboRule.value.getMatchTreasury(matchId.value, s6Context.value) : null
 )
 
 function sideName(side) {
@@ -94,7 +97,7 @@ const secretGameNo = computed(() => {
 const secretState = computed(() => {
   const gameNo = secretGameNo.value
   if (!gameNo || gameNo > bestOf.value) return null
-  return s6Rule.getPendingSecretState(matchId.value, gameNo, s6Context.value)
+  return comboRule.value.getPendingSecretState(matchId.value, gameNo, s6Context.value)
 })
 
 const showSecretSheet = ref(false)
@@ -105,7 +108,7 @@ const secretOptions = computed(() => {
   if (!secretPlayer.value) return []
   const label = matchTreasury.value?.sides?.[secretPlayer.value.side]?.label
   if (!label) return []
-  return s6Rule.getPlayerPreGameCards(secretPlayer.value.playerId, label, s6Context.value)
+  return comboRule.value.getPlayerPreGameCards(secretPlayer.value.playerId, label, s6Context.value)
 })
 // 按方分组的逐人暗选条目（模板展示用）
 const secretEntriesBySide = computed(() => ({
@@ -122,7 +125,7 @@ async function submitSecret(cardId) {
   if (!secretState.value || !secretPlayer.value || secretSubmitting.value) return
   secretSubmitting.value = true
   try {
-    await seasonsStore.recordAction(season.value.id, 's6_card_activate', {
+    await seasonsStore.recordAction(season.value.id, isS7Season.value ? 's7_card_activate' : 's6_card_activate', {
       matchId: matchId.value,
       gameNo: secretState.value.gameNo,
       playerId: secretPlayer.value.playerId,
@@ -195,7 +198,7 @@ async function useAnytimeCard(side, card) {
   if (!ok) return
   cardUsing.value = true
   try {
-    await seasonsStore.recordAction(season.value.id, 's6_card_use', {
+    await seasonsStore.recordAction(season.value.id, isS7Season.value ? 's7_card_use' : 's6_card_use', {
       matchId: matchId.value,
       side,
       cardId: card.cardId
@@ -237,7 +240,7 @@ async function submitStorage(prompt) {
   }
   storageSubmitting.value = true
   try {
-    await seasonsStore.recordAction(season.value.id, 's6_storage_record', {
+    await seasonsStore.recordAction(season.value.id, isS7Season.value ? 's7_storage_record' : 's6_storage_record', {
       matchId: matchId.value,
       gameNo: prompt.gameNo,
       side: prompt.side,
@@ -274,7 +277,7 @@ async function handleRift(gamesToRevert) {
         entry.timing === 'pre_game' && entry.cardId === 'rift' && !entry.consumed))
     const payload = { matchId: matchId.value, games: gamesToRevert }
     if (riftEntries.length === 1 && riftEntries[0].playerId) payload.playerId = riftEntries[0].playerId
-    await seasonsStore.recordAction(season.value.id, 's6_rift', payload)
+    await seasonsStore.recordAction(season.value.id, isS7Season.value ? 's7_rift' : 's6_rift', payload)
     await matchesStore.init({ force: true })
     toast.show(`已回溯 ${gamesToRevert} 局`, 'success')
   } catch (e) { toast.show(e.message, 'error') }

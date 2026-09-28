@@ -98,3 +98,19 @@ module.exports = {
 - 新规则应先在 `constants.RULE_ID` 增加枚举，再在 `rules/index.js` 注册。
 
 `rules/adapter.js` 会为缺失的可选 hook 填充 no-op，并为缺失的核心 hook 回退到标准规则，避免插件不完整导致运行时异常。
+
+## S7-王权之续（2026-09-28 新增）
+
+- 语义：S6 下半赛季（组合赛阶段）独立成季——3 轮固定轮换组合赛（1=AB/CD、
+  2=AC/BD、3=AD/BC，每轮 1 场 2v2 PA7），灵魂契合 + 王之宝库 + 组合星尘；
+  无上篇/王选/王权/凯旋重投。
+- 实现：以 s6.js 为底本 copy-adapt（复用机制，不共享代码路径）；数据键
+  comeback_data.s7，动作前缀 s7_*（s7_soul_roll / s7_soul_pick / s7_reforge /
+  s7_card_activate / s7_card_use / s7_storage_record / s7_rift）。
+- 挂载点（新增规则 S8+ 照此清单）：
+  ① `src/constants.js` RULE_ID；② `src/rules/s7.js` + `rules/index.js` 注册；
+  ③ `services/seasonRuleLifecycleService.js`（建轮前要求 + 灵魂契合数据分派）；
+  ④ `services/roundCreationService.js`（getComboPairingFromOrder/getComboSeedOrder/
+  isComboRound/随机对阵文案）；⑤ `validators/seasonValidators.js` 白名单；
+  ⑥ 客户端 `client/src/rules/s7.js` + index 注册 + S7Rankings + Hub/MatchHub/
+  ScoringView 家族分派 + seasonPresets。
