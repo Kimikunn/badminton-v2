@@ -79,7 +79,7 @@ function cardActivate(seasonId, matchId, gameNo, playerId, cardId) {
 }
 
 
-// 局前记录门控（2026-09-28）：组合轮每局开始前需 4 名选手完成局前暗选。
+// 局前记录门控（2026-09-28）：组合轮每局开始前，持有可用局前卡的选手需完成局前暗选（无可用卡者免录入）。
 // 测试用推进：为 gameNo 提交 4 人「不使用」，然后重新 start 触发晋升。
 async function advanceGameWithNullPicks(seasonId, matchId, gameNo, players4) {
   for (const pid of players4) {
@@ -108,15 +108,15 @@ async function playOutComboMatch(seasonId, matchId, players4, fromGameNo, gameWi
 async function resumeGame(seasonId, matchId, gameNo) {
   for (const pid of ['p1', 'p2', 'p3', 'p4']) {
     const res = await cardActivate(seasonId, matchId, gameNo, pid, null);
-    // 已为本局提交过暗选（如激活了局前卡）视为就绪，跳过即可
-    if (res.status !== 200 && !/已提交暗选/.test(res.body?.error?.message || '')) {
+    // 已提交过 / 免录入局已自动开始：均视为就绪
+    if (res.status !== 200 && !/已提交暗选|该局已开始/.test(res.body?.error?.message || '')) {
       assert.fail(`G${gameNo} ${pid} 局前暗选失败: ${res.body?.error?.message || res.status}`);
     }
   }
   await api.post(`/api/matches/${matchId}/start`).expect(200);
 }
 
-test('s6_card_activate validates window, ownership and reveals after all 4 players submit', async () => {
+test('s6_card_activate validates window, ownership and reveals once required players submit', async () => {
   const matchId = await setupBottomMatch('TR-ACT', {
     abPicks: [['p1', 'blast'], ['p2', 'storage']],
     cdPicks: [['p3', 'block'], ['p4', 'pause']]
@@ -167,18 +167,23 @@ test('s6_card_activate validates window, ownership and reveals after all 4 playe
   const duplicate = await cardActivate('S-TR-ACT', matchId, 1, 'p1', null).expect(422);
   assert.match(duplicate.body.error.message, /已提交暗选/);
 
-  // 3 人提交后仍未亮出
+  // p4 只选到随时卡（pause）→ 免录入：需录入选手（p1/p2/p3）集齐即同时亮出
   await cardActivate('S-TR-ACT', matchId, 1, 'p2', null).expect(200);
-  await cardActivate('S-TR-ACT', matchId, 1, 'p3', null).expect(200);
   s6 = getS6Data('S-TR-ACT');
   assert.equal(s6.treasury.AB.activations[0].revealed, false);
 
-  // 第 4 人提交"不使用" → 4 条记录同时亮出，且不扣库存
-  await cardActivate('S-TR-ACT', matchId, 1, 'p4', null).expect(200);
+  await cardActivate('S-TR-ACT', matchId, 1, 'p3', null).expect(200);
   s6 = getS6Data('S-TR-ACT');
   assert.equal(s6.treasury.AB.activations.filter(e => e.gameNo === 1).length, 2);
   assert.ok(s6.treasury.AB.activations.every(e => e.revealed === true));
-  const cdEntries = s6.treasury.CD.activations.filter(e => e.gameNo === 1);
+  let cdEntries = s6.treasury.CD.activations.filter(e => e.gameNo === 1);
+  assert.equal(cdEntries.length, 1);
+  assert.ok(cdEntries.every(e => e.revealed === true && e.cardId === null));
+
+  // 免录入选手（p4）仍可补一条「不使用」，不扣库存
+  await cardActivate('S-TR-ACT', matchId, 1, 'p4', null).expect(200);
+  s6 = getS6Data('S-TR-ACT');
+  cdEntries = s6.treasury.CD.activations.filter(e => e.gameNo === 1);
   assert.equal(cdEntries.length, 2);
   assert.ok(cdEntries.every(e => e.revealed === true && e.cardId === null));
   assert.deepEqual(s6.treasury.CD.inventory, { block: 1, pause: 3 });

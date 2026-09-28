@@ -444,7 +444,7 @@ test('season completion writes s6 champion and comboChampion', async () => {
         const res = await postAction('S-SB-COMPLETE', 's6_card_activate', {
           matchId: 'M-SB-COMPLETE-7', gameNo: i + 1, playerId: pid, cardId: null
         });
-        if (res.status !== 200 && !/已提交暗选/.test(res.body?.error?.message || '')) {
+        if (res.status !== 200 && !/已提交暗选|该局已开始/.test(res.body?.error?.message || '')) {
           assert.fail(`G${i + 1} ${pid} 暗选失败: ${res.body?.error?.message || res.status}`);
         }
       }

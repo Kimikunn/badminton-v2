@@ -53,6 +53,66 @@ export const CARD_PLAY_RULES = [
   { id: 'rift', title: '时空裂隙', text: '在记分页执行回溯 1-2 局；第七局打完后本轮立刻结束，无法回溯。' }
 ]
 
+
+// ── 局前暗选状态（逐人，s6/s7 共用）──
+// required = 选手手上有可用局前卡（本人选到且库存 >0）；无可用卡的选手免录入
+// （门控不要求其提交，UI 显示「无需录入」）。allSubmitted 仅统计 required 选手。
+export function getPendingSecretState(state, labels, match, matchId, gameNo) {
+  if (!match || !Number.isInteger(gameNo)) return null
+  const players = [
+    ...(match.teamA || []).map(playerId => ({ playerId, side: 'a', label: labels?.[0] })),
+    ...(match.teamB || []).map(playerId => ({ playerId, side: 'b', label: labels?.[1] }))
+  ]
+  if (!players.length) return null
+  const byPlayer = new Map()
+  for (const label of labels || []) {
+    for (const entry of state?.treasury?.[label]?.activations || []) {
+      if (entry.timing !== 'pre_game' || entry.matchId !== matchId || entry.gameNo !== gameNo) continue
+      if (entry.playerId) byPlayer.set(entry.playerId, entry)
+    }
+  }
+  const rows = players.map(({ playerId, side, label }) => ({
+    playerId,
+    side,
+    required: playerHasAvailablePreGameCard(state, label, playerId),
+    submitted: byPlayer.has(playerId),
+    cardId: (byPlayer.get(playerId)?.revealed) ? (byPlayer.get(playerId)?.cardId ?? null) : null
+  }))
+  const requiredRows = rows.filter(row => row.required)
+  const allSubmitted = requiredRows.length === 0 ? true : requiredRows.every(row => row.submitted)
+  const revealed = allSubmitted
+    && requiredRows.every(row => !!byPlayer.get(row.playerId)?.revealed)
+  return { gameNo, entries: rows, allSubmitted, revealed }
+}
+
+export function playerHasAvailablePreGameCard(state, comboLabel, playerId) {
+  const inventory = state?.treasury?.[comboLabel]?.inventory || {}
+  for (const roundBond of Object.values(state?.soulBond || {})) {
+    for (const pick of roundBond?.[comboLabel]?.picks || []) {
+      if (pick.playerId === playerId && PRE_GAME_CARDS.includes(pick.cardId)
+        && Number(inventory[pick.cardId] || 0) > 0) return true
+    }
+  }
+  return false
+}
+
+// 选手本人拥有（灵魂契合 picks）且仍有库存的局前暗选卡；remaining 为组合聚合库存
+export function getPlayerPreGameCards(state, comboLabel, playerId) {
+  const inventory = state?.treasury?.[comboLabel]?.inventory || {}
+  const owned = new Set()
+  for (const roundBond of Object.values(state?.soulBond || {})) {
+    for (const pick of roundBond?.[comboLabel]?.picks || []) {
+      if (pick.playerId === playerId && PRE_GAME_CARDS.includes(pick.cardId)) owned.add(pick.cardId)
+    }
+  }
+  return [...owned].map(cardId => ({
+    cardId,
+    name: TREASURY_CARDS[cardId]?.name || cardId,
+    effect: TREASURY_CARDS[cardId]?.effect || '',
+    remaining: Number(inventory[cardId] || 0)
+  }))
+}
+
 // 选奖时的阶层上限：天选视同已解锁第三阶
 export function getTierCap(unlockTier) {
   if (unlockTier === 'chosen') return 3

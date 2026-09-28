@@ -9,6 +9,7 @@
  */
 import { STATUS } from '@/constants'
 import { TREASURY_CARDS, TREASURY_TIERS, CARD_PLAY_RULES, PRE_GAME_CARDS, POST_GAME_CARDS, ANYTIME_CARDS, BLAST_TARGET_SCORE, BLAST_MAX_SCORE, getTierCap, activationState, activationLabel } from './comboCards'
+import * as sharedCards from './comboCards'
 export { TREASURY_CARDS, TREASURY_TIERS, CARD_PLAY_RULES, PRE_GAME_CARDS, POST_GAME_CARDS, ANYTIME_CARDS, BLAST_TARGET_SCORE, BLAST_MAX_SCORE, getTierCap, activationState, activationLabel }
 import standardRule from './standard'
 import {
@@ -454,54 +455,17 @@ export default {
   },
 
   // 某局的暗选状态（逐人）：4 名选手各自的提交情况，全部提交后服务端同时亮出；
-  // 亮出前不暴露 cardId。entries 按 teamA → teamB 顺序，side 由选手所在队伍推导
+  // 亮出前不暴露 cardId。entries 带 required 标记：无可用局前卡的选手免录入
   getPendingSecretState(matchId, gameNo, context = {}) {
     const roundNo = Number(context?.round?.roundNo ?? context?.roundNo)
-    const labels = COMBO_LABELS_BY_ROUND[roundNo] || []
-    const treasury = getS7Data(context)?.treasury || {}
-    const match = context?.match || {}
-    const players = [
-      ...(match.teamA || []).map(playerId => ({ playerId, side: 'a' })),
-      ...(match.teamB || []).map(playerId => ({ playerId, side: 'b' }))
-    ]
-    const byPlayer = new Map()
-    for (const label of labels) {
-      for (const entry of treasury?.[label]?.activations || []) {
-        if (entry.timing !== 'pre_game' || entry.matchId !== matchId || entry.gameNo !== gameNo) continue
-        if (entry.playerId) byPlayer.set(entry.playerId, entry)
-      }
-    }
-    const allSubmitted = players.length > 0 && players.every(p => byPlayer.has(p.playerId))
-    const revealed = allSubmitted && players.every(p => byPlayer.get(p.playerId)?.revealed)
-    return {
-      gameNo,
-      entries: players.map(({ playerId, side }) => ({
-        playerId,
-        side,
-        submitted: byPlayer.has(playerId),
-        cardId: revealed ? (byPlayer.get(playerId)?.cardId ?? null) : null
-      })),
-      allSubmitted,
-      revealed
-    }
+    return sharedCards.getPendingSecretState(
+      getS7Data(context), COMBO_LABELS_BY_ROUND[roundNo] || [],
+      context?.match || {}, matchId, gameNo
+    )
   },
 
-  // 选手本人拥有（灵魂契合 picks 中 playerId+cardId，任一轮次）的局前暗选卡；
-  // remaining 为组合聚合库存（服务端提交即扣减），选手只看到本人选到的卡
   getPlayerPreGameCards(playerId, comboLabel, context = {}) {
-    const s7 = getS7Data(context)
-    const inventory = s7?.treasury?.[comboLabel]?.inventory || {}
-    const owned = new Set()
-    for (const roundBond of Object.values(s7?.soulBond || {})) {
-      for (const pick of roundBond?.[comboLabel]?.picks || []) {
-        if (pick.playerId === playerId && PRE_GAME_CARDS.includes(pick.cardId)) owned.add(pick.cardId)
-      }
-    }
-    return [...owned].map(cardId => ({
-      cardId,
-      ...TREASURY_CARDS[cardId],
-      remaining: inventory[cardId] || 0
-    }))
+    return sharedCards.getPlayerPreGameCards(getS7Data(context), comboLabel, playerId)
   },
 
   getComboTieStatus(matches, getGamesByMatch, rounds, context) {

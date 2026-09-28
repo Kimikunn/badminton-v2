@@ -31,8 +31,15 @@ async function submitNullPicks(request, baseURL, seasonId, matchId, gameNo, play
     const res = await request.post(`${baseURL}/api/seasons/${seasonId}/actions/s7_card_activate`, {
       headers: adminHeaders(), data: { matchId, gameNo, playerId: pid, cardId: null }
     })
-    // 已提交过（如上一局门控流程重复提交）视为就绪
-    expect(res.ok()).toBeTruthy()
+    // 已提交过（如重复提交）视为就绪；其余失败打印并断言
+    // 已提交过 / 免录入局已自动开始：均视为就绪
+    if (!res.ok()) {
+      const msg = (await res.text()).slice(0, 160)
+      if (!/已提交暗选|该局已开始/.test(msg)) {
+        console.log('DBG-ACT', gameNo, pid, res.status(), msg)
+        expect(res.ok()).toBeTruthy()
+      }
+    }
   }
   const startRes = await request.post(`${baseURL}/api/matches/${matchId}/start`, { headers: adminHeaders() })
   expect(startRes.ok()).toBeTruthy()

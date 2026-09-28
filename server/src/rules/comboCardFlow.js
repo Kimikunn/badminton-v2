@@ -97,25 +97,54 @@ function playerOwnsCard(state, comboLabel, playerId, cardId) {
   return false;
 }
 
-// ── 局前门控：该局 4 名选手（teamA+teamB）是否已全部提交局前暗选 ──
+
+// 选手是否有可用局前卡：本人在该组合任一轮次选到过局前卡，且该卡当前库存 >0。
+// 没有可用局前卡的选手免除局前录入（门控不要求其提交）。
+function playerHasAvailablePreGameCard(state, comboLabel, playerId) {
+  const inventory = state.treasury?.[comboLabel]?.inventory || {}
+  for (const roundBond of Object.values(state.soulBond || {})) {
+    for (const pick of roundBond?.[comboLabel]?.picks || []) {
+      if (pick.playerId === playerId && PRE_GAME_CARDS.includes(pick.cardId)
+        && Number(inventory[pick.cardId] || 0) > 0) return true
+    }
+  }
+  return false
+}
+
+// 组合轮一局的「需录入名单」：仅统计手上有可用局前卡的选手（按 teamA/teamB 推导方与组合）
+function getRequiredPlayerIds(state, labels, match) {
+  if (!labels || !match) return []
+  const ids = []
+  const sidePlayers = [
+    { side: WINNER_SIDE.A, ids: parseJson(match.team_a, []), label: labels[0] },
+    { side: WINNER_SIDE.B, ids: parseJson(match.team_b, []), label: labels[1] }
+  ]
+  for (const { ids: teamIds, label } of sidePlayers) {
+    for (const playerId of teamIds) {
+      if (playerHasAvailablePreGameCard(state, label, playerId)) ids.push(playerId)
+    }
+  }
+  return ids
+}
+
+// ── 局前门控：该局「需录入选手」（手上有可用局前卡者）是否已全部提交 ──
 function isPreGameComplete(state, labels, match, gameNo) {
   if (!labels || !match || !Number.isInteger(gameNo)) return false;
-  const players = [
-    ...parseJson(match.team_a, []).map(playerId => ({ playerId })),
-    ...parseJson(match.team_b, []).map(playerId => ({ playerId }))
-  ];
-  if (!players.length) return false;
+  const required = getRequiredPlayerIds(state, labels, match);
+  if (!required.length) return true; // 无人有可用局前卡 → 免录入，直接放行
   const submitted = new Set(
     findPreGameActivations(state, labels, match.id, gameNo).map(entry => entry.playerId)
   );
-  return players.every(({ playerId }) => submitted.has(playerId));
+  return required.every(playerId => submitted.has(playerId));
 }
 
 // 开局门控文案（s6/s7 canStartGame 用）：未集齐时返回错误文案，集齐/非组合轮返回 null
 function preGameGateError(state, labels, match, gameNo) {
   if (!labels) return null;
   if (isPreGameComplete(state, labels, match, gameNo)) return null;
-  return `第 ${gameNo} 局开始前需 4 名选手完成局前暗选（含「不使用」）`;
+  const required = getRequiredPlayerIds(state, labels, match);
+  if (!required.length) return null;
+  return `第 ${gameNo} 局开始前，持有可用局前卡的选手需完成录入（${required.length} 人待录入）`;
 }
 
 // ── 局前暗选提交（s6_card_activate / s7_card_activate 共享）──
@@ -169,10 +198,11 @@ function recordCardActivate(ctx, state, { match, roundNo, labels, input, idPrefi
   };
   treasury.activations.push(entry);
 
-  // 该场 4 名选手全部提交（含"不使用"）时同时亮出
+  // 需录入选手（持有可用局前卡者）全部提交时同时亮出；无人需录入则无卡可亮
   const all = findPreGameActivations(state, labels, match.id, gameNo);
   const submittedIds = new Set(all.map(item => item.playerId));
-  if ([...teamA, ...teamB].every(pid => submittedIds.has(pid))) {
+  const requiredIds = getRequiredPlayerIds(state, labels, match);
+  if (requiredIds.every(pid => submittedIds.has(pid))) {
     for (const item of all) item.revealed = true;
   }
 
@@ -401,6 +431,8 @@ module.exports = {
   playerOwnsCard,
   isPreGameComplete,
   preGameGateError,
+  getRequiredPlayerIds,
+  playerHasAvailablePreGameCard,
   recordCardActivate,
   recordPostGameUse,
   getActiveEffects,

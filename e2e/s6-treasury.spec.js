@@ -83,10 +83,12 @@ test.describe('S6 treasury (王之宝库)', () => {
     const matchPlayerOrder = () => [...players.map(p => p.id)].sort()
 
     // 逐人提交一局暗选：cardByPlayer 为该局的用卡分配（缺省选手提交「不使用」），
-    // 仅限本人选到的卡（服务端 422 校验归属）
+    // 仅限本人选到的卡（服务端 422 校验归属）。
+    // 免录入选手（无可用局前卡）没有录入按钮：录入按钮点完即止（余下均为免录入）。
     async function submitSecrets(gameNo, cardByPlayer = {}) {
       await expect(page.getByText(`G${gameNo} 局前暗选`)).toBeVisible()
       for (const pid of matchPlayerOrder()) {
+        if (!(await page.getByRole('button', { name: '录入暗选' }).count())) break
         const cardName = cardByPlayer[pid] || null
         await page.getByRole('button', { name: '录入暗选' }).first().click()
         await expect(page.getByRole('heading', { name: `G${gameNo} 暗选 · ${playerName(pid)}` })).toBeVisible()
@@ -235,8 +237,8 @@ test.describe('S6 treasury (王之宝库)', () => {
       await page.getByRole('button', { name: '开始' }).click()
       await expect(page).toHaveURL(/\/scoring\//)
 
-      // S6 组合赛不自动开局：G1 四人暗选集齐前开始按钮不可用
-      const startButton = page.getByRole('button', { name: '请先完成 G1 四人暗选' })
+      // S6 组合赛不自动开局：需录入选手（持有可用局前卡者）暗选集齐前开始按钮不可用
+      const startButton = page.getByRole('button', { name: /请先完成 G1 暗选/ })
       await expect(startButton).toBeDisabled()
 
       // p1（A 位）提交爆破：Sheet 只列出本人选到的卡（看不到 B 位的时空裂隙）
@@ -264,6 +266,8 @@ test.describe('S6 treasury (王之宝库)', () => {
       await expect(page.getByRole('heading', { name: /暗选 ·/ })).toHaveCount(0)
       await expect(page.getByText('已暗选', { exact: true })).toHaveCount(2)
       await expect(page.getByText('已亮出')).toHaveCount(0)
+      // p4 无可用局前卡 → 免录入（亮出前显示「无需录入」，无录入按钮）
+      await expect(page.getByText('无需录入', { exact: true })).toBeVisible()
 
       // p3 提交「不使用」
       await page.getByRole('button', { name: '录入暗选' }).first().click()
@@ -273,16 +277,11 @@ test.describe('S6 treasury (王之宝库)', () => {
       expect((await activatePromise).ok()).toBeTruthy()
       await expect(page.getByRole('heading', { name: /暗选 ·/ })).toHaveCount(0)
 
-      // p4 只选了随时卡 → 空态文案，仍可提交「不使用」；第 4 人提交后全部亮出
-      await page.getByRole('button', { name: '录入暗选' }).first().click()
-      await expect(page.getByRole('heading', { name: `G1 暗选 · ${playerName(d)}` })).toBeVisible()
-      await expect(page.getByText(/该选手没有可启用的局前卡/)).toBeVisible()
-      activatePromise = page.waitForResponse(response => response.url().includes('/actions/s6_card_activate'))
-      await page.getByRole('button', { name: /^不使用/ }).click()
-      expect((await activatePromise).ok()).toBeTruthy()
-      await expect(page.getByRole('heading', { name: /暗选 ·/ })).toHaveCount(0)
+      // p4 只选了随时卡 → 免录入：3 名需录入选手集齐后即同时亮出
+      // （亮出后 p4 行显示「无可用卡」）
       await expect(page.getByText('已亮出')).toBeVisible()
       await expect(page.getByText('爆破', { exact: true })).toBeVisible()
+      await expect(page.getByText('无可用卡', { exact: true })).toBeVisible()
       // 集齐后按钮文案切换为「开始比赛」并可用
       await expect(page.getByRole('button', { name: '开始比赛' })).toBeEnabled()
 
@@ -317,9 +316,9 @@ test.describe('S6 treasury (王之宝库)', () => {
       const [, , c] = [...players.map(p => p.id)].sort()
       await submitSecrets(3, { [c]: '阻碍' })
 
-      // 随时卡：B 方使用名刀 → 提示条 + 库存扣减（3 → 2）
+      // 局后记录：B 方名刀补记到已完赛的 G1 → 提示条 + 库存扣减（3 → 2）
       await page.getByRole('button', { name: /^名刀 ×3/ }).click()
-      await page.getByRole('button', { name: '使用', exact: true }).click()
+      await page.getByRole('button', { name: '记录', exact: true }).click()
       await expect(page.getByText('名刀已启用：下一球对方得分无效')).toBeVisible()
       await expect(page.getByRole('button', { name: /^名刀 ×2/ })).toBeVisible()
 
@@ -447,7 +446,7 @@ test.describe('S6 treasury (王之宝库)', () => {
       expect(abActs.find(e => e.cardId === 'storage')?.consumed).toBe(true)
       expect(abActs.find(e => e.cardId === 'blast')?.playerId).toBe(a)
       expect(abActs.find(e => e.cardId === 'storage')?.playerId).toBe(b)
-      const bladeUse = cdActs.find(e => e.cardId === 'blade' && e.timing === 'anytime')
+      const bladeUse = cdActs.find(e => e.cardId === 'blade' && e.timing === 'post_game')
       expect(bladeUse?.consumed).toBe(true)
     })
 

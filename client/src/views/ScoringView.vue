@@ -139,14 +139,18 @@ async function submitSecret(cardId) {
   secretSubmitting.value = false
 }
 
-// 第 1 局 4 名选手全部提交暗选后才允许开始比赛（服务端只接受 pending 局的暗选；
-// 4 人集齐后服务端同时亮出）
+// 第 1 局「需录入选手」（持有可用局前卡者）全部提交暗选后才允许开始比赛
+// （无可用卡的选手免录入；需录入者集齐后服务端同时亮出）
 const canStartS6Match = computed(() =>
   isS6Combo.value && match.value?.status === STATUS.PENDING && !!secretState.value?.allSubmitted
 )
-// 门控挂起（比赛进行中、下一局待开始）时的开始门：同口径（该局 4 人暗选集齐）
+// 门控挂起（比赛进行中、下一局待开始）时的开始门：同口径
 const canStartNextGame = computed(() =>
   isS6Combo.value && !!secretState.value?.allSubmitted
+)
+// 待录入人数（需录入且未提交），用于门控按钮文案
+const pendingSecretCount = computed(() =>
+  (secretState.value?.entries || []).filter(entry => entry.required && !entry.submitted).length
 )
 const startingMatch = ref(false)
 async function handleStartMatch() {
@@ -557,7 +561,8 @@ onMounted(async () => { await ensureStarted(); isLoading.value = false })
                 <span
                   v-if="secretState.revealed"
                   class="text-sm font-semibold text-fg"
-                >{{ entry.cardId ? TREASURY_CARDS[entry.cardId]?.name : '不使用' }}</span>
+                >{{ entry.required ? (entry.cardId ? TREASURY_CARDS[entry.cardId]?.name : '不使用') : '无可用卡' }}</span>
+                <span v-else-if="!entry.required" class="text-2xs text-fg-muted">无需录入</span>
                 <Badge v-else-if="entry.submitted" variant="muted" size="sm">已暗选</Badge>
                 <Button v-else variant="secondary" size="sm" @click="openSecretSheet(entry)">录入暗选</Button>
               </div>
@@ -682,7 +687,7 @@ onMounted(async () => { await ensureStarted(); isLoading.value = false })
       <div class="mt-auto pt-4 flex flex-col gap-2" v-if="!isMatchOver">
         <template v-if="isS6Combo && match?.status === STATUS.PENDING">
           <Button variant="primary" size="lg" block :disabled="!canStartS6Match" :loading="startingMatch" @click="handleStartMatch">
-            {{ canStartS6Match ? '开始比赛' : '请先完成 G1 四人暗选' }}
+            {{ canStartS6Match ? '开始比赛' : `请先完成 G1 暗选（${pendingSecretCount} 人待录入）` }}
           </Button>
           <Button variant="ghost" size="md" block @click="goBack">返回</Button>
         </template>
@@ -693,7 +698,7 @@ onMounted(async () => { await ensureStarted(); isLoading.value = false })
         <template v-else-if="isS6Combo && !isMatchOver && secretGameNo">
           <!-- 门控挂起：下一局暗选未集齐时手动开始（集齐后亮出按钮） -->
           <Button variant="primary" size="lg" block :disabled="!canStartNextGame" :loading="startingMatch" @click="handleStartMatch">
-            {{ canStartNextGame ? `开始第 ${secretGameNo} 局` : `请先完成 G${secretGameNo} 四人暗选` }}
+            {{ canStartNextGame ? `开始第 ${secretGameNo} 局` : `请先完成 G${secretGameNo} 暗选（${pendingSecretCount} 人待录入）` }}
           </Button>
           <Button variant="ghost" size="md" block @click="goBack">返回</Button>
         </template>
