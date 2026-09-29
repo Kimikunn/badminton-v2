@@ -5,8 +5,9 @@ const { success, error } = require('../utils/response')
 
 const DB_DIR = path.join(__dirname, '..', '..', 'database')
 
+// 测试库白名单：默认测试环境 test.db 与 e2e 专用库 e2e.db（与测试环境数据隔离）
 function isTestDbPath(dbPath) {
-  return path.basename(path.resolve(dbPath || '')) === 'test.db'
+  return ['test.db', 'e2e.db'].includes(path.basename(path.resolve(dbPath || '')))
 }
 
 async function resetDb(req, res) {

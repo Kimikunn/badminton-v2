@@ -1,0 +1,31 @@
+# e2e 测试专用实例：与测试环境（:8090 test.db）完全隔离
+#  - 数据库 e2e.db 独立落盘，reset-db / 测试数据不会影响 :8090 的 test.db
+#  - e2e 跑法：
+#      docker compose -f docker-compose.e2e.yml up -d --build
+#      PLAYWRIGHT_BASE_URL=http://localhost:8091 ... npx playwright test ...
+name: badmintone2e
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BUILD_DIR: dist-test
+    container_name: badminton-e2e
+    restart: unless-stopped
+    env_file:
+      - server/.env
+    ports:
+      - "8091:3000"
+    volumes:
+      - ./server/database:/app/server/database
+      - ./server/uploads:/app/server/uploads
+      - ./server/runtime:/app/server/runtime
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - TZ=Asia/Shanghai
+      - DB_PATH=/app/server/database/e2e.db
+      - ADMIN_TOKEN=${ADMIN_TOKEN:-}
+      - ENABLE_TEST_FEATURES=true
