@@ -86,13 +86,13 @@ function playerName(id) {
 // 抵抗局胜方选择卡标题：S5 秩序 / S6 月白（复用同一 UI）
 const resistanceTitle = computed(() => (season.value?.ruleId === 's6' ? '月白 · 抵抗' : '秩序 · 抵抗'))
 
-// 暗选目标局：比赛未开始 → 第 1 局（开始前必须提交）；进行中 → 当前局的下一局
-// （服务端只允许在该局 pending/未创建时提交暗选）
+// 暗选目标局：比赛未开始 → 第 1 局（开始前必须提交）；
+// 比赛进行中且无进行中的局（局间挂起）→ 下一待开始的 PENDING 局。
+// 有局进行中时不显示录入（录入节点只在上一局结束后、目标局开始前）。
 const secretGameNo = computed(() => {
   if (!isS6Combo.value || isMatchOver.value) return null
   if (match.value?.status === STATUS.PENDING) return 1
-  if (currentGame.value) return currentGame.value.gameNo + 1
-  // 门控挂起：比赛进行中但无进行中的局 → 目标 = 下一待开始的 PENDING 局
+  if (currentGame.value) return null
   const pending = games.value.find(g => g.status === STATUS.PENDING)
   return pending ? pending.gameNo : null
 })

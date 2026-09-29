@@ -53,7 +53,7 @@ function soulPick(seasonId, roundNo, comboLabel, playerId, cardId) {
 async function advanceGameWithNullPicks(seasonId, matchId, gameNo, players4) {
   for (const pid of players4) {
     const res = await postAction(seasonId, 's6p_card_activate', { matchId, gameNo, playerId: pid, cardId: null });
-    if (res.status !== 200 && !/已提交暗选|该局已开始/.test(res.body?.error?.message || '')) {
+    if (res.status !== 200 && !/已提交暗选|该局已开始|比赛进行中/.test(res.body?.error?.message || '')) {
       assert.fail(`G${gameNo} ${pid} 暗选失败: ${res.body?.error?.message || res.status}`);
     }
   }

@@ -170,6 +170,11 @@ function recordCardActivate(ctx, state, { match, roundNo, labels, input, idPrefi
   if (game && game.status !== MATCH_STATUS.PENDING) {
     return { validationError: '该局已开始，无法再进行暗选' };
   }
+  // 比赛有进行中的局时不可录入暗选：录入节点只在上一局结束后、目标局开始前
+  const ongoing = prepare('SELECT game_no FROM games WHERE match_id = ? AND status = ?').get(match.id, MATCH_STATUS.IN_PROGRESS);
+  if (ongoing) {
+    return { validationError: '比赛进行中，局前暗选仅能在该局结束后录入' };
+  }
 
   const submitted = findPreGameActivations(state, labels, match.id, gameNo);
   if (submitted.some(entry => entry.playerId === playerId)) {

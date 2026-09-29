@@ -109,7 +109,7 @@ async function resumeGame(seasonId, matchId, gameNo) {
   for (const pid of ['p1', 'p2', 'p3', 'p4']) {
     const res = await cardActivate(seasonId, matchId, gameNo, pid, null);
     // 已提交过 / 免录入局已自动开始：均视为就绪
-    if (res.status !== 200 && !/已提交暗选|该局已开始/.test(res.body?.error?.message || '')) {
+    if (res.status !== 200 && !/已提交暗选|该局已开始|比赛进行中/.test(res.body?.error?.message || '')) {
       assert.fail(`G${gameNo} ${pid} 局前暗选失败: ${res.body?.error?.message || res.status}`);
     }
   }
@@ -357,6 +357,9 @@ test('storage record carries extra-ball points into the next game opening', asyn
   const duplicate = await postAction('S-TR-STORAGE', 's6_storage_record', { matchId, gameNo: 1, side: 'a', playerId: 'p1', points: 2 }).expect(422);
   assert.match(duplicate.body.error.message, /已记录/);
 
+  // a 方落败 → 额外 3 球（先结束第 2 局，录入节点只在该局结束后）
+  await finishGame(second.id, 21, 18);
+
   // 第 3 局再次暗选存储器（uses=2）；局行已存在 → gameId 回填
   await cardActivate('S-TR-STORAGE', matchId, 3, 'p1', 'storage').expect(200);
   await cardActivate('S-TR-STORAGE', matchId, 3, 'p2', null).expect(200);
@@ -367,9 +370,6 @@ test('storage record carries extra-ball points into the next game opening', asyn
   const thirdEntry = s6.treasury.AB.activations.find(e => e.gameNo === 3);
   assert.equal(thirdEntry.gameId, `${matchId}-G3`);
   assert.equal(s6.treasury.AB.inventory.storage, 0);
-
-  // a 方落败 → 额外 3 球
-  await finishGame(second.id, 21, 18);
   const third = getDbGames(matchId)[2];
   await finishGame(third.id, 10, 21);
 
@@ -416,22 +416,25 @@ test('s6_rift reverts the last completed games through the shared revert path', 
     cdPicks: [['p3', 'pause'], ['p4', 'blade']]
   });
   await resumeGame('S-TR-RIFT', matchId, 1);
-  await resumeGame('S-TR-RIFT', matchId, 2);
   const games = getDbGames(matchId);
-  await cardActivate('S-TR-RIFT', matchId, 3, 'p1', 'rift').expect(200);
 
   const badCount = await postAction('S-TR-RIFT', 's6_rift', { matchId, games: 3 }).expect(422);
   assert.match(badCount.body.error.message, /1 或 2/);
 
+  // rift 尚未暗选且无已完成局：直接拒绝
   const notEnough = await postAction('S-TR-RIFT', 's6_rift', { matchId, games: 1 }).expect(422);
-  assert.match(notEnough.body.error.message, /局数不足/);
+  assert.match(notEnough.body.error.message, /没有可用的时空裂隙/);
 
   // 逐人匹配：rift 是 p1 的暗选，p2 无法执行
   const wrongPlayer = await postAction('S-TR-RIFT', 's6_rift', { matchId, playerId: 'p2', games: 1 }).expect(422);
   assert.match(wrongPlayer.body.error.message, /没有可用的时空裂隙/);
 
   await finishGame(games[0].id, 21, 10);
+  // 第 1 局结束后才能为第 2 局录入（局进行中不可录入）
+  await resumeGame('S-TR-RIFT', matchId, 2);
   await finishGame(games[1].id, 21, 10);
+  // 第 2 局结束后录入第 3 局时空裂隙暗选（局进行中不可录入）
+  await cardActivate('S-TR-RIFT', matchId, 3, 'p1', 'rift').expect(200);
 
   // 给第 3 局（将被回溯删除）插一条规则事件，验证清理与普通 revert 一致
   prepare(`INSERT INTO game_rule_events (id, season_id, round_id, match_id, game_id, rule_id, timing, type, payload)
@@ -464,10 +467,13 @@ test('s6_rift is rejected once game 7 is completed', async () => {
   });
   await resumeGame('S-TR-RIFT7', matchId, 1);
   const games = getDbGames(matchId);
-  await cardActivate('S-TR-RIFT7', matchId, 7, 'p1', 'rift').expect(200);
   for (let i = 0; i < games.length; i++) {
     if (i > 0) await resumeGame('S-TR-RIFT7', matchId, i + 1);
     await finishGame(games[i].id, 21, 10);
+    if (i === 0) {
+      // 第 1 局结束后录入第 7 局时空裂隙暗选（局进行中不可录入）
+      await cardActivate('S-TR-RIFT7', matchId, 7, 'p1', 'rift').expect(200);
+    }
   }
   assert.equal(getDbMatch(matchId).status, 'completed');
 

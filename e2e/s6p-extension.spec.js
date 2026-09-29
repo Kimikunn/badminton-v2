@@ -34,7 +34,7 @@ async function submitNullPicks(request, baseURL, seasonId, matchId, gameNo, play
     })
     if (!res.ok()) {
       const msg = (await res.text()).slice(0, 160)
-      if (!/已提交暗选|该局已开始/.test(msg)) {
+      if (!/已提交暗选|该局已开始|比赛进行中/.test(msg)) {
         console.log('DBG-ACT', gameNo, pid, res.status(), msg)
         expect(res.ok()).toBeTruthy()
       }

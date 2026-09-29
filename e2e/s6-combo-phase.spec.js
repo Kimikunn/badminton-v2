@@ -56,7 +56,7 @@ async function submitNullPicks(request, baseURL, seasonId, matchId, gameNo, play
       headers: adminHeaders(), data: { matchId, gameNo, playerId: pid, cardId: null }
     })
     // 已提交过 / 免录入局已自动开始：均视为就绪
-    if (!res.ok() && !/已提交暗选|该局已开始/.test((await res.json())?.error?.message || '')) expect(res.ok()).toBeTruthy()
+    if (!res.ok() && !/已提交暗选|该局已开始|比赛进行中/.test((await res.json())?.error?.message || '')) expect(res.ok()).toBeTruthy()
   }
   const startRes = await request.post(`${baseURL}/api/matches/${matchId}/start`, { headers: adminHeaders() })
   expect(startRes.ok()).toBeTruthy()
