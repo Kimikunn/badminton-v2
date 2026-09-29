@@ -388,73 +388,6 @@ function getSoulRoll(combo, playerId) {
   return combo?.rolls?.find(roll => roll.playerId === playerId) || null
 }
 
-// 凯旋重投名额：上篇（1-4 轮）标准排名前二各 1 次
-const triumphTop2 = computed(() => {
-  if (currentSeason.value?.ruleId !== 's6') return []
-  const topRounds = rounds.value.filter(r => r.roundNo >= 1 && r.roundNo <= 4 && r.status === STATUS.COMPLETED)
-  if (topRounds.length < 4) return []
-  const topRoundIds = new Set(topRounds.map(r => r.id))
-  const topMatches = seasonMatches.value.filter(m => topRoundIds.has(m.roundId))
-  const rule = getRule('s6')
-  const rankings = rule.calcRankings(
-    currentSeason.value.participants || [],
-    topMatches,
-    mid => matchesStore.getGamesByMatch(mid),
-    id => playersStore.getPlayerById(id),
-    { season: currentSeason.value, rounds: topRounds }
-  )
-  return rankings.slice(0, 2).map(row => row.id)
-})
-
-// S5 贯穿碎片：最近一个 S5 赛季 pierceCounts[playerId] - 3 > 0（与服务端口径一致）
-const s5ShardCounts = computed(() => {
-  const s5 = [...seasonsStore.seasons]
-    .filter(s => s.ruleId === 's5')
-    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))[0]
-  const counts = s5?.comebackData?.s5?.pierceCounts || {}
-  const shards = {}
-  Object.entries(counts).forEach(([playerId, count]) => {
-    const remaining = Number(count) - 3
-    if (remaining > 0) shards[playerId] = remaining
-  })
-  return shards
-})
-
-// 已消耗的重投次数（跨所有轮次/组合累计）
-function getUsedRerollCount(playerId, source) {
-  const soulBond = currentSeason.value?.comebackData?.[comboDataKey.value]?.soulBond || {}
-  let used = 0
-  Object.values(soulBond).forEach(roundBond => {
-    Object.values(roundBond || {}).forEach(combo => {
-      used += (combo.rerollsUsed || []).filter(entry => entry.playerId === playerId && entry.source === source).length
-    })
-  })
-  return used
-}
-
-// 选手可用的重投令牌（凯旋 / S5 贯穿碎片 / S6+ 重置骰子）
-function getRerollTokens(playerId) {
-  if (isS6pSeason.value) {
-    // 重置骰子：来源 S6 赛季前两名组合的选手，整季各 1 次（服务端 reset_dice 来源校验）
-    const holders = currentSeason.value?.comebackData?.s6p?.resetDice || []
-    if (!holders.includes(playerId)) return []
-    return [{ source: 'reset_dice', name: '重置骰子', total: 1 }]
-      .map(token => ({ ...token, remaining: token.total - getUsedRerollCount(playerId, token.source) }))
-      .filter(token => token.remaining > 0)
-  }
-  const tokens = []
-  if (triumphTop2.value.includes(playerId)) {
-    tokens.push({ source: 'triumph', name: '凯旋', total: 1 })
-  }
-  const shards = s5ShardCounts.value[playerId] || 0
-  if (shards > 0) {
-    tokens.push({ source: 's5_shard', name: '贯穿碎片', total: shards })
-  }
-  return tokens
-    .map(token => ({ ...token, remaining: token.total - getUsedRerollCount(playerId, token.source) }))
-    .filter(token => token.remaining > 0)
-}
-
 function rollLocalDice(count) {
   return Array.from({ length: count }, () => Math.floor(Math.random() * 6) + 1)
 }
@@ -521,20 +454,6 @@ async function submitSoulRoll(playerId) {
     toast.show(e.message || '灵魂投掷提交失败', 'error')
   } finally {
     soulSubmitting.value = false
-  }
-}
-
-async function startSoulReroll(playerId, token) {
-  const ok = await confirmAction({
-    title: '重投确认',
-    message: `${playersStore.getPlayerName(playerId)} 将消耗 1 次「${token.name}」重投机会（剩余 ${token.remaining} 次），重投后原点数作废。`,
-    confirmText: '重投'
-  })
-  if (!ok) return
-  // 进入暂存态：重新选择投 1/2 次后提交（带 rerollSource）
-  soulStaging.value = {
-    ...soulStaging.value,
-    [playerId]: { rollChoice: null, dice: [], rerollSource: token.source }
   }
 }
 
@@ -1061,9 +980,7 @@ onMounted(() => {
                     <button class="px-3 py-2 rounded-lg border border-line text-fg-muted text-sm cursor-pointer transition-all duration-fast active:scale-95" @click="clearSoulStaging(pid)">取消</button>
                   </template>
                   <template v-else>
-                    <!-- 重掷必须消耗重投令牌（提交后走「重投」入口，服务端校验名额）；
-                         提交前不允许自由重掷 -->
-                    <button class="px-3 py-2 rounded-lg border border-line text-fg-muted text-sm cursor-pointer transition-all duration-fast active:scale-95" :disabled="soulSubmitting" @click="clearSoulStaging(pid)">撤销</button>
+                    <!-- 掷出即锁定：不提供重掷/撤销；重投通道（令牌）已按规则移除 -->
                     <Button variant="primary" size="sm" class="flex-1" :loading="soulSubmitting" @click="submitSoulRoll(pid)">提交投掷</Button>
                   </template>
                 </div>
@@ -1087,21 +1004,6 @@ onMounted(() => {
             <!-- 天选 -->
             <div v-if="soulActiveRolled && soulActiveCombo.unlockTier === 'chosen'" class="p-3 rounded-lg bg-warning-subtle border border-warning/30">
               <p class="text-sm font-semibold text-warning">天选达成！该组合本轮 7 局每局 {{ isS6pSeason ? '1:0' : '2:0' }} 开局（自动触发，不占选择次数）</p>
-            </div>
-
-            <!-- 重投入口（选奖前可用） -->
-            <div v-if="soulActiveRolled && !(soulActiveCombo.picks || []).length" class="flex flex-col gap-2">
-              <template v-for="pid in soulActivePlayerIds" :key="'reroll-' + pid">
-                <div v-if="getRerollTokens(pid).length" class="flex items-center gap-2 flex-wrap">
-                  <span class="text-xs text-fg-muted">{{ playersStore.getPlayerName(pid) }} 可重投：</span>
-                  <button
-                    v-for="token in getRerollTokens(pid)" :key="token.source"
-                    class="px-3 py-1.5 rounded-lg border border-warning text-warning text-xs font-medium cursor-pointer transition-all duration-fast active:scale-95"
-                    :disabled="soulSubmitting || !!soulStaging[pid]"
-                    @click="startSoulReroll(pid, token)"
-                  >{{ token.name }}重投（剩 {{ token.remaining }} 次）</button>
-                </div>
-              </template>
             </div>
 
             <!-- 奖励选择 -->

@@ -240,12 +240,8 @@ test.describe('S6 combo phase (灵魂契合)', () => {
         const tier = expectedTier(total)
         await expect(resultRow.getByText(TIER_LABELS[tier], { exact: true })).toBeVisible()
 
-        // 重投令牌（选奖前展示）：上篇前二（A、B）各 1 次凯旋；S5 贯穿碎片 p3=4 → C 有 1 次
-        if (combo.label === 'AB') {
-          await expect(page.getByRole('button', { name: /凯旋重投（剩 1 次）/ })).toHaveCount(2)
-        } else {
-          await expect(page.getByRole('button', { name: /贯穿碎片重投（剩 1 次）/ })).toHaveCount(1)
-        }
+        // 重投通道已于 2026-09-29 按规则移除：投掷后无重投/撤销入口
+        await expect(page.getByRole('button', { name: /重投（剩/ })).toHaveCount(0)
 
         if (!tier) {
           // 总点数 2：未解锁，无需选奖即完成
