@@ -495,15 +495,6 @@ function startSoulRoll(playerId, rollChoice) {
   }
 }
 
-function shuffleSoulStaging(playerId) {
-  const staging = soulStaging.value[playerId]
-  if (!staging) return
-  soulStaging.value = {
-    ...soulStaging.value,
-    [playerId]: { ...staging, dice: rollLocalDice(staging.rollChoice) }
-  }
-}
-
 function clearSoulStaging(playerId) {
   const next = { ...soulStaging.value }
   delete next[playerId]
@@ -1070,7 +1061,8 @@ onMounted(() => {
                     <button class="px-3 py-2 rounded-lg border border-line text-fg-muted text-sm cursor-pointer transition-all duration-fast active:scale-95" @click="clearSoulStaging(pid)">取消</button>
                   </template>
                   <template v-else>
-                    <button class="px-3 py-2 rounded-lg border border-line text-fg-secondary text-sm cursor-pointer transition-all duration-fast active:scale-95" :disabled="soulSubmitting" @click="shuffleSoulStaging(pid)">重掷</button>
+                    <!-- 重掷必须消耗重投令牌（提交后走「重投」入口，服务端校验名额）；
+                         提交前不允许自由重掷 -->
                     <button class="px-3 py-2 rounded-lg border border-line text-fg-muted text-sm cursor-pointer transition-all duration-fast active:scale-95" :disabled="soulSubmitting" @click="clearSoulStaging(pid)">撤销</button>
                     <Button variant="primary" size="sm" class="flex-1" :loading="soulSubmitting" @click="submitSoulRoll(pid)">提交投掷</Button>
                   </template>
