@@ -90,6 +90,7 @@ const { validateResistanceGame } = require('./resistance');
 const { prepare } = require('../config/db');
 const { parseJson, stringifyJson } = require('../utils/json');
 const { RULE_ID, SCORING_MODE, MATCH_STATUS } = require('../constants');
+const { deleteGameRuleEvents } = require('../services/ruleEventService');
 const cardFlow = require('./comboCardFlow');
 
 const TOP_ROUND_MAX = 4;
@@ -678,12 +679,30 @@ function canStartGame(ctx) {
   return cardFlow.preGameGateError(getS6Data(ctx), COMBO_LABELS_BY_ROUND[roundNo], match, gameNo);
 }
 
+// 撤回最后一局：清理该局的规则事件，并回收每局归属的道具卡状态
+// （随时卡退还库存 / 存储器记录重置 / carry 撤销），共享 comboCardFlow 实现。
+function onGameReverted(ctx) {
+  if (!ctx.season?.id || !ctx.game?.id || !ctx.match?.id) return;
+  const roundNo = Number(ctx.round?.round_no);
+  const labels = COMBO_LABELS_BY_ROUND[roundNo];
+  if (!labels) return;
+  const data = parseJson(ctx.season.comeback_data, {});
+  const s6 = normalizeS6State(data.s6 || {});
+  cardFlow.revertGameCardState(s6, { match: ctx.match, game: ctx.game, labels });
+  deleteGameRuleEvents(ctx.game.id, RULE_ID.S6);
+  deleteGameRuleEvents(ctx.game.id, RULE_ID.S6);
+  prepare('UPDATE seasons SET comeback_data = ? WHERE id = ?').run(
+    stringifyJson({ ...data, s6 }), ctx.season.id
+  );
+}
+
 module.exports = {
   id: RULE_ID.S6,
   getGameConfig,
   validateGameEnd,
   onGameStarted,
   canStartGame,
+  onGameReverted,
   recordSeasonAction,
   isSoulBondCompleteForRound,
   TREASURY_CARDS: cardFlow.TREASURY_CARDS

@@ -22,6 +22,7 @@ const standardRule = require('./standard');
 const { prepare } = require('../config/db');
 const { parseJson, stringifyJson } = require('../utils/json');
 const { RULE_ID, SCORING_MODE, MATCH_STATUS, WINNER_SIDE } = require('../constants');
+const { deleteGameRuleEvents } = require('../services/ruleEventService');
 const cardFlow = require('./comboCardFlow');
 
 const COMBO_ROUND_MIN = 1;
@@ -557,6 +558,22 @@ function recordRift(ctx, input = {}) {
   return { nextData: { ...data, s6p } };
 }
 
+// 撤回最后一局：清理该局的规则事件，并回收每局归属的道具卡状态
+// （随时卡退还库存 / 存储器记录重置 / carry 撤销），共享 comboCardFlow 实现。
+function onGameReverted(ctx) {
+  if (!ctx.season?.id || !ctx.game?.id || !ctx.match?.id) return;
+  const roundNo = Number(ctx.round?.round_no);
+  const labels = COMBO_LABELS_BY_ROUND[roundNo];
+  if (!labels) return;
+  const data = parseJson(ctx.season.comeback_data, {});
+  const s6p = normalizeS6PState(data.s6p || {});
+  cardFlow.revertGameCardState(s6p, { match: ctx.match, game: ctx.game, labels });
+  deleteGameRuleEvents(ctx.game.id, RULE_ID.S6P);
+  prepare('UPDATE seasons SET comeback_data = ? WHERE id = ?').run(
+    stringifyJson({ ...data, s6p }), ctx.season.id
+  );
+}
+
 // 局前记录硬门控：第 1-3 轮每局开始前需录入选手完成局前暗选（含「不使用」）。
 function canStartGame(ctx) {
   const roundNo = Number(ctx.round?.round_no);
@@ -572,6 +589,7 @@ module.exports = {
   validateGameEnd,
   onGameStarted,
   canStartGame,
+  onGameReverted,
   recordSeasonAction,
   isSoulBondCompleteForRound,
   ensureLuckyNumbers,

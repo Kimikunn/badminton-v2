@@ -411,6 +411,58 @@ function recordStorageRecord(ctx, state, { match, labels, input }) {
   return {};
 }
 
+// ── 局撤回的道具卡回收（共享 s6/s6p；由 onGameReverted 钩子调用）──
+// 撤回最后一局时恢复该局所消耗的卡片状态，使重打/重录的口径一致：
+//   - 随时卡（post_game）局后记录：删除记录并按条退还库存
+//   - 存储器：pre_game 记录重置为未消费；未应用的 carry 删除；已直接写进
+//     进行中下一局的比分按 carry 条目扣回
+//   - pre_game 其他暗选保留（其效果本就按 gameNo 关联，重打原局仍然生效）
+function revertGameCardState(state, { match, game, labels }) {
+  if (!state?.treasury || !match || !game) return;
+  const gameNo = Number(game.game_no);
+  for (const label of labels || []) {
+    const treasury = state.treasury[label];
+    if (!treasury) continue;
+    treasury.activations = Array.isArray(treasury.activations) ? treasury.activations : [];
+    const remaining = [];
+    for (const entry of treasury.activations) {
+      const isThisGame = entry.matchId === match.id && Number(entry.gameNo) === gameNo;
+      if (isThisGame && entry.timing === 'post_game') {
+        // 局后记录随局撤回：退还库存并删除条目
+        if (entry.cardId) {
+          treasury.inventory[entry.cardId] = (Number(treasury.inventory[entry.cardId]) || 0) + 1;
+        }
+        continue;
+      }
+      if (isThisGame && entry.timing === 'pre_game' && entry.cardId === 'storage' && entry.consumed) {
+        // 存储器得分记录随局撤回：允许重新记录
+        entry.consumed = false;
+      }
+      remaining.push(entry);
+    }
+    treasury.activations = remaining;
+  }
+
+  // 存储器 carry 撤销：条目 { side, points, gameNo } 按 gameNo 过滤删除；
+  // 若目标局已进行中（旧数据的直写形态）则从该局比分按方扣回。
+  const nextGame = getMatchGame(match.id, gameNo + 1);
+  const carries = state.storageCarry?.[match.id];
+  const existing = Array.isArray(carries) ? carries : (carries ? [carries] : []);
+  const reverted = existing.filter(item => Number(item.gameNo) === gameNo);
+  if (reverted.length) {
+    state.storageCarry[match.id] = existing.filter(item => Number(item.gameNo) !== gameNo);
+    if (nextGame?.status === MATCH_STATUS.IN_PROGRESS) {
+      for (const item of reverted) {
+        const points = Number(item.points || 0);
+        if (points > 0) {
+          const column = item.side === WINNER_SIDE.A ? 'score_a' : 'score_b';
+          prepare(`UPDATE games SET ${column} = ${column} - ? WHERE id = ?`).run(points, nextGame.id);
+        }
+      }
+    }
+  }
+}
+
 // 时空裂隙执行回溯。复用 gameService.revertGame；库存已在暗选时扣减，
 // 此处仅将暗选标记为已执行。延迟 require 避免与 gameService 循环引用。
 function recordRift(ctx, state, { match, labels, input }) {
@@ -480,5 +532,6 @@ module.exports = {
   validateBlastGame,
   recordStorageRecord,
   recordRift,
-  validateYuebaiMargin
+  validateYuebaiMargin,
+  revertGameCardState
 };

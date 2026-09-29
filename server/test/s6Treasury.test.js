@@ -239,6 +239,43 @@ test('s6_card_use records anytime cards and exhausts inventory', async () => {
   assert.match(exhausted.body.error.message, /库存不足/);
 });
 
+test('game revert refunds anytime-card stock and resets storage record/carry', async () => {
+  const matchId = await setupBottomMatch('TR-REV', {
+    abPicks: [['p1', 'storage'], ['p2', 'pause']],
+    cdPicks: [['p3', 'pause'], ['p4', 'blade']]
+  });
+  await cardActivate('S-TR-REV', matchId, 1, 'p1', 'storage').expect(200);
+  await resumeGame('S-TR-REV', matchId, 1);
+
+  const games = getDbGames(matchId);
+  await finishGame(games[0].id, 21, 10);
+
+  // 局后记录：随时卡（扣库存）+ 存储器得分（carry 待下一局开局应用）
+  await postAction('S-TR-REV', 's6_card_use', { matchId, side: 'a', cardId: 'pause', gameNo: 1 }).expect(200);
+  await postAction('S-TR-REV', 's6_storage_record', { matchId, gameNo: 1, side: 'a', points: 3 }).expect(200);
+  let s6 = getS6Data('S-TR-REV');
+  assert.equal(s6.treasury.AB.inventory.pause, 2);
+  const offlineStorage = s6.treasury.AB.activations.find(e => e.cardId === 'storage' && e.timing === 'pre_game');
+  assert.equal(offlineStorage.consumed, true);
+  assert.deepEqual(s6.storageCarry[matchId], [{ side: 'a', points: 3, gameNo: 1 }]);
+
+  // 撤回 G1：随时卡退还库存并删除记录，存储器记录重置（可重录），carry 撤销
+  await api.post(`/api/games/${games[0].id}/revert`).expect(200);
+  s6 = getS6Data('S-TR-REV');
+  assert.equal(s6.treasury.AB.inventory.pause, 3);
+  const reStorage = s6.treasury.AB.activations.find(e => e.cardId === 'storage' && e.timing === 'pre_game');
+  assert.equal(reStorage.consumed, false);
+  assert.ok(s6.treasury.AB.activations.filter(e => e.matchId === matchId && e.gameNo === 1).every(e => e.timing !== 'post_game'));
+  assert.deepEqual(s6.storageCarry?.[matchId] || [], []);
+
+  // 重打 G1 后可重新记录两处
+  await finishGame(games[0].id, 21, 10);
+  await postAction('S-TR-REV', 's6_card_use', { matchId, side: 'a', cardId: 'pause', gameNo: 1 }).expect(200);
+  await postAction('S-TR-REV', 's6_storage_record', { matchId, gameNo: 1, side: 'a', points: 3 }).expect(200);
+  s6 = getS6Data('S-TR-REV');
+  assert.equal(s6.treasury.AB.inventory.pause, 2);
+});
+
 test('revealed blast switches the game to first-to-11 with cap 12', async () => {
   const matchId = await setupBottomMatch('TR-BLAST', {
     abPicks: [['p1', 'blast'], ['p2', 'pause']],
