@@ -1,7 +1,7 @@
 <script setup>
 /**
  * S7Rankings — S7-王权之续 积分榜
- * 语义 = S6 下半赛季独立成季：3 轮固定轮换组合赛（每轮 1 场 2v2、PA7）。
+ * 语义 = S6 下半赛季独立成季：双循环 6 轮固定轮换组合赛（每轮 1 场 2v2、PA7；4-6 重复 1-3）。
  * 面板链：总排名（个人 胜/负/大分）→ 轮次进度 → ① 灵魂契合（掷骰/总点数/解锁阶层）
  *   → ② 王之宝库（库存剩余 + 卡片激活状态）→ ③ 组合星尘榜（VS 对阵 + 星尘排名
  *   + 最强组合）。无上篇/王选/王权（getRule('s6p') 相应方法恒空）。
@@ -39,14 +39,14 @@ const treasury = computed(() => s6pData.value.treasury || {})
 
 const comboRounds = computed(() =>
   [...props.rounds]
-    .filter(r => Number(r.roundNo) >= 1 && Number(r.roundNo) <= 3)
+    .filter(r => Number(r.roundNo) >= 1 && Number(r.roundNo) <= 6)
     .sort((a, b) => Number(a.roundNo) - Number(b.roundNo))
 )
 const started = computed(() => comboRounds.value.length > 0)
 
 // 灵魂契合面板：按轮次 × 组合展开已持久化的判定
 const soulRows = computed(() =>
-  [1, 2, 3].flatMap(roundNo => {
+  [1, 2, 3, 4, 5, 6].flatMap(roundNo => {
     const bond = soulBond.value[String(roundNo)]
     if (!bond) return []
     return Object.entries(bond).map(([label, combo]) => ({ roundNo, label, combo }))
@@ -95,8 +95,8 @@ const stageItems = computed(() => [
   }
 ])
 
-// 最强组合：三轮组合赛全部完成后取星尘第一（星尘同分按轮次内净胜分裁决）
-const totalRounds = computed(() => Number(props.season?.totalRounds) || 3)
+// 最强组合：六轮组合赛全部完成后取星尘第一（星尘同分按轮次内净胜分裁决）
+const totalRounds = computed(() => Number(props.season?.totalRounds) || 6)
 const comboChampion = computed(() => {
   if (comboDone.value < totalRounds.value || !props.comboRankings.length) return null
   return props.comboRankings[0]
@@ -326,7 +326,7 @@ const sheetRules = computed(() => {
       </div>
     </Card>
 
-    <!-- 最强组合（3 轮组合赛完成后，星尘第一） -->
+    <!-- 最强组合（6 轮组合赛完成后，星尘第一） -->
     <div
       v-if="comboChampion"
       class="rounded-lg border p-5 bg-[linear-gradient(135deg,var(--color-badge-gold-bg),var(--color-surface))] border-badge-gold/40"

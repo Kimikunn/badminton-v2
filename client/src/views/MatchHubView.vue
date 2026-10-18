@@ -97,13 +97,21 @@ const beforeRoundRequirement = computed(() =>
     ? currentRule.value.getBeforeRoundRequirement(nextRoundNo.value)
     : beforeRoundLifecycle.value
 )
-// S6/S6+ 同族：组合赛机制相同（S6+=延长赛 1-3 轮，数据键 s6p）
+// S6/S6+ 同族：组合赛机制相同（S6+=延长赛双循环 1-6 轮，数据键 s6p）
 const isS6pSeason = computed(() => currentSeason.value?.ruleId === 's6p')
 const comboDataKey = computed(() => (isS6pSeason.value ? 's6p' : 's6'))
 const isFixedComboRound = computed(() => {
   const ruleId = currentSeason.value?.ruleId
-  if (ruleId === 's6p') return nextRoundNo.value >= 1 && nextRoundNo.value <= 2
-  return (ruleId === 's4' || ruleId === 's6') && nextRoundNo.value >= 5
+  // S6/S6+ 固定组合轮的轮次边界以规则模块为准（S6+：1-6 轮；S6：5-7 轮），
+  // 避免此处硬编码与规则漂移（曾误写 S6+ 为 1-2 轮，导致第 3 轮被判为可随机对阵、
+  // 客户端提交 pairings 后被服务端以「S6+组合赛轮次不支持随机对阵」拒绝 → 第三轮无法创建）。
+  if (ruleId === 's6p' || ruleId === 's6') {
+    return typeof currentRule.value?.isComboRound === 'function'
+      ? currentRule.value.isComboRound(nextRoundNo.value)
+      : false
+  }
+  // S4 无 isComboRound hook：下篇 5-7 轮为固定组合轮
+  return ruleId === 's4' && nextRoundNo.value >= 5
 })
 const supportsRandomPairings = computed(() => !isFixedComboRound.value)
 const pairingPreviewNote = computed(() => supportsRandomPairings.value
@@ -542,15 +550,17 @@ function generatePreview() {
       ? Object.values(seedMap || {})
       : [...parts].sort()
     if (ordered.length < 4) return []
-    const combos = {
+    // 组合轮换循环位：1=AB/CD、2=AC/BD、3=AD/BC
+    const cycle = {
       1: { teamA: [ordered[0], ordered[1]], teamB: [ordered[2], ordered[3]] },
       2: { teamA: [ordered[0], ordered[2]], teamB: [ordered[1], ordered[3]] },
-      3: { teamA: [ordered[0], ordered[3]], teamB: [ordered[1], ordered[2]] },
-      5: { teamA: [ordered[0], ordered[1]], teamB: [ordered[2], ordered[3]] },
-      6: { teamA: [ordered[0], ordered[2]], teamB: [ordered[1], ordered[3]] },
-      7: { teamA: [ordered[0], ordered[3]], teamB: [ordered[1], ordered[2]] }
+      3: { teamA: [ordered[0], ordered[3]], teamB: [ordered[1], ordered[2]] }
     }
-    return [combos[nextRoundNo.value] || combos[isS6pSeason.value ? 1 : 5]]
+    // S6+ 双循环 6 轮：轮次 4/5/6 分别重复 1/2/3（与服务端 getS6pComboPairingFromOrder 一致）；
+    // S4/S6 下篇 5-7 轮 = 循环位 1/2/3
+    const roundNo = nextRoundNo.value
+    if (isS6pSeason.value) return [cycle[((roundNo - 1) % 3) + 1]]
+    return [cycle[roundNo - 4] || cycle[1]]
   }
 
   const [a,b,c,d] = [...parts].sort(() => Math.random() - 0.5)

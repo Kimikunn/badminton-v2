@@ -1,7 +1,8 @@
 /**
  * s6p.js — S6+ 延长赛（2026-09-28 由 S7-王权之续更名并按更新说明调整规则）
  *
- * 语义 = S6（王权之争）的赛季延长赛：2 轮星尘赛（每轮 1 场 2v2、PA7），
+ * 语义 = S6（王权之争）的赛季延长赛：双循环 6 轮星尘赛（每轮 1 场 2v2、PA7；
+ * 第 4-6 轮重复第 1-3 轮的对阵：4=AB/CD、5=AC/BD、6=AD/BC），
  * 种子 A-D 由来源 S6 赛季的最终排名映射（缺省退化为选手 ID 排序）。
  * 灵魂契合与暗选机制不变；新增：
  * - 奇招：每轮灵魂契合前一个 1-6 幸运数（建季时生成并持久化）；灵魂投掷
@@ -12,7 +13,7 @@
  * - 王之宝库第二阶调整：移除高级暂停卡，新增 月白（对方本局获胜需净胜 2 分）
  *   与 绯红（15 分后启用方得分每球 2 分）
  * - 天选开局分：每局 1:0（原 S6 为 2:0）
- * - 冠军：三轮总星尘最高者夺冠；同星尘看最后一把净胜分，再同看倒数第二把
+ * - 冠军：六轮总星尘最高者夺冠；同星尘看最后一把净胜分，再同看倒数第二把
  *
  * 数据键 comeback_data.s6p（动作 s6p_soul_roll / s6p_soul_pick / s6p_reforge /
  * s6p_card_activate / s6p_card_use / s6p_storage_record / s6p_rift /
@@ -26,11 +27,15 @@ const { deleteGameRuleEvents } = require('../services/ruleEventService');
 const cardFlow = require('./comboCardFlow');
 
 const COMBO_ROUND_MIN = 1;
-const COMBO_ROUND_MAX = 3;
+// 双循环 6 轮：4-6 重复 1-3 的对阵（组合标签共用，灵魂契合/宝库按轮次分别持久化）
+const COMBO_ROUND_MAX = 6;
 const COMBO_LABELS_BY_ROUND = {
   1: ['AB', 'CD'],
   2: ['AC', 'BD'],
-  3: ['AD', 'BC']
+  3: ['AD', 'BC'],
+  4: ['AB', 'CD'],
+  5: ['AC', 'BD'],
+  6: ['AD', 'BC']
 };
 // 重置骰子（reset_dice）：来源 S6 前两名组合的选手，整季各一次重掷本人灵魂投掷
 // 重置骰子：来源 S6 前两名组合的选手可整季重掷一次本人灵魂投掷
@@ -272,7 +277,7 @@ function getUsedRerolls(s6p, playerId, source) {
 
 function validateComboRound(ctx, roundNo) {
   if (!Number.isInteger(roundNo) || roundNo < COMBO_ROUND_MIN || roundNo > COMBO_ROUND_MAX) {
-    return '灵魂契合仅适用于第 1-3 轮';
+    return '灵魂契合仅适用于第 1-6 轮';
   }
   if (findRound(ctx.season?.id, roundNo)) return '该轮已创建，无法再进行灵魂契合';
   return null;
@@ -497,7 +502,7 @@ function resolveTreasuryMatchContext(ctx, matchId) {
   const round = match.round_id ? prepare('SELECT * FROM rounds WHERE id = ?').get(match.round_id) : null;
   const roundNo = Number(round?.round_no);
   if (!Number.isInteger(roundNo) || roundNo < COMBO_ROUND_MIN || roundNo > COMBO_ROUND_MAX) {
-    return { error: '王之宝库卡片仅适用于第 1-3 轮' };
+    return { error: '王之宝库卡片仅适用于第 1-6 轮' };
   }
   return { match, roundNo };
 }
@@ -574,7 +579,7 @@ function onGameReverted(ctx) {
   );
 }
 
-// 局前记录硬门控：第 1-3 轮每局开始前需录入选手完成局前暗选（含「不使用」）。
+// 局前记录硬门控：第 1-6 轮每局开始前需录入选手完成局前暗选（含「不使用」）。
 function canStartGame(ctx) {
   const roundNo = Number(ctx.round?.round_no);
   if (!Number.isInteger(roundNo) || roundNo < COMBO_ROUND_MIN || roundNo > COMBO_ROUND_MAX) return null;

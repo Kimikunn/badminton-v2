@@ -53,7 +53,8 @@ const apiLimiter = rateLimit({
   max: 300,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => req.method === 'GET',
+  // 测试进程不做写限流：整合测试单文件请求数会超过 300（NODE_ENV=test 由测试 harness 设置）
+  skip: (req) => req.method === 'GET' || process.env.NODE_ENV === 'test',
   message: {
     success: false,
     error: { code: 'RATE_LIMITED', message: '请求过于频繁，请稍后再试' }

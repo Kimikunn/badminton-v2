@@ -134,17 +134,26 @@ function getS4ComboPairing(roundNo, participants) {
   return getComboPairingFromOrder(roundNo, [...participants].sort());
 }
 
+// S4/S6 下篇固定轮换（5-7 轮）：5=AB/CD、6=AC/BD、7=AD/BC。
 function getComboPairingFromOrder(roundNo, ordered) {
-  // S6+（1-3 轮）与 S6 下篇（5-7 轮）同一条固定轮换
   const combos = {
-    1: { teamA: [ordered[0], ordered[1]], teamB: [ordered[2], ordered[3]] },
-    2: { teamA: [ordered[0], ordered[2]], teamB: [ordered[1], ordered[3]] },
-    3: { teamA: [ordered[0], ordered[3]], teamB: [ordered[1], ordered[2]] },
     5: { teamA: [ordered[0], ordered[1]], teamB: [ordered[2], ordered[3]] },
     6: { teamA: [ordered[0], ordered[2]], teamB: [ordered[1], ordered[3]] },
     7: { teamA: [ordered[0], ordered[3]], teamB: [ordered[1], ordered[2]] }
   };
-  return combos[roundNo] || combos[1];
+  return combos[roundNo] || combos[5];
+}
+
+// S6+ 延长赛固定轮换（双循环 6 轮）：循环位 ((n-1) % 3)+1 → 1=AB/CD、2=AC/BD、3=AD/BC；
+// 故 4/5/6 分别重复 1/2/3。与 rules/s6p.js 的 COMBO_LABELS_BY_ROUND 一一对应。
+function getS6pComboPairingFromOrder(roundNo, ordered) {
+  const cycle = ((Number(roundNo) - 1) % 3 + 3) % 3 + 1;
+  const combos = {
+    1: { teamA: [ordered[0], ordered[1]], teamB: [ordered[2], ordered[3]] },
+    2: { teamA: [ordered[0], ordered[2]], teamB: [ordered[1], ordered[3]] },
+    3: { teamA: [ordered[0], ordered[3]], teamB: [ordered[1], ordered[2]] }
+  };
+  return combos[cycle] || combos[1];
 }
 
 // 组合种子顺序：S6 优先读 comeback_data.s6.seeds（上篇前 4，
@@ -166,12 +175,14 @@ function getComboSeedOrder(season, participants) {
 }
 
 function getComboPairing(season, roundNo, participants) {
-  return getComboPairingFromOrder(roundNo, getComboSeedOrder(season, participants));
+  const ordered = getComboSeedOrder(season, participants);
+  if (season.rule_id === RULE_ID.S6P) return getS6pComboPairingFromOrder(roundNo, ordered);
+  return getComboPairingFromOrder(roundNo, ordered);
 }
 
 function isComboRound(season, roundNo) {
   if (season.rule_id === RULE_ID.S6P) {
-    return Number(roundNo) >= 1 && Number(roundNo) <= 3;
+    return Number(roundNo) >= 1 && Number(roundNo) <= 6;
   }
   return (season.rule_id === RULE_ID.S4 || season.rule_id === RULE_ID.S6) && Number(roundNo) >= 5;
 }

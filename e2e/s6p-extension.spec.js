@@ -3,11 +3,11 @@ import { test, expect } from '@playwright/test'
 /**
  * S6+ 延长赛（S6 赛季延长赛，由 S7-王权之续更名）端到端验证
  * 覆盖：
- * - API 建季（ruleId s6p / totalRounds 2 / 主题色 sunset / 幸运数建季即定）
+ * - API 建季（ruleId s6p / totalRounds 6 / 主题色 sunset / 幸运数建季即定）
  * - UI 灵魂契合 Sheet：本轮奇招数展示 + 双组合掷骰（投 1/2 次、第二次为准）+
  *   按阶选奖 + 创建门控（两组合完成前禁用）+ 第 1 轮固定对阵 AB vs CD（PA7）
- * - API 负面校验：王选动作不支持 422、第 3 轮越界 422、建轮后 soul_roll 422
- * - 2 轮全打满后积分榜呈现：灵魂契合 / 王之宝库 / 组合星尘 / 冠军
+ * - API 负面校验：王选动作不支持 422、第 7 轮越界 422、建轮后 soul_roll 422
+ * - 6 轮全打满后积分榜呈现：灵魂契合 / 王之宝库 / 组合星尘 / 冠军
  * Run: PLAYWRIGHT_BASE_URL=http://localhost:8090 PLAYWRIGHT_EXPECT_SEASON_CREATE=1 npx playwright test e2e/s6p-extension.spec.js --project=light
  */
 
@@ -82,7 +82,7 @@ async function finishMatch(request, baseURL, matchId, gameWinners, seasonId = nu
 const CARD_PICK_ORDER = ['暂停卡', '名刀', '阻碍', '进击', '存储器', '月白', '绯红', '时空裂隙', '星尘卡', '爆破']
 
 test.describe('S6+ extension (延长赛)', () => {
-  test('soul bond UI flow with lucky number, 3 combo rounds and stardust', async ({ page, request, baseURL }) => {
+  test('soul bond UI flow with lucky number, 6 combo rounds (double round-robin) and stardust', async ({ page, request, baseURL }) => {
     test.skip(!process.env.PLAYWRIGHT_EXPECT_SEASON_CREATE, 'season creation is not expected in this environment')
     test.setTimeout(180000)
 
@@ -110,7 +110,7 @@ test.describe('S6+ extension (延长赛)', () => {
         data: {
           name: 'S6+ 延长赛',
           ruleId: 's6p',
-          totalRounds: 3,
+          totalRounds: 6,
           participants: players.map(p => p.id)
         }
       })
@@ -240,9 +240,9 @@ test.describe('S6+ extension (延长赛)', () => {
       const kingAction = await postAction(request, baseURL, seasonId, 's6p_king_roll', { order: [] }, false)
       expect(kingAction.status()).toBe(422)
 
-      // 第 4 轮超出三轮边界
+      // 第 7 轮超出六轮边界
       const outOfRange = await postAction(request, baseURL, seasonId, 's6p_soul_roll', {
-        roundNo: 4, comboLabel: 'AB', playerId: a, rollChoice: 1, dice: [3]
+        roundNo: 7, comboLabel: 'AB', playerId: a, rollChoice: 1, dice: [3]
       }, false)
       expect(outOfRange.status()).toBe(422)
 
@@ -253,7 +253,7 @@ test.describe('S6+ extension (延长赛)', () => {
       expect(lateRoll.status()).toBe(422)
     })
 
-    await test.step('finish round 1 and fast-forward rounds 2-3 via API', async () => {
+    await test.step('finish round 1, round 2 via API, then create round 3 through the UI (fixed AD vs BC)', async () => {
       const roundsRes = await request.get(`${baseURL}/api/rounds?seasonId=${seasonId}`)
       const round1 = ((await roundsRes.json()).data || []).find(r => r.roundNo === 1)
       const matchesRes = await request.get(`${baseURL}/api/matches?seasonId=${seasonId}`)
@@ -271,8 +271,9 @@ test.describe('S6+ extension (延长赛)', () => {
         const candidates = [1, 2, 3, 4, 5, 6].filter(d => d !== unlucky)
         return [candidates[offset % candidates.length]]
       }
-      for (const roundNo of [2, 3]) {
-        const labels = roundNo === 2 ? ['AC', 'BD'] : ['AD', 'BC']
+      const completeSoulBond = async (roundNo) => {
+        const cycle = ((roundNo - 1) % 3) + 1
+        const labels = cycle === 1 ? ['AB', 'CD'] : cycle === 2 ? ['AC', 'BD'] : ['AD', 'BC']
         for (const label of labels) {
           const ids = label.split('')
           const members = ids.map(key => ({ A: p1, B: p2, C: p3, D: p4 })[key])
@@ -281,20 +282,63 @@ test.describe('S6+ extension (延长赛)', () => {
           await postAction(request, baseURL, seasonId, 's6p_soul_pick', { roundNo, comboLabel: label, playerId: members[0], cardId: 'pause' })
           await postAction(request, baseURL, seasonId, 's6p_soul_pick', { roundNo, comboLabel: label, playerId: members[1], cardId: 'blade' })
         }
+      }
+
+      // 第 2 轮：API 完成灵魂契合 → API 建轮 → 打满
+      await completeSoulBond(2)
+      const round2Res = await request.post(`${baseURL}/api/rounds`, { headers: adminHeaders(), data: { seasonId, roundNo: 2 } })
+      expect(round2Res.status()).toBe(201)
+      const round2Matches = (await round2Res.json()).data?.matches || []
+      expect(round2Matches).toHaveLength(1)
+      await finishMatch(request, baseURL, round2Matches[0].id, ['a', 'a', 'a', 'b', 'b', 'a', 'b'], seasonId, players.map(p => p.id))
+
+      // 第 3 轮：API 完成灵魂契合后走 UI 建轮。
+      // 回归防线（2026-10-09 事故）：S6+ 第 3 轮必须是固定组合轮（AD vs BC）——
+      // 客户端曾把 1-2 轮之外判为随机对阵，提交 pairings 后被服务端以
+      // 「S6+组合赛轮次不支持随机对阵」拒绝，第三轮永远无法创建。
+      await completeSoulBond(3)
+      await page.goto(`/matches?season=${seasonId}`, { waitUntil: 'networkidle' })
+      await page.getByRole('button', { name: '+ 创建第 3 轮' }).click()
+      await expect(page.getByRole('heading', { name: '第 3 轮 · 灵魂契合' })).toBeVisible()
+      await page.getByRole('button', { name: '创建第 3 轮', exact: true }).click()
+      await expect(page.getByRole('heading', { name: '创建下一轮' })).toBeVisible()
+      await expect(page.getByRole('button', { name: /重新随机/ })).toHaveCount(0)
+
+      const round3ResponsePromise = page.waitForResponse(response =>
+        response.url().includes('/api/rounds') && response.request().method() === 'POST')
+      await page.getByRole('button', { name: '确认', exact: true }).click()
+      const round3Response = await round3ResponsePromise
+      expect(round3Response.status()).toBe(201)
+      const round3Matches = (await round3Response.json()).data?.matches || []
+      expect(round3Matches).toHaveLength(1)
+      // 种子 = ID 排序（A=p1…）：R3 = AD vs BC = [p1,p4] vs [p2,p3]
+      expect(round3Matches[0].teamA).toEqual([p1, p4])
+      expect(round3Matches[0].teamB).toEqual([p2, p3])
+      await finishMatch(request, baseURL, round3Matches[0].id, ['a', 'a', 'a', 'b', 'b', 'a', 'b'], seasonId, players.map(p => p.id))
+
+      // 双循环后半程：第 4-6 轮重复第 1-3 轮（4=AB/CD、5=AC/BD、6=AD/BC），API 建轮 + 打满
+      const expectedPairings = {
+        4: [[p1, p2], [p3, p4]],
+        5: [[p1, p3], [p2, p4]],
+        6: [[p1, p4], [p2, p3]]
+      }
+      for (const roundNo of [4, 5, 6]) {
+        await completeSoulBond(roundNo)
         const roundRes = await request.post(`${baseURL}/api/rounds`, { headers: adminHeaders(), data: { seasonId, roundNo } })
         expect(roundRes.status()).toBe(201)
-        const roundPayload = await roundRes.json()
-        const matches = roundPayload.data?.matches || []
+        const matches = (await roundRes.json()).data?.matches || []
         expect(matches).toHaveLength(1)
+        expect(matches[0].teamA).toEqual(expectedPairings[roundNo][0])
+        expect(matches[0].teamB).toEqual(expectedPairings[roundNo][1])
         await finishMatch(request, baseURL, matches[0].id, ['a', 'a', 'a', 'b', 'b', 'a', 'b'], seasonId, players.map(p => p.id))
       }
 
       const roundsAfter = await request.get(`${baseURL}/api/rounds?seasonId=${seasonId}`)
       const rounds = (await roundsAfter.json()).data || []
-      expect(rounds).toHaveLength(3)
+      expect(rounds).toHaveLength(6)
       expect(rounds.every(r => r.status === 'completed')).toBeTruthy()
 
-      // 赛季完成：三轮总星尘冠军落盘
+      // 赛季完成：六轮总星尘冠军落盘
       const seasonRes = await request.get(`${baseURL}/api/seasons/${seasonId}`)
       const season = (await seasonRes.json()).data || {}
       expect(season.status).toBe('completed')

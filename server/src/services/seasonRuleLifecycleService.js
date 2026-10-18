@@ -70,10 +70,10 @@ function getS6SoulBond(season, roundNo) {
   return data.s6?.soulBond?.[String(roundNo)] || null;
 }
 
-// S6+ 延长赛：1-3 轮即组合赛轮（无上篇）
+// S6+ 延长赛：1-6 轮即组合赛轮（无上篇；双循环，4-6 重复 1-3）
 function isS6pComboRound(season, roundNo) {
   return season.rule_id === RULE_ID.S6P
-    && Number(roundNo) >= 1 && Number(roundNo) <= 3;
+    && Number(roundNo) >= 1 && Number(roundNo) <= 6;
 }
 
 function validateBeforeRoundSetup(season, setup, roundNo) {

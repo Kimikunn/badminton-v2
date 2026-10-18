@@ -1,10 +1,11 @@
 /**
  * s6p.js — S6+ 延长赛（2026-09-28 由 S7-王权之续更名；显示层规则模块）
  *
- * 语义 = S6（王权之争）的赛季延长赛：3 轮固定轮换组合赛（与 S6 下篇 5-7 轮同轮换）（种子 A-D 由来源 S6
+ * 语义 = S6（王权之争）的赛季延长赛：双循环 6 轮固定轮换组合赛（第 4-6 轮重复
+ * 第 1-3 轮对阵：4=AB/CD、5=AC/BD、6=AD/BC）（种子 A-D 由来源 S6
  * 最终排名映射，缺省退化为选手 ID 排序），灵魂契合 + 王之宝库 + 组合星尘。
  * 新增机制见服务端 s6p.js 头注释（奇招幸运数 / 重置骰子 / 月白·绯红宝库卡 /
- * 天选每局 1:0 / 三轮总星尘冠军与净胜分裁决）。
+ * 天选每局 1:0 / 六轮总星尘冠军与净胜分裁决）。
  * 数据键 comebackData.s6p、动作前缀 s6p_*；共享常量与 s6 同源，随本模块再导出。
  */
 import { STATUS } from '@/constants'
@@ -17,22 +18,33 @@ import {
 } from './comboStardust'
 
 const COMBO_ROUND_MIN = 1
-const COMBO_ROUND_MAX = 3
+// 双循环 6 轮：4-6 重复 1-3 的对阵
+const COMBO_ROUND_MAX = 6
 
-// 下篇组合固定对阵（与 S4 同一轮换；label 为视角方，opponentLabel 为对手）
+// 组合固定对阵（双循环；label 为视角方，opponentLabel 为对手）
+// 循环位 1=AB/CD、2=AC/BD、3=AD/BC；轮次 4/5/6 分别重复 1/2/3。
 const COMBO_CONFIGS = [
   { roundNo: 1, label: 'AB', opponentLabel: 'CD', seedKeys: ['A', 'B'], opponentSeedKeys: ['C', 'D'], perspective: 'a' },
   { roundNo: 2, label: 'AC', opponentLabel: 'BD', seedKeys: ['A', 'C'], opponentSeedKeys: ['B', 'D'], perspective: 'a' },
   { roundNo: 3, label: 'AD', opponentLabel: 'BC', seedKeys: ['A', 'D'], opponentSeedKeys: ['B', 'C'], perspective: 'a' },
+  { roundNo: 4, label: 'AB', opponentLabel: 'CD', seedKeys: ['A', 'B'], opponentSeedKeys: ['C', 'D'], perspective: 'a' },
+  { roundNo: 5, label: 'AC', opponentLabel: 'BD', seedKeys: ['A', 'C'], opponentSeedKeys: ['B', 'D'], perspective: 'a' },
+  { roundNo: 6, label: 'AD', opponentLabel: 'BC', seedKeys: ['A', 'D'], opponentSeedKeys: ['B', 'C'], perspective: 'a' },
   { roundNo: 1, label: 'CD', opponentLabel: 'AB', seedKeys: ['C', 'D'], opponentSeedKeys: ['A', 'B'], perspective: 'b' },
   { roundNo: 2, label: 'BD', opponentLabel: 'AC', seedKeys: ['B', 'D'], opponentSeedKeys: ['A', 'C'], perspective: 'b' },
-  { roundNo: 3, label: 'BC', opponentLabel: 'AD', seedKeys: ['B', 'C'], opponentSeedKeys: ['A', 'D'], perspective: 'b' }
+  { roundNo: 3, label: 'BC', opponentLabel: 'AD', seedKeys: ['B', 'C'], opponentSeedKeys: ['A', 'D'], perspective: 'b' },
+  { roundNo: 4, label: 'CD', opponentLabel: 'AB', seedKeys: ['C', 'D'], opponentSeedKeys: ['A', 'B'], perspective: 'b' },
+  { roundNo: 5, label: 'BD', opponentLabel: 'AC', seedKeys: ['B', 'D'], opponentSeedKeys: ['A', 'C'], perspective: 'b' },
+  { roundNo: 6, label: 'BC', opponentLabel: 'AD', seedKeys: ['B', 'C'], opponentSeedKeys: ['A', 'D'], perspective: 'b' }
 ]
 
 const COMBO_LABELS_BY_ROUND = {
   1: ['AB', 'CD'],
   2: ['AC', 'BD'],
-  3: ['AD', 'BC']
+  3: ['AD', 'BC'],
+  4: ['AB', 'CD'],
+  5: ['AC', 'BD'],
+  6: ['AD', 'BC']
 }
 
 
@@ -54,13 +66,13 @@ export const SOUL_RULES = [
 
 // 下篇组合星尘计分规则文案（规则 Sheet 展示用，口径同 ./comboStardust）
 export const COMBO_SCORING_RULES = [
-  { id: 'format', title: '赛制', text: 'S6+ 延长赛共 2 轮固定组合赛：AB vs CD、AC vs BD（对阵由来源 S6 最终排名定种子），每轮打满 7 局。' },
+  { id: 'format', title: '赛制', text: 'S6+ 延长赛共 6 轮固定组合赛（双循环）：AB vs CD、AC vs BD、AD vs BC，第 4-6 轮重复第 1-3 轮对阵（对阵由来源 S6 最终排名定种子），每轮打满 7 局。' },
   { id: 'base', title: '小分星尘', text: '每个小分（每局获胜）得 2 星尘。' },
   { id: 'streak', title: '连胜奖励', text: '连胜 2 局 +1、连胜 3 局 +1、连胜 4 局 +2（随连胜累积，7 连胜累计 +8）。' },
   { id: 'breaker', title: '终结奖励', text: '终结对方 2 连胜及以上 +3 星尘。' },
   { id: 'cards', title: '宝库结算卡', text: '阻碍/进击/星尘卡的结算效果自动并入星尘：进击使本局获胜额外获得一次连胜计数；阻碍使对方本局获胜无法获得终结分；星尘卡获胜 +2（净胜 ≥7 再 +1）、失败阻挡对方一次连胜计数。同局冲突时高阶奖励优先生效（星尘卡/阻碍先于进击）。' },
-  { id: 'tie', title: '同分裁决', text: '三轮总星尘相同者，先比最后一把净胜分，再比倒数第二把净胜分，分差大者胜出。' },
-  { id: 'champion', title: '冠军', text: '三轮结束后总星尘最高的选手为 S6+ 冠军（同星尘按最后一把、再倒数第二把的净胜分裁决）。' }
+  { id: 'tie', title: '同分裁决', text: '六轮总星尘相同者，先比最后一把净胜分，再比倒数第二把净胜分，分差大者胜出。' },
+  { id: 'champion', title: '冠军', text: '六轮结束后总星尘最高的选手为 S6+ 冠军（同星尘按最后一把、再倒数第二把的净胜分裁决）。' }
 ]
 
 // S6+ 无上篇：恒 false
@@ -331,7 +343,7 @@ function applyTreasurySettlement(match, getGamesByMatch, perspective, treasuryBy
 export default {
   id: 's6p',
   name: 'S6+ 延长赛规则',
-  description: 'S6 延长赛：2 轮固定组合赛、灵魂契合（含奇招/重置骰子）与王之宝库',
+  description: 'S6 延长赛：双循环 6 轮固定组合赛、灵魂契合（含奇招/重置骰子）与王之宝库',
   lifecycle: {
     beforeRound: {
       type: 'soul_bond',

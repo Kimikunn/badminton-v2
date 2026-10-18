@@ -22,13 +22,13 @@ test.after(() => {
 });
 
 // 幸运数固定为 {1:4, 2:5}（测试确定化；真实建季由 seasonService 随机生成）
-const S6P_LUCKY = { 1: 4, 2: 5, 3: 6 };
+const S6P_LUCKY = { 1: 4, 2: 5, 3: 6, 4: 4, 5: 5, 6: 6 };
 
 function insertS6pSeason(id, { resetDice = [] } = {}) {
   insertSeason({
     id,
     ruleId: 's6p',
-    totalRounds: 3,
+    totalRounds: 6,
     comebackData: { s6p: { lucky: { ...S6P_LUCKY }, resetDice } }
   });
 }
@@ -72,8 +72,31 @@ async function playOutComboMatch(seasonId, matchId, players4, gameWinners) {
   }
 }
 
-// S6+ 三轮全流程：种子=ID 排序（p1-p4 → A-D），R1=AB/CD、R2=AC/BD、R3=AD/BC
-test('s6p soul bond rounds 1-3, round creation, pairing and completion', async () => {
+// 双循环重复轮（4-6）：完成指定轮次的灵魂契合（每人一选，避开本轮幸运数）→ 建轮 →
+// 断言固定对阵。返回 matchId。
+async function buildRepeatComboRound(seasonId, roundNo, combos, expected) {
+  const lucky = getS6pData(seasonId).lucky[String(roundNo)];
+  const pick = (exclude) => [1, 2, 3, 4, 5, 6].find(v => v !== lucky && !exclude.includes(v));
+  for (const combo of combos) {
+    const d1 = pick([]);
+    const d2 = pick([d1]);
+    await soulRoll(seasonId, roundNo, combo.label, combo.p1, [d1]).expect(200);
+    await soulRoll(seasonId, roundNo, combo.label, combo.p2, [d2]).expect(200);
+    await soulPick(seasonId, roundNo, combo.label, combo.p1, 'pause').expect(200);
+    await soulPick(seasonId, roundNo, combo.label, combo.p2, 'blade').expect(200);
+  }
+  const res = await api.post('/api/rounds').send({ seasonId, roundNo });
+  assert.equal(res.status, 201, `第 ${roundNo} 轮创建被拒: ${JSON.stringify(res.body?.error?.message || res.body)}`);
+  const round = prepare('SELECT id FROM rounds WHERE season_id = ? AND round_no = ?').get(seasonId, roundNo);
+  const matches = getDbMatchesByRound(round.id);
+  assert.equal(matches.length, 1);
+  assert.deepEqual(JSON.parse(matches[0].team_a), expected[0]);
+  assert.deepEqual(JSON.parse(matches[0].team_b), expected[1]);
+  return matches[0].id;
+}
+
+// S6+ 双循环六轮全流程：种子=ID 排序（p1-p4 → A-D），R1/R4=AB-CD、R2/R5=AC-BD、R3/R6=AD-BC
+test('s6p soul bond rounds 1-6 (double round-robin), creation, pairing and completion', async () => {
   const seasonId = 'S-s6p-flow-1';
   insertS6pSeason(seasonId);
 
@@ -145,9 +168,9 @@ test('s6p soul bond rounds 1-3, round creation, pairing and completion', async (
   assert.deepEqual(JSON.parse(round2Matches[0].team_a), ['p1', 'p3']);
   assert.deepEqual(JSON.parse(round2Matches[0].team_b), ['p2', 'p4']);
 
-  // 第 4 轮超出三轮边界 → 422
-  const overRound = await postAction(seasonId, 's6p_soul_roll', { roundNo: 4, comboLabel: 'AB', playerId: 'p1', rollChoice: 1, dice: [3] });
-  assert.match(overRound.body?.error?.message || '', /灵魂契合仅适用于第 1-3 轮/);
+  // 第 7 轮超出六轮边界 → 422
+  const overRound = await postAction(seasonId, 's6p_soul_roll', { roundNo: 7, comboLabel: 'AB', playerId: 'p1', rollChoice: 1, dice: [3] });
+  assert.match(overRound.body?.error?.message || '', /灵魂契合仅适用于第 1-6 轮/);
 
   // 第 2 轮 PA7 打满
   await playOutComboMatch(seasonId, round2Matches[0].id, ['p1', 'p3', 'p2', 'p4'], ['a', 'a', 'a', 'b', 'b', 'a', 'b']);
@@ -170,14 +193,31 @@ test('s6p soul bond rounds 1-3, round creation, pairing and completion', async (
   assert.deepEqual(JSON.parse(round3Matches[0].team_a), ['p1', 'p4']);
   assert.deepEqual(JSON.parse(round3Matches[0].team_b), ['p2', 'p3']);
 
-  // 第 3 轮 PA7 打满 → 赛季完成（三轮总星尘冠军）
+  // 第 3 轮 PA7 打满（双循环前半程结束）
   await playOutComboMatch(seasonId, round3Matches[0].id, ['p1', 'p4', 'p2', 'p3'], ['a', 'a', 'a', 'b', 'b', 'a', 'b']);
+
+  // 双循环后半程：第 4-6 轮重复第 1-3 轮对阵（AB/CD、AC/BD、AD/BC）
+  const round4MatchId = await buildRepeatComboRound(seasonId, 4,
+    [{ label: 'AB', p1: 'p1', p2: 'p2' }, { label: 'CD', p1: 'p3', p2: 'p4' }],
+    [['p1', 'p2'], ['p3', 'p4']]);
+  await playOutComboMatch(seasonId, round4MatchId, ['p1', 'p2', 'p3', 'p4'], ['a', 'a', 'a', 'b', 'b', 'a', 'b']);
+
+  const round5MatchId = await buildRepeatComboRound(seasonId, 5,
+    [{ label: 'AC', p1: 'p1', p2: 'p3' }, { label: 'BD', p1: 'p2', p2: 'p4' }],
+    [['p1', 'p3'], ['p2', 'p4']]);
+  await playOutComboMatch(seasonId, round5MatchId, ['p1', 'p3', 'p2', 'p4'], ['b', 'b', 'b', 'a', 'a', 'b', 'a']);
+
+  const round6MatchId = await buildRepeatComboRound(seasonId, 6,
+    [{ label: 'AD', p1: 'p1', p2: 'p4' }, { label: 'BC', p1: 'p2', p2: 'p3' }],
+    [['p1', 'p4'], ['p2', 'p3']]);
+  await playOutComboMatch(seasonId, round6MatchId, ['p1', 'p4', 'p2', 'p3'], ['a', 'a', 'a', 'b', 'b', 'a', 'b']);
 
   const finished = prepare('SELECT status, winner FROM matches WHERE id = ?').get(round2Matches[0].id);
   assert.equal(finished.winner, 'a');
   const season = prepare('SELECT status, champion_player_id FROM seasons WHERE id = ?').get(seasonId);
   assert.equal(season.status, 'completed');
-  assert.ok(['p1', 'p2', 'p3', 'p4'].includes(season.champion_player_id));
+  // 六轮胜场：p1=5（AB×2/AC/AD×2），p2=3，p3=1，p4=3 → 冠军 p1
+  assert.equal(season.champion_player_id, 'p1');
 });
 
 // S6+ 奇招：投中幸运数须先完成二选一才能选奖；plus1 计入总点数
@@ -317,8 +357,8 @@ test('s6p yuebai game requires two straight points at game point', async () => {
 test('s6p rejects king-era actions and out-of-range rounds', async () => {
   const seasonId = 'S-s6p-flow-6';
   insertS6pSeason(seasonId);
-  const outOfRange = await postAction(seasonId, 's6p_soul_roll', { roundNo: 4, comboLabel: 'AB', playerId: 'p1', rollChoice: 1, dice: [3] });
-  assert.match(outOfRange.body?.error?.message || '', /灵魂契合仅适用于第 1-3 轮/);
+  const outOfRange = await postAction(seasonId, 's6p_soul_roll', { roundNo: 7, comboLabel: 'AB', playerId: 'p1', rollChoice: 1, dice: [3] });
+  assert.match(outOfRange.body?.error?.message || '', /灵魂契合仅适用于第 1-6 轮/);
   const kingAction = await postAction(seasonId, 's6p_king_roll', { order: [] });
   assert.match(kingAction.body?.error?.message || kingAction.body?.error || '', /S6\+ 延长赛不支持该操作/);
   const wrongCombo = await postAction(seasonId, 's6p_soul_roll', { roundNo: 2, comboLabel: 'AC', playerId: 'p2', rollChoice: 1, dice: [3] });

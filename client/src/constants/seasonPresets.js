@@ -69,10 +69,10 @@ export const SEASON_PRESETS = [
     code: 'S6+',
     label: '延长赛',
     ruleId: 's6p',
-    totalRounds: 3,
+    totalRounds: 6,
     bestOf: 3,
     color: 'sunset',
-    description: 'S6 赛季延长赛：3 轮固定组合赛（种子按 S6 最终排名）、灵魂契合（奇招/重置骰子）与王之宝库。'
+    description: 'S6 赛季延长赛：双循环 6 轮固定组合赛（第 4-6 轮重复 1-3；种子按 S6 最终排名）、灵魂契合（奇招/重置骰子）与王之宝库。'
   }
 ]
 
